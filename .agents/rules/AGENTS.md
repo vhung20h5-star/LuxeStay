@@ -1,0 +1,7 @@
+- Use Next.js app router
+- Use TypeScript
+- Use Tailwind CSS
+- Use Shadcn/ui components when possible
+- Create reusable components
+- Follow clean and modern UI design
+- Keep code modular and production-ready
