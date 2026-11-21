@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Heart, Trash2, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import { useBooking } from "@/context/BookingContext";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import { PROPERTIES } from "@/data/properties";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -18,12 +19,22 @@ export function FavoritesDrawer() {
     setSelectedProperty,
   } = useBooking();
 
+  const overlayLayer = useOverlayLayer({
+    id: "favorites-drawer",
+    kind: "favorites-drawer",
+    isOpen: favoritesDrawerOpen,
+    onClose: () => setFavoritesDrawerOpen(false),
+  });
+
   const savedProperties = PROPERTIES.filter((p) => favorites.includes(p.id));
 
   return (
     <AnimatePresence>
       {favoritesDrawerOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
+        <div
+          className="fixed inset-0 overflow-hidden"
+          style={{ zIndex: overlayLayer.zIndex }}
+        >
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -31,11 +42,15 @@ export function FavoritesDrawer() {
             exit={{ opacity: 0 }}
             onClick={() => setFavoritesDrawerOpen(false)}
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+            aria-hidden="true"
           />
 
           {/* Drawer Panel */}
           <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Danh sách yêu thích"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
@@ -56,7 +71,9 @@ export function FavoritesDrawer() {
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setFavoritesDrawerOpen(false)}
+                  aria-label="Đóng danh sách yêu thích"
                   className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />

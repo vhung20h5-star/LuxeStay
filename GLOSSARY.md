@@ -49,3 +49,6 @@ Bộ máy trạng thái và hàm dẫn xuất view model thuần (`createAmenity
 
 ### Amenity Pricing Descriptor (Bộ mô tả hiển thị giá tiện ích)
 Nguồn chân lý duy nhất (`describeAmenityPricing`, `describeSelectedAmenity`, `formatAmenitiesFeeSummary`) chuyển `pricingType` (`included`, `free-reservation`, `paid`) và mức phụ phí thành nhãn ngắn, trạng thái đặt trước, câu chữ hành động và `tone` ngữ nghĩa thống nhất cho toàn bộ 5 màn hình từ thẻ tiện ích đến vé xác nhận đặt phòng.
+
+### Overlay Stack Coordinator (Bộ điều phối ngăn xếp lớp phủ)
+Module thuần `src/lib/overlayStack.ts` kết hợp React host mỏng `src/context/OverlayContext.tsx` điều phối tập trung toàn bộ hộp thoại và ngăn kéo (`FilterModal`, `FavoritesDrawer`, `AuthModal`, `PropertyModal`, `PropertyAmenitiesModal`, `BookingCheckoutModal`, `BookingSuccessModal`): phân tầng tất định theo `tier` (`base = 0`, `nested = 1`), cấp `z-index` động, xử lý phím `Escape` duy nhất cho lớp trên cùng, và khóa/khôi phục cuộn nền có đếm tham chiếu.

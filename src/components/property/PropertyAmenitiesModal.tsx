@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useReducer } from "react";
+import React, { useMemo, useReducer } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Search, SearchX, Sparkles, X } from "lucide-react";
 import type { AmenityCategoryId, Property, SelectedBookingAmenity } from "@/types";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import {
   createAmenityExplorerState,
   deriveAmenityExplorerView,
@@ -27,6 +28,7 @@ export interface PropertyAmenitiesModalProps {
 }
 
 interface InnerProps extends Omit<PropertyAmenitiesModalProps, "isOpen"> {
+  zIndex: number;
   onClose: () => void;
 }
 
@@ -36,6 +38,7 @@ function PropertyAmenitiesModalContent({
   initialCategory = "all",
   selectedAmenities,
   onToggleAmenity,
+  zIndex,
   onClose,
 }: InnerProps) {
   const projection = projectPropertyAmenities(property);
@@ -47,19 +50,6 @@ function PropertyAmenitiesModalContent({
   );
   const { activeCategory, searchQuery, feeFilter } = explorerState;
 
-  // Capture-phase Escape handling so only this modal closes (not PropertyModal underneath)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onClose]);
-
   const view = useMemo(
     () => deriveAmenityExplorerView(projection, explorerState, selectedAmenities),
     [projection, explorerState, selectedAmenities]
@@ -67,7 +57,8 @@ function PropertyAmenitiesModalContent({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-5 overflow-hidden"
+      className="fixed inset-0 flex items-center justify-center p-2 sm:p-5 overflow-hidden"
+      style={{ zIndex }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Backdrop */}
@@ -80,6 +71,7 @@ function PropertyAmenitiesModalContent({
           onClose();
         }}
         className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm"
+        aria-hidden="true"
       />
 
       {/* Modal Container */}
@@ -150,11 +142,10 @@ function PropertyAmenitiesModalContent({
                     key={opt.id}
                     type="button"
                     onClick={() => dispatch({ type: "SET_FEE_FILTER", feeFilter: opt.id })}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all ${
-                      active
-                        ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all ${active
+                      ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -168,11 +159,10 @@ function PropertyAmenitiesModalContent({
             <button
               type="button"
               onClick={() => dispatch({ type: "SET_CATEGORY", category: "all" })}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex items-center gap-1.5 ${
-                activeCategory === "all"
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                  : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
-              }`}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex items-center gap-1.5 ${activeCategory === "all"
+                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
+                }`}
             >
               <span>Tất cả ({view.totalCount})</span>
             </button>
@@ -184,11 +174,10 @@ function PropertyAmenitiesModalContent({
                   key={category.id}
                   type="button"
                   onClick={() => dispatch({ type: "SET_CATEGORY", category: category.id })}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex items-center gap-1.5 ${
-                    active
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
-                  }`}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all flex items-center gap-1.5 ${active
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                    : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
+                    }`}
                 >
                   <AmenityIcon
                     name={category.iconName}
@@ -230,9 +219,8 @@ function PropertyAmenitiesModalContent({
             <div className="h-full md:grid md:grid-cols-12">
               {/* Left Master List */}
               <div
-                className={`h-full md:col-span-5 md:border-r border-slate-100 overflow-y-auto p-3.5 sm:p-4 space-y-5 bg-white ${
-                  view.mobileShowDetail ? "hidden md:block" : "block"
-                }`}
+                className={`h-full md:col-span-5 md:border-r border-slate-100 overflow-y-auto p-3.5 sm:p-4 space-y-5 bg-white ${view.mobileShowDetail ? "hidden md:block" : "block"
+                  }`}
               >
                 {view.groupedItems.map(({ category, items }) => (
                   <div key={category.id} className="space-y-2">
@@ -268,18 +256,16 @@ function PropertyAmenitiesModalContent({
                             onClick={() =>
                               dispatch({ type: "SELECT_AMENITY", amenityId: item.id })
                             }
-                            className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center gap-3 group ${
-                              isActive
-                                ? "border-emerald-500 bg-emerald-50/60 shadow-xs"
-                                : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-50"
-                            }`}
+                            className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center gap-3 group ${isActive
+                              ? "border-emerald-500 bg-emerald-50/60 shadow-xs"
+                              : "border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-slate-50"
+                              }`}
                           >
                             <div
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                                isActive
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-white text-emerald-700 border border-slate-200/80 group-hover:border-emerald-200"
-                              }`}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isActive
+                                ? "bg-emerald-600 text-white"
+                                : "bg-white text-emerald-700 border border-slate-200/80 group-hover:border-emerald-200"
+                                }`}
                             >
                               <AmenityIcon name={item.iconName} className="w-4 h-4" />
                             </div>
@@ -304,11 +290,10 @@ function PropertyAmenitiesModalContent({
                             </div>
 
                             <ChevronRight
-                              className={`w-4 h-4 shrink-0 transition-transform ${
-                                isActive
-                                  ? "text-emerald-600 translate-x-0.5"
-                                  : "text-slate-300 group-hover:text-slate-500"
-                              }`}
+                              className={`w-4 h-4 shrink-0 transition-transform ${isActive
+                                ? "text-emerald-600 translate-x-0.5"
+                                : "text-slate-300 group-hover:text-slate-500"
+                                }`}
                             />
                           </button>
                         );
@@ -320,9 +305,8 @@ function PropertyAmenitiesModalContent({
 
               {/* Right Detail Pane */}
               <div
-                className={`h-full md:col-span-7 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 ${
-                  view.mobileShowDetail ? "block" : "hidden md:block"
-                }`}
+                className={`h-full md:col-span-7 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 ${view.mobileShowDetail ? "block" : "hidden md:block"
+                  }`}
               >
                 {view.effectiveActiveAmenity && (
                   <AmenityDetailPanel
@@ -385,6 +369,14 @@ export function PropertyAmenitiesModal({
   onToggleAmenity,
   onClose,
 }: PropertyAmenitiesModalProps) {
+  const overlayLayer = useOverlayLayer({
+    id: "property-amenities-modal",
+    kind: "property-amenities-modal",
+    isOpen,
+    tier: 1,
+    onClose,
+  });
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -395,6 +387,7 @@ export function PropertyAmenitiesModal({
           initialCategory={initialCategory}
           selectedAmenities={selectedAmenities}
           onToggleAmenity={onToggleAmenity}
+          zIndex={overlayLayer.zIndex}
           onClose={onClose}
         />
       )}

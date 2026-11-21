@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { AmenityCategoryId, BookingQuote } from "@/types";
 import { useBooking } from "@/context/BookingContext";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import {
   describeAmenityPricing,
   describeSelectedAmenity,
@@ -61,16 +62,12 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
     initialCategory: "all",
   });
 
-  // Escape closes PropertyModal ONLY when PropertyAmenitiesModal is not open
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !amenitiesModal.isOpen) {
-        setSelectedProperty(null);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [amenitiesModal.isOpen, setSelectedProperty]);
+  const overlayLayer = useOverlayLayer({
+    id: "property-modal",
+    kind: "property-modal",
+    isOpen: true,
+    onClose: () => setSelectedProperty(null),
+  });
 
   const {
     totalCount: amenityCount,
@@ -101,7 +98,10 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div
+        className="fixed inset-0 overflow-y-auto"
+        style={{ zIndex: overlayLayer.zIndex }}
+      >
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -109,11 +109,15 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
           exit={{ opacity: 0 }}
           onClick={() => setSelectedProperty(null)}
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
+          aria-hidden="true"
         />
 
         {/* Modal Dialog */}
         <div className="min-h-full flex items-center justify-center p-3 sm:p-6 my-4">
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={property.title}
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -686,7 +690,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
         </div>
       </div>
 
-      {/* Stacked All-Amenities Master-Detail Modal (z-[60]) */}
+      {/* Stacked All-Amenities Master-Detail Modal (managed by OverlayStack tier 1) */}
       <PropertyAmenitiesModal
         isOpen={amenitiesModal.isOpen}
         property={property}

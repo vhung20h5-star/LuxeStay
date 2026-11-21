@@ -13,12 +13,20 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useBooking } from "@/context/BookingContext";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
 export function BookingSuccessModal() {
   const { bookingSuccess, setBookingSuccess } = useBooking();
+
+  const overlayLayer = useOverlayLayer({
+    id: "booking-success-modal",
+    kind: "booking-success-modal",
+    isOpen: Boolean(bookingSuccess),
+    onClose: () => setBookingSuccess(null),
+  });
 
   useEffect(() => {
     if (bookingSuccess) {
@@ -51,7 +59,10 @@ export function BookingSuccessModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div
+      className="fixed inset-0 overflow-y-auto"
+      style={{ zIndex: overlayLayer.zIndex }}
+    >
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -59,10 +70,14 @@ export function BookingSuccessModal() {
         exit={{ opacity: 0 }}
         onClick={() => setBookingSuccess(null)}
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
+        aria-hidden="true"
       />
 
       <div className="min-h-full flex items-center justify-center p-3 sm:p-6 my-4">
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Đặt phòng thành công"
           initial={{ opacity: 0, scale: 0.9, y: 30 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}

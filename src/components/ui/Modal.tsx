@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import type { OverlayKind } from "@/types";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import { cn } from "@/lib/utils";
 
 export interface ModalProps {
@@ -13,6 +15,11 @@ export interface ModalProps {
   children: React.ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "full";
   className?: string;
+  overlayId?: string;
+  overlayKind?: OverlayKind;
+  tier?: number;
+  closeOnEscape?: boolean;
+  ariaLabel?: string;
 }
 
 export function Modal({
@@ -23,22 +30,21 @@ export function Modal({
   children,
   maxWidth = "lg",
   className,
+  overlayId,
+  overlayKind = "dialog",
+  tier = 0,
+  closeOnEscape = true,
+  ariaLabel,
 }: ModalProps) {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", handleKeyDown);
-    } else {
-      document.body.style.overflow = "unset";
-    }
-    return () => {
-      document.body.style.overflow = "unset";
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  const generatedId = useId();
+  const overlayLayer = useOverlayLayer({
+    id: overlayId?.trim() || `modal-${generatedId}`,
+    kind: overlayKind,
+    isOpen,
+    onClose,
+    tier,
+    closeOnEscape,
+  });
 
   const maxWClasses = {
     sm: "max-w-sm",
@@ -54,7 +60,10 @@ export function Modal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+        <div
+          className="fixed inset-0 flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+          style={{ zIndex: overlayLayer.zIndex }}
+        >
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -70,6 +79,7 @@ export function Modal({
           <motion.div
             role="dialog"
             aria-modal="true"
+            aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
             initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}

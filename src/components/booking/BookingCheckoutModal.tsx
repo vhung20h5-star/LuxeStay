@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { AlertCircle, Lock, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -39,6 +40,13 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
     setIsSubmitting(false);
     setCheckoutProperty(null);
   };
+
+  const overlayLayer = useOverlayLayer({
+    id: "checkout-modal",
+    kind: "checkout-modal",
+    isOpen: true,
+    onClose: handleClose,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +85,10 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
     .join(", ");
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div
+      className="fixed inset-0 overflow-y-auto"
+      style={{ zIndex: overlayLayer.zIndex }}
+    >
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -85,10 +96,14 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
         exit={{ opacity: 0 }}
         onClick={handleClose}
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
+        aria-hidden="true"
       />
 
       <div className="min-h-full flex items-center justify-center p-3 sm:p-6 my-4">
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Xác nhận đặt phòng"
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}

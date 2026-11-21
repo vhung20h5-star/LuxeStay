@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { OverlayProvider } from "@/context/OverlayContext";
 import { BookingProvider } from "@/context/BookingContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
@@ -31,18 +32,20 @@ export default function RootLayout({
   return (
     <html lang="vi" className="h-full antialiased scroll-smooth">
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
-        <BookingProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
+        <OverlayProvider>
+          <BookingProvider>
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
 
-          {/* Global Modals & Drawers */}
-          <FavoritesDrawer />
-          <FilterModal />
-          <PropertyModal />
-          <BookingCheckoutModal />
-          <BookingSuccessModal />
-        </BookingProvider>
+            {/* Global Modals & Drawers */}
+            <FavoritesDrawer />
+            <FilterModal />
+            <PropertyModal />
+            <BookingCheckoutModal />
+            <BookingSuccessModal />
+          </BookingProvider>
+        </OverlayProvider>
       </body>
     </html>
   );

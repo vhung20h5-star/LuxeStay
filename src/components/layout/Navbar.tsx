@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
+import { useOverlayLayer } from "@/context/OverlayContext";
 import { Button } from "@/components/ui/Button";
 
 export function Navbar() {
@@ -20,6 +21,13 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  const authOverlay = useOverlayLayer({
+    id: "auth-modal",
+    kind: "auth-modal",
+    isOpen: authModalOpen,
+    onClose: () => setAuthModalOpen(false),
+  });
 
   useEffect(() => {
     const handleScroll = () => {
@@ -217,15 +225,22 @@ export function Navbar() {
       {/* Simple Demo Auth Dialog */}
       <AnimatePresence>
         {authModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{ zIndex: authOverlay.zIndex }}
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setAuthModalOpen(false)}
               className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
+              aria-hidden="true"
             />
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Đăng nhập LuxeStay"
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}

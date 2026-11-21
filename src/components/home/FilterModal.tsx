@@ -40,6 +40,8 @@ export function FilterModal() {
 
   return (
     <Modal
+      overlayId="filter-modal"
+      overlayKind="filter-modal"
       isOpen={filterModalOpen}
       onClose={() => setFilterModalOpen(false)}
       title="Bộ lọc nâng cao"
