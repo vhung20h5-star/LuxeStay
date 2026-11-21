@@ -117,11 +117,10 @@ export function SearchBar() {
             key={tab.id}
             type="button"
             onClick={() => selectPropertyTypeTab(tab.id)}
-            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all relative ${
-              activeTab === tab.id
-                ? "bg-white text-emerald-900 shadow-md scale-105 ring-1 ring-emerald-200"
-                : "bg-white/80 backdrop-blur-sm text-slate-700 hover:bg-white hover:text-slate-900"
-            }`}
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all relative ${activeTab === tab.id
+              ? "bg-white text-emerald-900 shadow-md scale-105 ring-1 ring-emerald-200"
+              : "bg-white/80 backdrop-blur-sm text-slate-700 hover:bg-white hover:text-slate-900"
+              }`}
           >
             {tab.label}
           </button>

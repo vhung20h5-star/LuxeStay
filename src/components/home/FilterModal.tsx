@@ -67,11 +67,10 @@ export function FilterModal() {
                   key={preset.id}
                   type="button"
                   onClick={() => setPriceRange(preset.minPrice, preset.maxPrice)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
-                    isSelected
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${isSelected
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                    : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
+                    }`}
                 >
                   {preset.label}
                 </button>
@@ -113,18 +112,16 @@ export function FilterModal() {
                   key={opt.id}
                   type="button"
                   onClick={() => togglePropertyType(opt.id)}
-                  className={`flex items-start gap-3 p-3 rounded-2xl border text-left transition-all ${
-                    isChecked
-                      ? "border-emerald-500 bg-emerald-50/40 text-emerald-900 shadow-xs"
-                      : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                  }`}
+                  className={`flex items-start gap-3 p-3 rounded-2xl border text-left transition-all ${isChecked
+                    ? "border-emerald-500 bg-emerald-50/40 text-emerald-900 shadow-xs"
+                    : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                    }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-lg border mt-0.5 flex items-center justify-center transition-colors ${
-                      isChecked
-                        ? "bg-emerald-600 border-emerald-600 text-white"
-                        : "border-slate-300 bg-white"
-                    }`}
+                    className={`w-5 h-5 rounded-lg border mt-0.5 flex items-center justify-center transition-colors ${isChecked
+                      ? "bg-emerald-600 border-emerald-600 text-white"
+                      : "border-slate-300 bg-white"
+                      }`}
                   >
                     {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                   </div>
@@ -156,11 +153,10 @@ export function FilterModal() {
                   key={rating.val}
                   type="button"
                   onClick={() => setMinRating(rating.val)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${
-                    isSelected
-                      ? "bg-amber-50 text-amber-900 border-amber-300 shadow-xs"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                  }`}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${isSelected
+                    ? "bg-amber-50 text-amber-900 border-amber-300 shadow-xs"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                    }`}
                 >
                   {rating.label}
                 </button>
@@ -182,11 +178,10 @@ export function FilterModal() {
                   key={opt.key}
                   type="button"
                   onClick={() => toggleAmenityFilter(opt.key)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 ${
-                    isSelected
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40"
-                  }`}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 ${isSelected
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                    : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40"
+                    }`}
                 >
                   {isSelected ? (
                     <Check className="w-3.5 h-3.5" />

@@ -176,9 +176,8 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
 
                         <div className="flex items-center gap-2 shrink-0">
                           <span
-                            className={`text-xs font-bold ${
-                              display.tone === "paid" ? "text-amber-700" : "text-teal-700"
-                            }`}
+                            className={`text-xs font-bold ${display.tone === "paid" ? "text-amber-700" : "text-teal-700"
+                              }`}
                           >
                             {display.checkoutFee}
                           </span>
