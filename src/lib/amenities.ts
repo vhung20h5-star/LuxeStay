@@ -1,4 +1,5 @@
 import { AMENITY_CATALOG, AMENITY_CATEGORIES } from "@/data/amenities";
+import { normalizeVietnamese } from "@/lib/utils";
 import type {
   AmenityCategoryId,
   AmenityCategoryMeta,
@@ -9,14 +10,7 @@ import type {
 
 export type AmenityFeeFilter = "all" | "free" | "paid" | "selected";
 
-export function normalizeVietnamese(input: string): string {
-  return input
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[đĐ]/g, "d")
-    .toLowerCase()
-    .trim();
-}
+export { normalizeVietnamese };
 
 export function resolvePropertyAmenities(
   property: Pick<Property, "resortAmenities">

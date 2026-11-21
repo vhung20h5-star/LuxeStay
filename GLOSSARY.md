@@ -31,3 +31,12 @@ Bản tính giá và lịch trình dẫn xuất tất định từ một `Bookin
 Seam xử lý bước gửi yêu cầu đặt phòng đã qua kiểm tra hợp lệ thông tin khách (`guestInfo`) và phương thức thanh toán (`paymentMethod`) để trả về vé xác nhận `BookingDetails`:
 - **`BrowserReservationAdapter`**: Adapter mặc định trên trình duyệt (mô phỏng độ trễ xác nhận bất đồng bộ có hỗ trợ hủy khi đóng hộp thoại, sẵn sàng thay bằng HTTP/Database adapter khi nối backend).
 - **`InMemoryReservationAdapter`**: Adapter phục vụ kiểm thử tự động chạy tức thì, tất định, không dùng `setTimeout`.
+
+### Stay Catalog Query (Truy vấn danh mục chỗ nghỉ)
+Nguồn chân lý duy nhất quản lý toàn bộ điều kiện tìm kiếm, lọc và sắp xếp danh mục chỗ nghỉ (`destination`, `checkIn`/`checkOut`, `guests`, `category`, `minPrice`..`maxPrice`, `propertyTypes`, `minRating`, `amenities`, `freeCancellationOnly`, `sortBy`). Mọi caller trang chủ (`SearchBar`, `CategoryBar`, `FilterModal`, `PropertyList`, `TrendingDestinations`) đều đi qua cùng một interface, bảo đảm `reset` đặt lại trọn vẹn kể cả `sortBy` và tab loại hình.
+
+### Active Filter Chip (Thẻ bộ lọc đang bật)
+Mô tả có cấu trúc do `Stay Catalog Query` sinh ra cho từng tiêu chí lọc đang kích hoạt (điểm đến, danh mục, khoảng giá, loại hình, đánh giá, tiện ích, hủy miễn phí) để `PropertyList` hiển thị và cho phép gỡ nhanh từng tiêu chí mà không tự đọc lại cấu trúc lọc bên trong.
+
+### Quick Search Trend (Xu hướng tìm kiếm nhanh)
+Bộ gợi ý tìm kiếm có cấu trúc (`label`, `destination`, tùy chọn `category` / `propertyType`) giúp áp dụng chính xác thành phố và bộ lọc phù hợp chỉ bằng 1 chạm (đồng thời xóa bộ lọc danh mục/loại hình xung đột từ lượt tìm trước), thay cho cách cắt chuỗi thủ công dễ sai.

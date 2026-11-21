@@ -1,6 +1,6 @@
 export type PropertyType = "hotel" | "homestay" | "villa" | "resort" | "glamping";
 
-export type CategoryId = 
+export type CategoryId =
   | "all"
   | "mountain-view"
   | "beachfront"
@@ -239,8 +239,9 @@ export interface SearchCriteria {
     children: number;
     rooms: number;
   };
-  propertyType?: string;
 }
+
+export type SortOption = "popular" | "price-asc" | "price-desc" | "rating-desc";
 
 export interface FilterState {
   category: CategoryId;
@@ -250,8 +251,51 @@ export interface FilterState {
   minRating: number;
   amenities: AmenityFilterKey[];
   freeCancellationOnly: boolean;
-  instantBookingOnly: boolean;
-  sortBy: "popular" | "price-asc" | "price-desc" | "rating-desc";
+  sortBy: SortOption;
+}
+
+export interface PriceRangePreset {
+  id: string;
+  label: string;
+  minPrice: number;
+  maxPrice: number;
+}
+
+export interface QuickSearchTrend {
+  id: string;
+  label: string;
+  destination: string;
+  category?: CategoryId;
+  propertyType?: PropertyType;
+}
+
+export interface StayCatalogQueryState {
+  search: SearchCriteria;
+  filters: FilterState;
+}
+
+export type ActiveFilterChipKind =
+  | "destination"
+  | "category"
+  | "price"
+  | "propertyType"
+  | "rating"
+  | "amenity"
+  | "freeCancellation";
+
+export interface ActiveFilterChip {
+  id: string;
+  kind: ActiveFilterChipKind;
+  label: string;
+  value?: string;
+}
+
+export interface CatalogQueryResult {
+  items: Property[];
+  totalCount: number;
+  activeFilterCount: number;
+  activeChips: ActiveFilterChip[];
+  activePropertyTypeTab: PropertyType | "all";
 }
 
 export interface BookingDetails {

@@ -1,16 +1,24 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { PROPERTIES } from "@/data/properties";
 import type {
+  ActiveFilterChip,
+  AmenityFilterKey,
   BookingDetails,
   BookingQuote,
   BookingSessionState,
+  CatalogQueryResult,
   CategoryId,
   CheckoutGuestInput,
   FilterState,
   Property,
+  PropertyType,
+  QuickSearchTrend,
   ReservationSubmitter,
   SearchCriteria,
+  SortOption,
+  StayCatalogQueryState,
 } from "@/types";
 import {
   closeCheckoutSession,
@@ -27,6 +35,23 @@ import {
   updateSessionAdults,
   updateSessionNights,
 } from "@/lib/bookingSession";
+import {
+  adjustQueryGuests,
+  applyQuickSearchTrend,
+  createDefaultCatalogQuery,
+  executeCatalogQuery,
+  removeActiveFilterChip,
+  setQueryCategory,
+  setQueryDates,
+  setQueryDestination,
+  setQueryFreeCancellation,
+  setQueryMinRating,
+  setQueryPriceRange,
+  setQueryPropertyTypeTab,
+  setQuerySortBy,
+  toggleQueryAmenity,
+  toggleQueryPropertyType,
+} from "@/lib/catalogQuery";
 
 interface BookingContextType {
   // Favorites
@@ -36,14 +61,26 @@ interface BookingContextType {
   favoritesDrawerOpen: boolean;
   setFavoritesDrawerOpen: (open: boolean) => void;
 
-  // Search & Filter
+  // Deep Stay Catalog Query Interface
+  catalogQuery: StayCatalogQueryState;
+  catalogResult: CatalogQueryResult;
   searchCriteria: SearchCriteria;
-  setSearchCriteria: React.Dispatch<React.SetStateAction<SearchCriteria>>;
   filterState: FilterState;
-  setFilterState: React.Dispatch<React.SetStateAction<FilterState>>;
-  resetFilters: () => void;
   activeCategory: CategoryId;
+  setDestination: (destination: string) => void;
+  setDates: (dates: { checkIn?: string; checkOut?: string }) => void;
+  adjustGuests: (field: "adults" | "children" | "rooms", delta: number) => void;
   setActiveCategory: (cat: CategoryId) => void;
+  selectPropertyTypeTab: (tab: PropertyType | "all") => void;
+  togglePropertyType: (type: PropertyType) => void;
+  setPriceRange: (minPrice: number, maxPrice: number) => void;
+  setMinRating: (rating: number) => void;
+  toggleAmenityFilter: (amenity: AmenityFilterKey) => void;
+  setFreeCancellationOnly: (enabled: boolean) => void;
+  setSortBy: (sortBy: SortOption) => void;
+  applyQuickTrend: (trend: QuickSearchTrend) => void;
+  removeFilterChip: (chip: ActiveFilterChip) => void;
+  resetFilters: () => void;
   filterModalOpen: boolean;
   setFilterModalOpen: (open: boolean) => void;
 
@@ -66,30 +103,6 @@ interface BookingContextType {
     signal?: AbortSignal
   ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
 }
-
-const defaultSearch: SearchCriteria = {
-  destination: "",
-  checkIn: "",
-  checkOut: "",
-  guests: {
-    adults: 2,
-    children: 0,
-    rooms: 1,
-  },
-  propertyType: "all",
-};
-
-const defaultFilters: FilterState = {
-  category: "all",
-  minPrice: 0,
-  maxPrice: 10000000,
-  propertyTypes: [],
-  minRating: 0,
-  amenities: [],
-  freeCancellationOnly: false,
-  instantBookingOnly: false,
-  sortBy: "popular",
-};
 
 const defaultReservationSubmitter = createBrowserReservationAdapter(1200);
 
@@ -115,15 +128,25 @@ export function BookingProvider({
   });
 
   const [favoritesDrawerOpen, setFavoritesDrawerOpen] = useState(false);
-  const [searchCriteria, setSearchCriteria] = useState<SearchCriteria>(defaultSearch);
-  const [filterState, setFilterState] = useState<FilterState>(defaultFilters);
-  const [activeCategory, setActiveCategoryState] = useState<CategoryId>("all");
   const [filterModalOpen, setFilterModalOpen] = useState(false);
 
+  // Unified Stay Catalog Query State
+  const [catalogQuery, setCatalogQuery] = useState<StayCatalogQueryState>(() =>
+    createDefaultCatalogQuery()
+  );
+  const catalogResult = useMemo(
+    () => executeCatalogQuery(PROPERTIES, catalogQuery),
+    [catalogQuery]
+  );
+
+  const searchCriteria = catalogQuery.search;
+  const filterState = catalogQuery.filters;
+  const activeCategory = catalogQuery.filters.category;
+
+  // Unified Booking Session State
   const [bookingSession, setBookingSession] = useState<BookingSessionState>(() =>
     createIdleBookingSession()
   );
-
   const bookingQuote = useMemo(() => deriveBookingQuote(bookingSession), [bookingSession]);
 
   const selectedProperty =
@@ -133,6 +156,67 @@ export function BookingProvider({
   const bookingSuccess =
     bookingSession.step === "confirmed" ? bookingSession.confirmedBooking : null;
 
+  // Catalog Query Commands
+  const setDestination = useCallback((destination: string) => {
+    setCatalogQuery((prev) => setQueryDestination(prev, destination));
+  }, []);
+
+  const setDates = useCallback((dates: { checkIn?: string; checkOut?: string }) => {
+    setCatalogQuery((prev) => setQueryDates(prev, dates));
+  }, []);
+
+  const adjustGuests = useCallback(
+    (field: "adults" | "children" | "rooms", delta: number) => {
+      setCatalogQuery((prev) => adjustQueryGuests(prev, field, delta));
+    },
+    []
+  );
+
+  const setActiveCategory = useCallback((cat: CategoryId) => {
+    setCatalogQuery((prev) => setQueryCategory(prev, cat));
+  }, []);
+
+  const selectPropertyTypeTab = useCallback((tab: PropertyType | "all") => {
+    setCatalogQuery((prev) => setQueryPropertyTypeTab(prev, tab));
+  }, []);
+
+  const togglePropertyType = useCallback((type: PropertyType) => {
+    setCatalogQuery((prev) => toggleQueryPropertyType(prev, type));
+  }, []);
+
+  const setPriceRange = useCallback((minPrice: number, maxPrice: number) => {
+    setCatalogQuery((prev) => setQueryPriceRange(prev, minPrice, maxPrice));
+  }, []);
+
+  const setMinRating = useCallback((rating: number) => {
+    setCatalogQuery((prev) => setQueryMinRating(prev, rating));
+  }, []);
+
+  const toggleAmenityFilter = useCallback((amenity: AmenityFilterKey) => {
+    setCatalogQuery((prev) => toggleQueryAmenity(prev, amenity));
+  }, []);
+
+  const setFreeCancellationOnly = useCallback((enabled: boolean) => {
+    setCatalogQuery((prev) => setQueryFreeCancellation(prev, enabled));
+  }, []);
+
+  const setSortBy = useCallback((sortBy: SortOption) => {
+    setCatalogQuery((prev) => setQuerySortBy(prev, sortBy));
+  }, []);
+
+  const applyQuickTrend = useCallback((trend: QuickSearchTrend) => {
+    setCatalogQuery((prev) => applyQuickSearchTrend(prev, trend));
+  }, []);
+
+  const removeFilterChip = useCallback((chip: ActiveFilterChip) => {
+    setCatalogQuery((prev) => removeActiveFilterChip(prev, chip));
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setCatalogQuery(createDefaultCatalogQuery());
+  }, []);
+
+  // Booking Session Commands
   const setSelectedProperty = useCallback(
     (property: Property | null) => {
       setBookingSession((prev) =>
@@ -208,11 +292,7 @@ export function BookingProvider({
     [bookingSession, reservationSubmitter]
   );
 
-  const setActiveCategory = (cat: CategoryId) => {
-    setActiveCategoryState(cat);
-    setFilterState((prev) => ({ ...prev, category: cat }));
-  };
-
+  // Favorites
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
       const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
@@ -220,18 +300,12 @@ export function BookingProvider({
         if (typeof window !== "undefined") {
           localStorage.setItem("travel_favorites", JSON.stringify(next));
         }
-      } catch {}
+      } catch { }
       return next;
     });
   };
 
   const isFavorite = (id: string) => favorites.includes(id);
-
-  const resetFilters = () => {
-    setFilterState(defaultFilters);
-    setActiveCategoryState("all");
-    setSearchCriteria(defaultSearch);
-  };
 
   return (
     <BookingContext.Provider
@@ -241,13 +315,25 @@ export function BookingProvider({
         isFavorite,
         favoritesDrawerOpen,
         setFavoritesDrawerOpen,
+        catalogQuery,
+        catalogResult,
         searchCriteria,
-        setSearchCriteria,
         filterState,
-        setFilterState,
-        resetFilters,
         activeCategory,
+        setDestination,
+        setDates,
+        adjustGuests,
         setActiveCategory,
+        selectPropertyTypeTab,
+        togglePropertyType,
+        setPriceRange,
+        setMinRating,
+        toggleAmenityFilter,
+        setFreeCancellationOnly,
+        setSortBy,
+        applyQuickTrend,
+        removeFilterChip,
+        resetFilters,
         filterModalOpen,
         setFilterModalOpen,
         bookingSession,

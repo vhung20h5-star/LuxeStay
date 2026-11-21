@@ -13,6 +13,15 @@ export function formatVND(amount: number): string {
   }).format(amount);
 }
 
+export function normalizeVietnamese(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .trim();
+}
+
 export function formatDate(dateStr: string): string {
   try {
     const d = new Date(dateStr);

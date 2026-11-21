@@ -6,13 +6,29 @@ import { useBooking } from "@/context/BookingContext";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Check } from "lucide-react";
-import type { AmenityFilterKey, PropertyType } from "@/types";
+import type { PropertyType } from "@/types";
 import { AMENITY_FILTER_OPTIONS } from "@/data/amenities";
+import {
+  DEFAULT_MAX_PRICE,
+  PRICE_RANGE_PRESETS,
+  PRICE_SLIDER_MIN,
+  PRICE_SLIDER_STEP,
+} from "@/lib/catalogQuery";
 import { AmenityIcon } from "@/components/property/AmenityIcon";
 
 export function FilterModal() {
-  const { filterModalOpen, setFilterModalOpen, filterState, setFilterState, resetFilters } =
-    useBooking();
+  const {
+    filterModalOpen,
+    setFilterModalOpen,
+    filterState,
+    catalogResult,
+    togglePropertyType,
+    setPriceRange,
+    setMinRating,
+    toggleAmenityFilter,
+    setFreeCancellationOnly,
+    resetFilters,
+  } = useBooking();
 
   const propertyTypeOptions: { id: PropertyType; label: string; desc: string }[] = [
     { id: "homestay", label: "Homestay", desc: "Ấm cúng, gần gũi và mộc mạc" },
@@ -21,30 +37,6 @@ export function FilterModal() {
     { id: "resort", label: "Resort 5 Sao", desc: "Nghỉ dưỡng thượng lưu ven biển/núi" },
     { id: "glamping", label: "Glamping", desc: "Cắm trại cao cấp giữa thiên nhiên" },
   ];
-
-  const togglePropertyType = (type: PropertyType) => {
-    setFilterState((prev) => {
-      const exists = prev.propertyTypes.includes(type);
-      return {
-        ...prev,
-        propertyTypes: exists
-          ? prev.propertyTypes.filter((t) => t !== type)
-          : [...prev.propertyTypes, type],
-      };
-    });
-  };
-
-  const toggleAmenity = (amenity: AmenityFilterKey) => {
-    setFilterState((prev) => {
-      const exists = prev.amenities.includes(amenity);
-      return {
-        ...prev,
-        amenities: exists
-          ? prev.amenities.filter((a) => a !== amenity)
-          : [...prev.amenities, amenity],
-      };
-    });
-  };
 
   return (
     <Modal
@@ -58,27 +50,52 @@ export function FilterModal() {
         {/* 1. Khoảng giá (VND/đêm) */}
         <div>
           <h4 className="text-sm font-bold text-slate-800 mb-2">Khoảng giá mỗi đêm</h4>
-          <p className="text-xs text-slate-500 mb-4">
-            Giá trung bình từ {formatVND(filterState.minPrice)} đến {formatVND(filterState.maxPrice)}
+          <p className="text-xs text-slate-500 mb-3">
+            Đang chọn từ{" "}
+            <span className="font-bold text-slate-700">{formatVND(filterState.minPrice)}</span> đến{" "}
+            <span className="font-bold text-emerald-700">{formatVND(filterState.maxPrice)}</span>
           </p>
+
+          {/* Quick Price Presets */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {PRICE_RANGE_PRESETS.map((preset) => {
+              const isSelected =
+                filterState.minPrice === preset.minPrice &&
+                filterState.maxPrice === preset.maxPrice;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setPriceRange(preset.minPrice, preset.maxPrice)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                    isSelected
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="space-y-3">
             <input
               type="range"
-              min={500000}
-              max={10000000}
-              step={200000}
+              min={PRICE_SLIDER_MIN}
+              max={DEFAULT_MAX_PRICE}
+              step={PRICE_SLIDER_STEP}
               value={filterState.maxPrice}
-              onChange={(e) =>
-                setFilterState((prev) => ({ ...prev, maxPrice: Number(e.target.value) }))
-              }
+              onChange={(e) => setPriceRange(filterState.minPrice, Number(e.target.value))}
+              aria-label="Giá tối đa mỗi đêm"
               className="w-full accent-emerald-600 cursor-pointer"
             />
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span>{formatVND(500000)}</span>
+              <span>{formatVND(PRICE_SLIDER_MIN)}</span>
               <span className="text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
                 Tối đa: {formatVND(filterState.maxPrice)}
               </span>
-              <span>{formatVND(10000000)}+</span>
+              <span>{formatVND(DEFAULT_MAX_PRICE)}+</span>
             </div>
           </div>
         </div>
@@ -138,9 +155,7 @@ export function FilterModal() {
                 <button
                   key={rating.val}
                   type="button"
-                  onClick={() =>
-                    setFilterState((prev) => ({ ...prev, minRating: rating.val }))
-                  }
+                  onClick={() => setMinRating(rating.val)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border ${
                     isSelected
                       ? "bg-amber-50 text-amber-900 border-amber-300 shadow-xs"
@@ -166,7 +181,7 @@ export function FilterModal() {
                 <button
                   key={opt.key}
                   type="button"
-                  onClick={() => toggleAmenity(opt.key)}
+                  onClick={() => toggleAmenityFilter(opt.key)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 ${
                     isSelected
                       ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
@@ -200,12 +215,7 @@ export function FilterModal() {
           <input
             type="checkbox"
             checked={filterState.freeCancellationOnly}
-            onChange={(e) =>
-              setFilterState((prev) => ({
-                ...prev,
-                freeCancellationOnly: e.target.checked,
-              }))
-            }
+            onChange={(e) => setFreeCancellationOnly(e.target.checked)}
             className="w-5 h-5 accent-emerald-600 rounded cursor-pointer"
           />
         </div>
@@ -225,7 +235,7 @@ export function FilterModal() {
           onClick={() => setFilterModalOpen(false)}
           className="px-6"
         >
-          Áp dụng bộ lọc
+          Xem {catalogResult.totalCount} chỗ nghỉ
         </Button>
       </div>
     </Modal>

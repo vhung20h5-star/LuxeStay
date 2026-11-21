@@ -36,7 +36,7 @@ export function CategoryBar() {
     activeCategory,
     setActiveCategory,
     setFilterModalOpen,
-    filterState,
+    catalogResult,
   } = useBooking();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -48,13 +48,7 @@ export function CategoryBar() {
     }
   };
 
-  // Count active filters (excluding default category)
-  let activeFilterCount = 0;
-  if (filterState.propertyTypes.length > 0) activeFilterCount += filterState.propertyTypes.length;
-  if (filterState.minRating > 0) activeFilterCount += 1;
-  if (filterState.amenities.length > 0) activeFilterCount += filterState.amenities.length;
-  if (filterState.freeCancellationOnly) activeFilterCount += 1;
-  if (filterState.minPrice > 0 || filterState.maxPrice < 10000000) activeFilterCount += 1;
+  const activeFilterCount = catalogResult.activeFilterCount;
 
   return (
     <div className="w-full bg-white border-y border-slate-200/80 sticky top-[73px] z-30 shadow-xs py-3">

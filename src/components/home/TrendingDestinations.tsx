@@ -8,10 +8,10 @@ import { DESTINATIONS } from "@/data/destinations";
 import { useBooking } from "@/context/BookingContext";
 
 export function TrendingDestinations() {
-  const { setSearchCriteria } = useBooking();
+  const { setDestination } = useBooking();
 
   const handleSelect = (destName: string) => {
-    setSearchCriteria((prev) => ({ ...prev, destination: destName }));
+    setDestination(destName);
     const target = document.getElementById("properties-section");
     if (target) {
       target.scrollIntoView({ behavior: "smooth" });

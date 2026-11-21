@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -14,17 +14,40 @@ import {
 } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
 import { DESTINATIONS } from "@/data/destinations";
-import { PropertyType } from "@/types";
+import {
+  formatSearchDateRange,
+  QUICK_DATE_PRESETS,
+  QUICK_SEARCH_TRENDS,
+} from "@/lib/catalogQuery";
+import { normalizeVietnamese } from "@/lib/utils";
+import type { PropertyType, QuickSearchTrend } from "@/types";
+
+const PROPERTY_TYPE_TABS: Array<{ id: PropertyType | "all"; label: string }> = [
+  { id: "all", label: "Tất cả chỗ nghỉ" },
+  { id: "homestay", label: "🏡 Homestay" },
+  { id: "hotel", label: "🏨 Khách sạn" },
+  { id: "villa", label: "🏖️ Villa biệt thự" },
+  { id: "resort", label: "🏝️ Resort" },
+  { id: "glamping", label: "🏕️ Glamping" },
+];
 
 export function SearchBar() {
-  const { searchCriteria, setSearchCriteria, setFilterState } = useBooking();
+  const {
+    searchCriteria,
+    catalogResult,
+    setDestination,
+    setDates,
+    adjustGuests,
+    selectPropertyTypeTab,
+    applyQuickTrend,
+  } = useBooking();
 
-  const [activeTab, setActiveTab] = useState<string>("all");
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
   const [guestsOpen, setGuestsOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const destinationInputRef = useRef<HTMLInputElement>(null);
 
   // Close popovers on outside click
   useEffect(() => {
@@ -39,70 +62,64 @@ export function SearchBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSelectDestination = (destName: string) => {
-    setSearchCriteria((prev) => ({ ...prev, destination: destName }));
-    setDestinationOpen(false);
-    setDateOpen(true);
-  };
-
-  const handleGuestCountChange = (type: "adults" | "children" | "rooms", delta: number) => {
-    setSearchCriteria((prev) => {
-      const current = prev.guests[type];
-      const min = type === "adults" || type === "rooms" ? 1 : 0;
-      const next = Math.max(min, current + delta);
-      return {
-        ...prev,
-        guests: {
-          ...prev.guests,
-          [type]: next,
-        },
-      };
+  const filteredDestinations = useMemo(() => {
+    const q = normalizeVietnamese(searchCriteria.destination);
+    if (!q) return DESTINATIONS;
+    return DESTINATIONS.filter((dest) => {
+      const hay = normalizeVietnamese(`${dest.name} ${dest.province} ${dest.popularFor}`);
+      return hay.includes(q);
     });
-  };
+  }, [searchCriteria.destination]);
 
-  const handleSearchSubmit = () => {
-    setDestinationOpen(false);
-    setDateOpen(false);
-    setGuestsOpen(false);
-
-    // Apply tab to filter if specific type
-    if (activeTab !== "all") {
-      setFilterState((prev) => ({
-        ...prev,
-        propertyTypes: [activeTab as PropertyType],
-      }));
-    } else {
-      setFilterState((prev) => ({
-        ...prev,
-        propertyTypes: [],
-      }));
-    }
-
+  const scrollToProperties = () => {
     const target = document.getElementById("properties-section");
     if (target) {
       target.scrollIntoView({ behavior: "smooth" });
     }
   };
 
+  const handleSelectDestination = (destName: string) => {
+    setDestination(destName);
+    setDestinationOpen(false);
+    setDateOpen(true);
+  };
+
+  const handleSearchSubmit = () => {
+    setDestinationOpen(false);
+    setDateOpen(false);
+    setGuestsOpen(false);
+    scrollToProperties();
+  };
+
+  const handleQuickTrendClick = (trend: QuickSearchTrend) => {
+    applyQuickTrend(trend);
+    setDestinationOpen(false);
+    setDateOpen(false);
+    setGuestsOpen(false);
+    scrollToProperties();
+  };
+
+  const activeTab = catalogResult.activePropertyTypeTab;
   const totalGuests = searchCriteria.guests.adults + searchCriteria.guests.children;
+  const isoCheckIn = /^\d{4}-\d{2}-\d{2}$/.test(searchCriteria.checkIn)
+    ? searchCriteria.checkIn
+    : "";
+  const isoCheckOut = /^\d{4}-\d{2}-\d{2}$/.test(searchCriteria.checkOut)
+    ? searchCriteria.checkOut
+    : "";
 
   return (
     <div ref={containerRef} className="w-full max-w-4xl mx-auto relative z-30">
-      {/* Property Type Tabs */}
-      <div className="flex items-center gap-2 mb-3 px-2">
-        {[
-          { id: "all", label: "Tất cả chỗ nghỉ" },
-          { id: "homestay", label: "🏡 Homestay" },
-          { id: "hotel", label: "🏨 Khách sạn" },
-          { id: "villa", label: "🏖️ Villa biệt thự" },
-          { id: "glamping", label: "🏕️ Glamping" },
-        ].map((tab) => (
+      {/* Property Type Tabs (2-way synced with Stay Catalog Query) */}
+      <div className="flex items-center flex-wrap gap-2 mb-3 px-2">
+        {PROPERTY_TYPE_TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            type="button"
+            onClick={() => selectPropertyTypeTab(tab.id)}
             className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all relative ${
               activeTab === tab.id
-                ? "bg-white text-emerald-900 shadow-md scale-105"
+                ? "bg-white text-emerald-900 shadow-md scale-105 ring-1 ring-emerald-200"
                 : "bg-white/80 backdrop-blur-sm text-slate-700 hover:bg-white hover:text-slate-900"
             }`}
           >
@@ -114,41 +131,66 @@ export function SearchBar() {
       {/* Main Search Container */}
       <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-xl border border-slate-200/80 transition-all hover:shadow-2xl">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-2 sm:gap-3 items-center">
-          {/* 1. Destination Field */}
+          {/* 1. Typeable Destination Field + Suggestions Dropdown */}
           <div className="md:col-span-4 relative">
-            <button
-              type="button"
+            <div
               onClick={() => {
-                setDestinationOpen(!destinationOpen);
+                setDestinationOpen(true);
                 setDateOpen(false);
                 setGuestsOpen(false);
+                destinationInputRef.current?.focus();
               }}
-              className="w-full text-left p-3 rounded-2xl hover:bg-slate-50 transition-colors flex items-center gap-3 border border-transparent hover:border-slate-200"
+              className="w-full text-left p-3 rounded-2xl hover:bg-slate-50 focus-within:bg-slate-50 focus-within:border-emerald-300 transition-colors flex items-center gap-3 border border-transparent hover:border-slate-200 cursor-text"
             >
-              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
                 <MapPin className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <label
+                  htmlFor="search-destination-input"
+                  className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider cursor-text"
+                >
                   Điểm đến
-                </span>
-                <span className="block text-sm font-bold text-slate-800 truncate">
-                  {searchCriteria.destination || "Bạn muốn đi đâu?"}
-                </span>
+                </label>
+                <input
+                  id="search-destination-input"
+                  ref={destinationInputRef}
+                  type="text"
+                  value={searchCriteria.destination}
+                  onFocus={() => {
+                    setDestinationOpen(true);
+                    setDateOpen(false);
+                    setGuestsOpen(false);
+                  }}
+                  onChange={(e) => {
+                    setDestination(e.target.value);
+                    setDestinationOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSearchSubmit();
+                    }
+                  }}
+                  placeholder="Bạn muốn đi đâu? (VD: da lat)"
+                  className="w-full bg-transparent text-sm font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-semibold focus:outline-none truncate"
+                />
               </div>
               {searchCriteria.destination && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSearchCriteria((prev) => ({ ...prev, destination: "" }));
+                    setDestination("");
+                    destinationInputRef.current?.focus();
                   }}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-full"
+                  aria-label="Xóa điểm đến"
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-full shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
-            </button>
+            </div>
 
             {/* Destination Dropdown */}
             <AnimatePresence>
@@ -163,30 +205,41 @@ export function SearchBar() {
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                       Điểm đến phổ biến
                     </span>
-                    <span className="text-[11px] text-emerald-600 font-semibold">Gợi ý hôm nay</span>
+                    <span className="text-[11px] text-emerald-600 font-semibold">
+                      {filteredDestinations.length} gợi ý
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto no-scrollbar">
-                    {DESTINATIONS.map((dest) => (
-                      <button
-                        key={dest.id}
-                        type="button"
-                        onClick={() => handleSelectDestination(dest.name)}
-                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-emerald-50 text-left transition-colors group"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-700 transition-colors">
-                          <MapPin className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-800 group-hover:text-emerald-700 truncate">
-                            {dest.name}
+                  {filteredDestinations.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto no-scrollbar">
+                      {filteredDestinations.map((dest) => (
+                        <button
+                          key={dest.id}
+                          type="button"
+                          onClick={() => handleSelectDestination(dest.name)}
+                          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-emerald-50 text-left transition-colors group"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-700 transition-colors shrink-0">
+                            <MapPin className="w-4 h-4" />
                           </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {dest.propertiesCount} chỗ nghỉ
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-800 group-hover:text-emerald-700 truncate">
+                              {dest.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {dest.propertiesCount} chỗ nghỉ
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 py-3 text-center">
+                      Nhấn <strong>Enter</strong> hoặc nút tìm kiếm để lọc theo{" "}
+                      <span className="font-bold text-emerald-700">
+                        &ldquo;{searchCriteria.destination}&rdquo;
+                      </span>
+                    </p>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -214,9 +267,8 @@ export function SearchBar() {
                   Thời gian lưu trú
                 </span>
                 <span className="block text-sm font-bold text-slate-800 truncate">
-                  {searchCriteria.checkIn && searchCriteria.checkOut
-                    ? `${searchCriteria.checkIn} - ${searchCriteria.checkOut}`
-                    : "Chọn ngày nhận & trả phòng"}
+                  {formatSearchDateRange(searchCriteria.checkIn, searchCriteria.checkOut) ||
+                    "Chọn ngày nhận & trả phòng"}
                 </span>
               </div>
             </button>
@@ -234,21 +286,12 @@ export function SearchBar() {
                     Chọn lịch trình nhanh
                   </span>
                   <div className="grid grid-cols-2 gap-2 mb-4">
-                    {[
-                      { label: "Cuối tuần này (T7 - CN)", in: "14/11", out: "15/11" },
-                      { label: "3 ngày 2 đêm (T6 - CN)", in: "20/11", out: "22/11" },
-                      { label: "Giữa tuần thư giãn", in: "18/11", out: "20/11" },
-                      { label: "Kỳ nghỉ cuối năm", in: "25/12", out: "28/12" },
-                    ].map((preset, idx) => (
+                    {QUICK_DATE_PRESETS.map((preset) => (
                       <button
-                        key={idx}
+                        key={preset.id}
                         type="button"
                         onClick={() => {
-                          setSearchCriteria((prev) => ({
-                            ...prev,
-                            checkIn: preset.in,
-                            checkOut: preset.out,
-                          }));
+                          setDates({ checkIn: preset.checkIn, checkOut: preset.checkOut });
                           setDateOpen(false);
                           setGuestsOpen(true);
                         }}
@@ -258,7 +301,7 @@ export function SearchBar() {
                           {preset.label}
                         </span>
                         <span className="text-[11px] text-emerald-600 block mt-0.5 font-medium">
-                          {preset.in} → {preset.out}
+                          {preset.displayRange}
                         </span>
                       </button>
                     ))}
@@ -267,18 +310,19 @@ export function SearchBar() {
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <input
                       type="date"
+                      value={isoCheckIn}
+                      aria-label="Ngày nhận phòng"
                       className="text-xs p-2 border border-slate-200 rounded-xl flex-1 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      onChange={(e) =>
-                        setSearchCriteria((prev) => ({ ...prev, checkIn: e.target.value }))
-                      }
+                      onChange={(e) => setDates({ checkIn: e.target.value })}
                     />
                     <span className="text-slate-400 text-xs">đến</span>
                     <input
                       type="date"
+                      value={isoCheckOut}
+                      min={isoCheckIn || undefined}
+                      aria-label="Ngày trả phòng"
                       className="text-xs p-2 border border-slate-200 rounded-xl flex-1 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      onChange={(e) =>
-                        setSearchCriteria((prev) => ({ ...prev, checkOut: e.target.value }))
-                      }
+                      onChange={(e) => setDates({ checkOut: e.target.value })}
                     />
                   </div>
                 </motion.div>
@@ -305,7 +349,7 @@ export function SearchBar() {
               </div>
               <div className="flex-1 min-w-0">
                 <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Số khách & Phòng
+                  Số khách &amp; Phòng
                 </span>
                 <span className="block text-sm font-bold text-slate-800 truncate">
                   {totalGuests} khách • {searchCriteria.guests.rooms} phòng
@@ -331,7 +375,8 @@ export function SearchBar() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("adults", -1)}
+                        onClick={() => adjustGuests("adults", -1)}
+                        aria-label="Giảm số người lớn"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Minus className="w-3.5 h-3.5" />
@@ -341,7 +386,8 @@ export function SearchBar() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("adults", 1)}
+                        onClick={() => adjustGuests("adults", 1)}
+                        aria-label="Tăng số người lớn"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -358,7 +404,8 @@ export function SearchBar() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("children", -1)}
+                        onClick={() => adjustGuests("children", -1)}
+                        aria-label="Giảm số trẻ em"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Minus className="w-3.5 h-3.5" />
@@ -368,7 +415,8 @@ export function SearchBar() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("children", 1)}
+                        onClick={() => adjustGuests("children", 1)}
+                        aria-label="Tăng số trẻ em"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -385,7 +433,8 @@ export function SearchBar() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("rooms", -1)}
+                        onClick={() => adjustGuests("rooms", -1)}
+                        aria-label="Giảm số phòng"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Minus className="w-3.5 h-3.5" />
@@ -395,7 +444,8 @@ export function SearchBar() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleGuestCountChange("rooms", 1)}
+                        onClick={() => adjustGuests("rooms", 1)}
+                        aria-label="Tăng số phòng"
                         className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-600"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -422,26 +472,21 @@ export function SearchBar() {
         </div>
       </div>
 
-      {/* Popular quick tags underneath search bar */}
+      {/* Structured Quick Search Trends */}
       <div className="flex items-center flex-wrap gap-2 mt-3 px-2 text-xs">
         <span className="text-slate-400 font-medium flex items-center gap-1">
           <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Xu hướng tìm:
         </span>
-        {["Đà Lạt săn mây", "Phú Quốc resort", "Sa Pa view núi", "Đà Nẵng gần biển", "Hội An phố cổ"].map(
-          (tag, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                const cityName = tag.split(" ")[0];
-                handleSelectDestination(cityName);
-              }}
-              className="px-3 py-1 bg-white/70 hover:bg-white text-slate-700 hover:text-emerald-700 rounded-full border border-slate-200/60 shadow-xs transition-colors backdrop-blur-xs"
-            >
-              {tag}
-            </button>
-          )
-        )}
+        {QUICK_SEARCH_TRENDS.map((trend) => (
+          <button
+            key={trend.id}
+            type="button"
+            onClick={() => handleQuickTrendClick(trend)}
+            className="px-3 py-1 bg-white/70 hover:bg-white text-slate-700 hover:text-emerald-700 rounded-full border border-slate-200/60 shadow-xs transition-colors backdrop-blur-xs"
+          >
+            {trend.label}
+          </button>
+        ))}
       </div>
     </div>
   );
