@@ -1,4 +1,4 @@
-import { resolvePropertyAmenities } from "@/lib/amenities";
+import { projectPropertyAmenities } from "@/lib/amenities";
 import type {
   BookingDetails,
   BookingQuote,
@@ -378,8 +378,7 @@ export function toggleSessionAmenity(
   amenityId: string
 ): BookingSessionState {
   if (!current.property) return current;
-  const resolved = resolvePropertyAmenities(current.property);
-  const target = resolved.find((item) => item.id === amenityId);
+  const target = projectPropertyAmenities(current.property).byId.get(amenityId);
   if (!target || target.pricingType === "included") {
     return current;
   }
@@ -416,7 +415,7 @@ export function deriveBookingQuote(
   const nights = clampNights(session.nights);
   const adults = clampAdults(session.guests.adults, property.maxGuests);
   const { checkIn, checkOut } = computeStayDates(nights, session.checkInSeed, fallbackBaseDate);
-  const resolvedAmenities = resolvePropertyAmenities(property);
+  const resolvedAmenities = [...projectPropertyAmenities(property).all];
   const selectedAmenities = buildSelectedBookingAmenities(
     resolvedAmenities,
     session.selectedAmenityIds

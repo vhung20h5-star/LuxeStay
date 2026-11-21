@@ -14,7 +14,7 @@ import {
   Tag,
 } from "lucide-react";
 import type { ResolvedPropertyAmenity } from "@/types";
-import { formatVND } from "@/lib/utils";
+import { describeAmenityPricing } from "@/lib/amenities";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AmenityIcon } from "./AmenityIcon";
@@ -37,21 +37,13 @@ export function AmenityDetailPanel({
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const showFallback = failedImageUrl === amenity.image;
 
-  const isPaid = amenity.pricingType === "paid";
-  const isFreeReservation = amenity.pricingType === "free-reservation";
-  const isIncluded = amenity.pricingType === "included";
-
-  const priceDisplay = isPaid
-    ? `${formatVND(amenity.price ?? 0)}${amenity.priceUnit ? ` / ${amenity.priceUnit}` : ""}`
-    : isFreeReservation
-      ? "Miễn phí (0đ)"
-      : "Miễn phí • Bao gồm sẵn";
-
-  const statusDisplay = isPaid
-    ? "Dịch vụ chọn thêm (cộng vào đơn)"
-    : isFreeReservation
-      ? "Khuyến nghị đăng ký trước"
-      : "Sử dụng tự do trong kỳ nghỉ";
+  const pricing = describeAmenityPricing(amenity);
+  const heroBadgeClass =
+    pricing.tone === "paid"
+      ? "bg-amber-500"
+      : pricing.tone === "free-reservation"
+        ? "bg-teal-600"
+        : "bg-emerald-600";
 
   return (
     <div className="space-y-5">
@@ -101,19 +93,9 @@ export function AmenityDetailPanel({
 
         {/* Pricing Badge */}
         <div className="absolute top-3 right-3">
-          {isPaid ? (
-            <Badge className="bg-amber-500 text-white font-bold border-none shadow-xs">
-              +{formatVND(amenity.price ?? 0)}
-            </Badge>
-          ) : isFreeReservation ? (
-            <Badge className="bg-teal-600 text-white font-bold border-none shadow-xs">
-              Miễn phí • Cần đặt trước
-            </Badge>
-          ) : (
-            <Badge className="bg-emerald-600 text-white font-bold border-none shadow-xs">
-              Miễn phí
-            </Badge>
-          )}
+          <Badge className={`${heroBadgeClass} text-white font-bold border-none shadow-xs`}>
+            {pricing.heroBadge}
+          </Badge>
         </div>
       </div>
 
@@ -171,7 +153,7 @@ export function AmenityDetailPanel({
               Chi phí
             </span>
             <span className="text-xs font-bold text-slate-800 block mt-0.5 leading-snug">
-              {priceDisplay}
+              {pricing.detailPrice}
             </span>
           </div>
         </div>
@@ -185,7 +167,7 @@ export function AmenityDetailPanel({
               Trạng thái / Đặt trước
             </span>
             <span className="text-xs font-bold text-slate-800 block mt-0.5 leading-snug">
-              {statusDisplay}
+              {pricing.detailStatus}
             </span>
           </div>
         </div>
@@ -204,37 +186,11 @@ export function AmenityDetailPanel({
 
       {/* Action Area */}
       <div className="pt-1">
-        {isIncluded ? (
+        {!pricing.isSelectable ? (
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center gap-3 text-emerald-900">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <p className="text-xs font-semibold leading-relaxed">
-              Đã bao gồm sẵn trong kỳ nghỉ — bạn có thể sử dụng tự do không cần đăng ký thêm.
-            </p>
+            <p className="text-xs font-semibold leading-relaxed">{pricing.includedNotice}</p>
           </div>
-        ) : isFreeReservation ? (
-          <Button
-            type="button"
-            variant={isSelected ? "outline" : "primary"}
-            size="lg"
-            onClick={() => onToggleSelect(amenity.id)}
-            className={`w-full justify-center text-sm font-bold ${
-              isSelected
-                ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-rose-50 hover:border-rose-400 hover:text-rose-700"
-                : ""
-            }`}
-          >
-            {isSelected ? (
-              <>
-                <Check className="w-4 h-4" />
-                <span>Đã đăng ký vào chuyến đi (Miễn phí) — Bấm để hủy</span>
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                <span>Đăng ký sử dụng miễn phí khi đặt phòng</span>
-              </>
-            )}
-          </Button>
         ) : (
           <Button
             type="button"
@@ -250,14 +206,12 @@ export function AmenityDetailPanel({
             {isSelected ? (
               <>
                 <Check className="w-4 h-4" />
-                <span>
-                  Đã thêm vào đặt phòng (+{formatVND(amenity.price ?? 0)}) — Bấm để gỡ
-                </span>
+                <span>{pricing.selectedActionLabel}</span>
               </>
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                <span>Yêu cầu thêm khi đặt phòng (+{formatVND(amenity.price ?? 0)})</span>
+                <span>{pricing.selectActionLabel}</span>
               </>
             )}
           </Button>

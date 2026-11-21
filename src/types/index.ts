@@ -18,12 +18,6 @@ export interface Category {
   description?: string;
 }
 
-export interface Amenity {
-  id: string;
-  name: string;
-  icon: string;
-}
-
 export type AmenityCategoryId =
   | "pool-beach"
   | "sports-recreation"
@@ -103,6 +97,87 @@ export interface SelectedBookingAmenity {
   pricingType: "free-reservation" | "paid";
   price: number;
   priceUnit?: string;
+}
+
+export type AmenityFeeFilter = "all" | "free" | "paid" | "selected";
+
+export interface AmenityCategoryGroup {
+  category: AmenityCategoryMeta;
+  items: readonly ResolvedPropertyAmenity[];
+}
+
+export interface AmenityCategorySummary {
+  category: AmenityCategoryMeta;
+  count: number;
+}
+
+export interface PropertyAmenityProjection {
+  all: readonly ResolvedPropertyAmenity[];
+  totalCount: number;
+  byId: ReadonlyMap<string, ResolvedPropertyAmenity>;
+  groups: readonly AmenityCategoryGroup[];
+  categories: readonly AmenityCategorySummary[];
+  cardHighlights: readonly AmenityCategoryMeta[];
+  featured: readonly ResolvedPropertyAmenity[];
+  filterKeys: ReadonlySet<AmenityFilterKey>;
+}
+
+export interface AmenityExplorerState {
+  activeCategory: AmenityCategoryId | "all";
+  searchQuery: string;
+  feeFilter: AmenityFeeFilter;
+  activeAmenityId: string | null;
+  mobileShowDetail: boolean;
+}
+
+export type AmenityExplorerAction =
+  | { type: "SET_CATEGORY"; category: AmenityCategoryId | "all" }
+  | { type: "SET_SEARCH"; query: string }
+  | { type: "SET_FEE_FILTER"; feeFilter: AmenityFeeFilter }
+  | { type: "SELECT_AMENITY"; amenityId: string }
+  | { type: "BACK_TO_LIST" }
+  | { type: "RESET_FILTERS" };
+
+export interface AmenityFeeFilterOption {
+  id: AmenityFeeFilter;
+  label: string;
+}
+
+export interface AmenityExplorerView {
+  totalCount: number;
+  availableCategories: readonly AmenityCategorySummary[];
+  feeFilterOptions: AmenityFeeFilterOption[];
+  filteredItems: ResolvedPropertyAmenity[];
+  groupedItems: AmenityCategoryGroup[];
+  effectiveActiveAmenity: ResolvedPropertyAmenity | null;
+  activeCategoryLabel: string;
+  mobileShowDetail: boolean;
+  selectedAmenityIds: ReadonlySet<string>;
+  selectedCount: number;
+  selectedTotalFee: number;
+  isEmpty: boolean;
+}
+
+export type AmenityPricingTone = AmenityPricingType;
+
+export interface AmenityPricingDescriptor {
+  tone: AmenityPricingTone;
+  isSelectable: boolean;
+  compactBadge: string;
+  heroBadge: string;
+  detailPrice: string;
+  detailStatus: string;
+  includedNotice: string;
+  selectActionLabel: string;
+  selectedActionLabel: string;
+}
+
+export interface SelectedAmenityDisplay {
+  tone: "free-reservation" | "paid";
+  subtitle: string;
+  compactFee: string;
+  checkoutFee: string;
+  confirmedFee: string;
 }
 
 export type BookingSessionStep = "idle" | "previewing" | "checking-out" | "confirmed";
@@ -202,7 +277,6 @@ export interface Property {
   bedrooms: number;
   beds: number;
   bathrooms: number;
-  amenities: string[];
   resortAmenities: PropertyAmenityOverride[];
   isSuperhost?: boolean;
   isFeatured?: boolean;

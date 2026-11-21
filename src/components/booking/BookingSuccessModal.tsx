@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useBooking } from "@/context/BookingContext";
+import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
@@ -165,26 +166,31 @@ export function BookingSuccessModal() {
                     <span>Tiện ích &amp; dịch vụ đi kèm đã đăng ký ({selectedAmenities.length})</span>
                   </div>
                   {pricing.amenitiesFee > 0 && (
-                    <span className="text-emerald-700">+{formatVND(pricing.amenitiesFee)}</span>
+                    <span className="text-emerald-700">
+                      {formatAmenitiesFeeSummary(pricing.amenitiesFee)}
+                    </span>
                   )}
                 </div>
 
                 <div className="space-y-1.5">
-                  {selectedAmenities.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-2 text-xs bg-white/90 px-3 py-2 rounded-xl border border-emerald-100"
-                    >
-                      <span className="font-medium text-slate-800 truncate">{item.name}</span>
-                      <span
-                        className={`font-bold shrink-0 ${
-                          item.price > 0 ? "text-amber-700" : "text-teal-700"
-                        }`}
+                  {selectedAmenities.map((item) => {
+                    const display = describeSelectedAmenity(item);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-2 text-xs bg-white/90 px-3 py-2 rounded-xl border border-emerald-100"
                       >
-                        {item.price > 0 ? `+${formatVND(item.price)}` : "Miễn phí • Đã đăng ký"}
-                      </span>
-                    </div>
-                  ))}
+                        <span className="font-medium text-slate-800 truncate">{item.name}</span>
+                        <span
+                          className={`font-bold shrink-0 ${
+                            display.tone === "paid" ? "text-amber-700" : "text-teal-700"
+                          }`}
+                        >
+                          {display.confirmedFee}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

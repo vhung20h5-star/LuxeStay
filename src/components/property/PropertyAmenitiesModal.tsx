@@ -4,17 +4,14 @@ import React, { useEffect, useMemo, useReducer } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Search, SearchX, Sparkles, X } from "lucide-react";
 import type { AmenityCategoryId, Property, SelectedBookingAmenity } from "@/types";
-import { AMENITY_CATEGORIES } from "@/data/amenities";
 import {
-  createAmenitiesModalState,
-  filterPropertyAmenities,
-  getPropertyAmenityCategories,
-  groupAmenitiesByCategory,
-  reduceAmenitiesModalState,
-  resolvePropertyAmenities,
-  type AmenityFeeFilter,
+  createAmenityExplorerState,
+  deriveAmenityExplorerView,
+  describeAmenityPricing,
+  formatAmenitiesFeeSummary,
+  projectPropertyAmenities,
+  reduceAmenityExplorerState,
 } from "@/lib/amenities";
-import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { AmenityIcon } from "./AmenityIcon";
 import { AmenityDetailPanel } from "./AmenityDetailPanel";
@@ -41,22 +38,14 @@ function PropertyAmenitiesModalContent({
   onToggleAmenity,
   onClose,
 }: InnerProps) {
-  const resolvedAmenities = useMemo(() => resolvePropertyAmenities(property), [property]);
-  const availableCategories = useMemo(
-    () => getPropertyAmenityCategories(resolvedAmenities),
-    [resolvedAmenities]
-  );
+  const projection = projectPropertyAmenities(property);
 
-  const [modalState, dispatch] = useReducer(
-    reduceAmenitiesModalState,
-    {
-      initialAmenityId,
-      initialCategory,
-      fallbackAmenityId: resolvedAmenities[0]?.id ?? null,
-    },
-    createAmenitiesModalState
+  const [explorerState, dispatch] = useReducer(
+    reduceAmenityExplorerState,
+    { projection, initialAmenityId, initialCategory },
+    createAmenityExplorerState
   );
-  const { activeCategory, searchQuery, feeFilter, activeAmenityId, mobileShowDetail } = modalState;
+  const { activeCategory, searchQuery, feeFilter } = explorerState;
 
   // Capture-phase Escape handling so only this modal closes (not PropertyModal underneath)
   useEffect(() => {
@@ -71,56 +60,10 @@ function PropertyAmenitiesModalContent({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [onClose]);
 
-  const selectedAmenityIds = useMemo(
-    () => selectedAmenities.map((item) => item.id),
-    [selectedAmenities]
+  const view = useMemo(
+    () => deriveAmenityExplorerView(projection, explorerState, selectedAmenities),
+    [projection, explorerState, selectedAmenities]
   );
-
-  const selectedTotalFee = useMemo(
-    () => selectedAmenities.reduce((sum, item) => sum + item.price, 0),
-    [selectedAmenities]
-  );
-
-  const filteredAmenities = useMemo(
-    () =>
-      filterPropertyAmenities(resolvedAmenities, {
-        query: searchQuery,
-        category: activeCategory,
-        feeFilter,
-        selectedIds: selectedAmenityIds,
-      }),
-    [resolvedAmenities, searchQuery, activeCategory, feeFilter, selectedAmenityIds]
-  );
-
-  const groupedFiltered = useMemo(
-    () => groupAmenitiesByCategory(filteredAmenities),
-    [filteredAmenities]
-  );
-
-  // Auto-fallback to first visible item when active item is filtered out
-  const effectiveActiveAmenity = useMemo(
-    () => filteredAmenities.find((a) => a.id === activeAmenityId) ?? filteredAmenities[0] ?? null,
-    [filteredAmenities, activeAmenityId]
-  );
-
-  const categoryLabelMap = useMemo(() => {
-    const map = new Map<AmenityCategoryId, string>();
-    for (const c of AMENITY_CATEGORIES) {
-      map.set(c.id, c.label);
-    }
-    return map;
-  }, []);
-
-  const handleResetFilters = () => {
-    dispatch({ type: "RESET_FILTERS" });
-  };
-
-  const feeFilterOptions: Array<{ id: AmenityFeeFilter; label: string }> = [
-    { id: "all", label: "Tất cả" },
-    { id: "free", label: "Miễn phí" },
-    { id: "paid", label: "Có phụ phí" },
-    { id: "selected", label: `Đã chọn (${selectedAmenities.length})` },
-  ];
 
   return (
     <div
@@ -160,7 +103,7 @@ function PropertyAmenitiesModalContent({
                   Tất cả tiện ích &amp; dịch vụ
                 </h3>
                 <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                  {resolvedAmenities.length} tiện ích
+                  {view.totalCount} tiện ích
                 </span>
               </div>
               <p className="text-xs text-slate-500 truncate mt-0.5">{property.title}</p>
@@ -200,7 +143,7 @@ function PropertyAmenitiesModalContent({
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
-              {feeFilterOptions.map((opt) => {
+              {view.feeFilterOptions.map((opt) => {
                 const active = feeFilter === opt.id;
                 return (
                   <button
@@ -231,10 +174,10 @@ function PropertyAmenitiesModalContent({
                   : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300"
               }`}
             >
-              <span>Tất cả ({resolvedAmenities.length})</span>
+              <span>Tất cả ({view.totalCount})</span>
             </button>
 
-            {availableCategories.map(({ category, count }) => {
+            {view.availableCategories.map(({ category, count }) => {
               const active = activeCategory === category.id;
               return (
                 <button
@@ -262,7 +205,7 @@ function PropertyAmenitiesModalContent({
 
         {/* Main Master-Detail Body */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {filteredAmenities.length === 0 ? (
+          {view.isEmpty ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
               <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
                 <SearchX className="w-7 h-7" />
@@ -274,7 +217,12 @@ function PropertyAmenitiesModalContent({
                 Thử xóa bớt từ khóa tìm kiếm hoặc chọn lại danh mục để xem đầy đủ các tiện ích tại{" "}
                 {property.title}.
               </p>
-              <Button type="button" variant="outline" size="sm" onClick={handleResetFilters}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => dispatch({ type: "RESET_FILTERS" })}
+              >
                 Đặt lại bộ lọc
               </Button>
             </div>
@@ -283,10 +231,10 @@ function PropertyAmenitiesModalContent({
               {/* Left Master List */}
               <div
                 className={`h-full md:col-span-5 md:border-r border-slate-100 overflow-y-auto p-3.5 sm:p-4 space-y-5 bg-white ${
-                  mobileShowDetail ? "hidden md:block" : "block"
+                  view.mobileShowDetail ? "hidden md:block" : "block"
                 }`}
               >
-                {groupedFiltered.map(({ category, items }) => (
+                {view.groupedItems.map(({ category, items }) => (
                   <div key={category.id} className="space-y-2">
                     <div className="flex items-center justify-between px-1">
                       <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
@@ -303,8 +251,15 @@ function PropertyAmenitiesModalContent({
 
                     <div className="space-y-1.5">
                       {items.map((item) => {
-                        const isActive = effectiveActiveAmenity?.id === item.id;
-                        const isItemSelected = selectedAmenityIds.includes(item.id);
+                        const isActive = view.effectiveActiveAmenity?.id === item.id;
+                        const isItemSelected = view.selectedAmenityIds.has(item.id);
+                        const pricingDesc = describeAmenityPricing(item);
+                        const badgeClass =
+                          pricingDesc.tone === "paid"
+                            ? "font-bold text-amber-800 bg-amber-100/90"
+                            : pricingDesc.tone === "free-reservation"
+                              ? "font-semibold text-teal-800 bg-teal-100/80"
+                              : "font-semibold text-emerald-700 bg-emerald-100/70";
 
                         return (
                           <button
@@ -334,19 +289,11 @@ function PropertyAmenitiesModalContent({
                                 {item.name}
                               </div>
                               <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                {item.pricingType === "paid" ? (
-                                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded-md">
-                                    +{formatVND(item.price ?? 0)}
-                                  </span>
-                                ) : item.pricingType === "free-reservation" ? (
-                                  <span className="text-[10px] font-semibold text-teal-800 bg-teal-100/80 px-1.5 py-0.5 rounded-md">
-                                    Miễn phí • Đặt trước
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded-md">
-                                    Miễn phí
-                                  </span>
-                                )}
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-md ${badgeClass}`}
+                                >
+                                  {pricingDesc.compactBadge}
+                                </span>
 
                                 {isItemSelected && (
                                   <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-white bg-emerald-600 px-1.5 py-0.5 rounded-md">
@@ -374,16 +321,14 @@ function PropertyAmenitiesModalContent({
               {/* Right Detail Pane */}
               <div
                 className={`h-full md:col-span-7 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 ${
-                  mobileShowDetail ? "block" : "hidden md:block"
+                  view.mobileShowDetail ? "block" : "hidden md:block"
                 }`}
               >
-                {effectiveActiveAmenity && (
+                {view.effectiveActiveAmenity && (
                   <AmenityDetailPanel
-                    amenity={effectiveActiveAmenity}
-                    categoryLabel={
-                      categoryLabelMap.get(effectiveActiveAmenity.category) ?? "Tiện ích"
-                    }
-                    isSelected={selectedAmenityIds.includes(effectiveActiveAmenity.id)}
+                    amenity={view.effectiveActiveAmenity}
+                    categoryLabel={view.activeCategoryLabel}
+                    isSelected={view.selectedAmenityIds.has(view.effectiveActiveAmenity.id)}
                     onToggleSelect={onToggleAmenity}
                     onBackMobile={() => dispatch({ type: "BACK_TO_LIST" })}
                   />
@@ -396,17 +341,17 @@ function PropertyAmenitiesModalContent({
         {/* Sticky Bottom Footer */}
         <div className="shrink-0 p-3.5 sm:px-6 sm:py-4 border-t border-slate-100 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs">
-            {selectedAmenities.length > 0 ? (
+            {view.selectedCount > 0 ? (
               <>
                 <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
                 <div>
                   <span className="font-bold text-slate-900">
-                    Đã chọn {selectedAmenities.length} dịch vụ đi kèm
+                    Đã chọn {view.selectedCount} dịch vụ đi kèm
                   </span>
                   <span className="text-emerald-700 font-bold ml-1.5">
-                    {selectedTotalFee > 0 ? `(+${formatVND(selectedTotalFee)})` : "(Miễn phí 0đ)"}
+                    {formatAmenitiesFeeSummary(view.selectedTotalFee, "parenthesized")}
                   </span>
                 </div>
               </>

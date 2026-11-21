@@ -40,3 +40,12 @@ Mô tả có cấu trúc do `Stay Catalog Query` sinh ra cho từng tiêu chí l
 
 ### Quick Search Trend (Xu hướng tìm kiếm nhanh)
 Bộ gợi ý tìm kiếm có cấu trúc (`label`, `destination`, tùy chọn `category` / `propertyType`) giúp áp dụng chính xác thành phố và bộ lọc phù hợp chỉ bằng 1 chạm (đồng thời xóa bộ lọc danh mục/loại hình xung đột từ lượt tìm trước), thay cho cách cắt chuỗi thủ công dễ sai.
+
+### Property Amenity Projection (Bản chiếu tiện ích chỗ nghỉ)
+Cấu trúc dẫn xuất có cache theo tham chiếu (`WeakMap` trên `property.resortAmenities`) cho toàn bộ tiện ích đã hợp nhất của một `Property`: danh sách đầy đủ (`all`), tra cứu $O(1)$ theo mã (`byId`), phân nhóm theo 7 danh mục chuẩn (`groups`, `categories`), top 3 nhóm hiển thị thẻ (`cardHighlights`), top 6 tiện ích nổi bật (`featured`) và tập khóa lọc trang chủ (`filterKeys`). Mọi caller đọc tiện ích của một `Property` đều đi qua cùng một bản chiếu thay vì giải nghĩa lặp lại.
+
+### Amenity Explorer (Trình duyệt tiện ích Master–Detail)
+Bộ máy trạng thái và hàm dẫn xuất view model thuần (`createAmenityExplorerState`, `reduceAmenityExplorerState`, `deriveAmenityExplorerView`) cho cửa sổ xem toàn bộ tiện ích (`PropertyAmenitiesModal`): kiểm tra hợp lệ đầu vào khởi tạo, lọc tiếng Việt không dấu, lọc theo mức phí/danh mục, gom nhóm theo thứ tự ưu tiên, tự động fallback mục đang xem khi bị lọc ẩn, và quản lý điều hướng danh sách/chi tiết trên màn hình di động.
+
+### Amenity Pricing Descriptor (Bộ mô tả hiển thị giá tiện ích)
+Nguồn chân lý duy nhất (`describeAmenityPricing`, `describeSelectedAmenity`, `formatAmenitiesFeeSummary`) chuyển `pricingType` (`included`, `free-reservation`, `paid`) và mức phụ phí thành nhãn ngắn, trạng thái đặt trước, câu chữ hành động và `tone` ngữ nghĩa thống nhất cho toàn bộ 5 màn hình từ thẻ tiện ích đến vé xác nhận đặt phòng.

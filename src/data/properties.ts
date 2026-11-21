@@ -27,15 +27,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 2,
     beds: 2,
     bathrooms: 2,
-    amenities: [
-      "View ngắm mây trọn thung lũng",
-      "Bồn tắm gỗ ngoài trời",
-      "Lò sưởi củi ấm áp",
-      "Bếp nướng BBQ sân vườn",
-      "Wifi cáp quang tốc độ cao",
-      "Bữa sáng tự chọn tại phòng",
-      "Trà thảo mộc & Cà phê hạt Arabica",
-    ],
     resortAmenities: [
       {
         amenityId: "outdoor-wooden-tub",
@@ -142,14 +133,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 3,
     beds: 3,
     bathrooms: 3,
-    amenities: [
-      "Lối đi thẳng ra bãi biển cát trắng",
-      "Hồ bơi vô cực riêng tư tràn bờ",
-      "Bữa sáng nổi trên mặt nước (Floating Breakfast)",
-      "Đưa đón sân bay 2 chiều miễn phí",
-      "Thuyền chèo SUP & kính lặn san hô",
-      "Quầy bar cocktail & rượu vang",
-    ],
     resortAmenities: [
       {
         amenityId: "infinity-pool",
@@ -241,14 +224,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 1,
     bathrooms: 1,
-    amenities: [
-      "Ban công ngắm đỉnh Fansipan & thung lũng Mường Hoa",
-      "Bể bơi nước ấm vô cực 4 mùa",
-      "Spa tắm lá thuốc thảo dược người Dao Đỏ",
-      "Nhà hàng ẩm thực Tây Bắc cao cấp",
-      "Hệ thống sưởi sàn phòng tắm",
-      "Phòng gym & Yoga view núi",
-    ],
     resortAmenities: [
       {
         amenityId: "heated-pool",
@@ -356,14 +331,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 2,
     bathrooms: 1,
-    amenities: [
-      "Không gian rừng thông bao quanh 360 độ",
-      "Đốt lửa trại nướng khoai bắp mỗi tối",
-      "Máy chiếu phim HD Netflix trong phòng",
-      "Góc đọc sách với hơn 300 đầu sách văn học",
-      "Nuôi thú cưng thân thiện (Golden & Corgi)",
-      "Bếp đầy đủ gia vị tự nấu ăn",
-    ],
     resortAmenities: [
       { amenityId: "campfire-roast", featured: true },
       { amenityId: "netflix-projector", featured: true },
@@ -430,13 +397,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 2,
     beds: 2,
     bathrooms: 2,
-    amenities: [
-      "Hồ bơi vô cực ngói đá tự nhiên giữa vườn dừa",
-      "Xe đạp miễn phí dạo đồng lúa và phố cổ",
-      "Lớp học nấu món ăn Hội An (Cao lầu, bánh xèo)",
-      "Quầy bar ven biển phục vụ hải sản nướng",
-      "Xe điện đưa đón vào Phố Cổ",
-    ],
     resortAmenities: [
       {
         amenityId: "infinity-pool",
@@ -533,13 +493,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 2,
     bathrooms: 1,
-    amenities: [
-      "Ban công sàn gỗ sát mặt hồ sen nở hoa ngát hương",
-      "Thuyền gỗ riêng chèo quanh hồ chân núi",
-      "Đặc sản cơm cháy thịt dê truyền thống",
-      "Hồ bơi tự nhiên lọc sinh học",
-      "Xe đạp leo núi khám phá Hang Múa",
-    ],
     resortAmenities: [
       { amenityId: "bio-pool", featured: true },
       {
@@ -622,14 +575,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 2,
     beds: 2,
     bathrooms: 2,
-    amenities: [
-      "Tầm nhìn 360 độ ngắm trọn Cầu Rồng phun lửa cuối tuần",
-      "Bể bơi tầng thượng & Rooftop Sky Lounge",
-      "Hệ thống Smart Home điều khiển giọng nói",
-      "Bếp đảo cao cấp phong cách Ý",
-      "Máy giặt & sấy quần áo tiện lợi",
-      "Chỗ đỗ xe ô tô hầm thông minh",
-    ],
     resortAmenities: [
       {
         amenityId: "infinity-pool",
@@ -723,14 +668,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 2,
     beds: 2,
     bathrooms: 2,
-    amenities: [
-      "Tàu cao tốc đưa đón riêng từ đất liền",
-      "Bể bơi chạm vào vách đá ngắm hoàng hôn",
-      "Quản gia riêng (Private Butler) phục vụ 24/7",
-      "Spa chăm sóc trị liệu cao cấp độc quyền",
-      "Bữa tối lãng mạn thắp nến tại hang đá tự nhiên",
-      "Tour du thuyền buồm ngắm vịnh",
-    ],
     resortAmenities: [
       {
         amenityId: "infinity-pool",
@@ -830,13 +767,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 1,
     bathrooms: 1,
-    amenities: [
-      "Ban công sắt rèn ngắm phố cổ nhộn nhịp",
-      "Nội thất gỗ lim cổ điển & gạch bông truyền thống",
-      "Máy pha cà phê pha phin và Espresso",
-      "Hệ thống cách âm 3 lớp cực kỳ yên tĩnh",
-      "Tặng bản đồ ẩm thực 50 quán ăn bí truyền phố cổ",
-    ],
     resortAmenities: [
       {
         amenityId: "artisan-tea-coffee",
@@ -917,13 +847,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 2,
     beds: 2,
     bathrooms: 2,
-    amenities: [
-      "Bãi tắm hoang sơ với biển lặng sóng êm",
-      "Hồ bơi vô cực nước mặn view biển",
-      "Nhà hàng gỗ nổi trên biển Camia Sunset",
-      "Bữa sáng buffet phong phú Á - Âu",
-      "Tour câu mực đêm & lặn biển ngắm cá heo",
-    ],
     resortAmenities: [
       {
         amenityId: "infinity-pool",
@@ -1019,13 +942,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 2,
     bathrooms: 1,
-    amenities: [
-      "Thiết kế nhà kính bắt trọn ánh nắng sớm",
-      "Vườn dâu tây & cúc họa mi ngay trước cửa",
-      "Máy pha trà & bánh quy nướng bơ tự làm",
-      "Loa bluetooth Marshall âm thanh ấm áp",
-      "Gợi ý các điểm check-in ít người biết",
-    ],
     resortAmenities: [
       {
         amenityId: "artisan-tea-coffee",
@@ -1110,13 +1026,6 @@ export const PROPERTIES: Property[] = [
     bedrooms: 1,
     beds: 2,
     bathrooms: 1,
-    amenities: [
-      "Lều bạt cách nhiệt cao cấp chuẩn châu Âu",
-      "Toilet & phòng tắm riêng biệt bên trong lều",
-      "Tiệc nướng BBQ thịt nướng và rượu vang nóng",
-      "Rạp chiếu phim ngoài trời dưới bầu trời sao",
-      "Trekking suối thác & trải nghiệm hái nấm rừng",
-    ],
     resortAmenities: [
       { amenityId: "outdoor-cinema", featured: true },
       {

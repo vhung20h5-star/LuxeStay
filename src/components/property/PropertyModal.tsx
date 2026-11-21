@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
@@ -21,7 +21,12 @@ import {
 } from "lucide-react";
 import type { AmenityCategoryId, BookingQuote } from "@/types";
 import { useBooking } from "@/context/BookingContext";
-import { getFeaturedAmenities, getPropertyAmenityCategories } from "@/lib/amenities";
+import {
+  describeAmenityPricing,
+  describeSelectedAmenity,
+  formatAmenitiesFeeSummary,
+  projectPropertyAmenities,
+} from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -46,8 +51,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
     removeBookingAmenity,
   } = useBooking();
 
-  const { property, resolvedAmenities, selectedAmenities, selectedAmenityIds, pricing, nights, guests } =
-    quote;
+  const { property, selectedAmenities, selectedAmenityIds, pricing, nights, guests } = quote;
 
   const [activePhoto, setActivePhoto] = useState(0);
   const [showShareToast, setShowShareToast] = useState(false);
@@ -68,14 +72,11 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [amenitiesModal.isOpen, setSelectedProperty]);
 
-  const categorySummaries = useMemo(
-    () => getPropertyAmenityCategories(resolvedAmenities),
-    [resolvedAmenities]
-  );
-  const featuredAmenities = useMemo(
-    () => getFeaturedAmenities(resolvedAmenities, 6),
-    [resolvedAmenities]
-  );
+  const {
+    totalCount: amenityCount,
+    categories: categorySummaries,
+    featured: featuredAmenities,
+  } = projectPropertyAmenities(property);
 
   const isFav = isFavorite(property.id);
 
@@ -328,7 +329,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                         </p>
                       </div>
                       <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full shrink-0">
-                        {resolvedAmenities.length} tiện ích
+                        {amenityCount} tiện ích
                       </span>
                     </div>
 
@@ -360,6 +361,13 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {featuredAmenities.map((item) => {
                         const isItemSelected = selectedAmenityIds.includes(item.id);
+                        const pricingDesc = describeAmenityPricing(item);
+                        const badgeToneClass =
+                          pricingDesc.tone === "paid"
+                            ? "font-bold text-amber-700"
+                            : pricingDesc.tone === "free-reservation"
+                              ? "font-semibold text-teal-700"
+                              : "font-semibold text-slate-500";
                         return (
                           <button
                             key={item.id}
@@ -395,17 +403,9 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                                   <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700">
                                     <Check className="w-3 h-3" /> Đã chọn
                                   </span>
-                                ) : item.pricingType === "paid" ? (
-                                  <span className="text-[10px] font-bold text-amber-700">
-                                    +{formatVND(item.price ?? 0)}
-                                  </span>
-                                ) : item.pricingType === "free-reservation" ? (
-                                  <span className="text-[10px] font-semibold text-teal-700">
-                                    Miễn phí • Đặt trước
-                                  </span>
                                 ) : (
-                                  <span className="text-[10px] font-semibold text-slate-500">
-                                    Miễn phí
+                                  <span className={`text-[10px] ${badgeToneClass}`}>
+                                    {pricingDesc.compactBadge}
                                   </span>
                                 )}
                               </div>
@@ -426,7 +426,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                       className="w-full justify-center font-bold border-slate-300 hover:border-emerald-600"
                     >
                       <LayoutGrid className="w-4 h-4 text-emerald-600" />
-                      <span>Xem tất cả {resolvedAmenities.length} tiện ích &amp; dịch vụ</span>
+                      <span>Xem tất cả {amenityCount} tiện ích &amp; dịch vụ</span>
                       {selectedAmenities.length > 0 && (
                         <span className="ml-1 text-[11px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
                           {selectedAmenities.length} đã chọn
@@ -590,33 +590,36 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                         </div>
 
                         <div className="space-y-1.5">
-                          {selectedAmenities.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between gap-2 text-xs bg-white/90 px-2.5 py-1.5 rounded-xl border border-emerald-100"
-                            >
-                              <span className="font-medium text-slate-800 truncate">
-                                {item.name}
-                              </span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span
-                                  className={`font-bold text-[11px] ${
-                                    item.price > 0 ? "text-amber-700" : "text-teal-700"
-                                  }`}
-                                >
-                                  {item.price > 0 ? `+${formatVND(item.price)}` : "0đ • Đặt trước"}
+                          {selectedAmenities.map((item) => {
+                            const display = describeSelectedAmenity(item);
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between gap-2 text-xs bg-white/90 px-2.5 py-1.5 rounded-xl border border-emerald-100"
+                              >
+                                <span className="font-medium text-slate-800 truncate">
+                                  {item.name}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeBookingAmenity(item.id)}
-                                  className="p-0.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                  aria-label={`Gỡ ${item.name}`}
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span
+                                    className={`font-bold text-[11px] ${
+                                      display.tone === "paid" ? "text-amber-700" : "text-teal-700"
+                                    }`}
+                                  >
+                                    {display.compactFee}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBookingAmenity(item.id)}
+                                    className="p-0.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                    aria-label={`Gỡ ${item.name}`}
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -643,9 +646,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                         <div className="flex justify-between">
                           <span>Dịch vụ &amp; tiện ích đi kèm ({selectedAmenities.length})</span>
                           <span className="font-semibold text-slate-800">
-                            {pricing.amenitiesFee > 0
-                              ? `+${formatVND(pricing.amenitiesFee)}`
-                              : "Miễn phí"}
+                            {formatAmenitiesFeeSummary(pricing.amenitiesFee)}
                           </span>
                         </div>
                       )}

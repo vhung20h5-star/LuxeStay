@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { AlertCircle, Lock, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
+import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -154,46 +155,47 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
                     <span>Tiện ích &amp; dịch vụ đi kèm đã chọn ({selectedAmenities.length})</span>
                   </div>
                   <span className="text-xs font-bold text-emerald-700">
-                    {pricing.amenitiesFee > 0 ? `+${formatVND(pricing.amenitiesFee)}` : "Miễn phí"}
+                    {formatAmenitiesFeeSummary(pricing.amenitiesFee)}
                   </span>
                 </div>
 
                 <div className="space-y-2">
-                  {selectedAmenities.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-emerald-100"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-800 truncate">{item.name}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {item.pricingType === "paid"
-                            ? item.priceUnit ?? "Gói dịch vụ theo kỳ nghỉ"
-                            : "Miễn phí • Đăng ký giữ chỗ trước"}
+                  {selectedAmenities.map((item) => {
+                    const display = describeSelectedAmenity(item);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-emerald-100"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-slate-800 truncate">
+                            {item.name}
+                          </div>
+                          <div className="text-[11px] text-slate-500">{display.subtitle}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span
+                            className={`text-xs font-bold ${
+                              display.tone === "paid" ? "text-amber-700" : "text-teal-700"
+                            }`}
+                          >
+                            {display.checkoutFee}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeBookingAmenity(item.id)}
+                            disabled={isSubmitting}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-40"
+                            title="Bỏ dịch vụ này"
+                            aria-label={`Bỏ ${item.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          className={`text-xs font-bold ${
-                            item.price > 0 ? "text-amber-700" : "text-teal-700"
-                          }`}
-                        >
-                          {item.price > 0 ? `+${formatVND(item.price)}` : "0đ"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeBookingAmenity(item.id)}
-                          disabled={isSubmitting}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-40"
-                          title="Bỏ dịch vụ này"
-                          aria-label={`Bỏ ${item.name}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -287,18 +289,16 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
                     key={pm.id}
                     type="button"
                     onClick={() => setPaymentMethod(pm.id)}
-                    className={`flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-all ${
-                      paymentMethod === pm.id
-                        ? "border-emerald-600 bg-emerald-50/50 shadow-xs"
-                        : "border-slate-200 hover:border-slate-300 bg-white"
-                    }`}
+                    className={`flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-all ${paymentMethod === pm.id
+                      ? "border-emerald-600 bg-emerald-50/50 shadow-xs"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                      }`}
                   >
                     <div
-                      className={`w-4 h-4 rounded-full border mt-1 flex items-center justify-center ${
-                        paymentMethod === pm.id
-                          ? "border-emerald-600 bg-emerald-600 text-white"
-                          : "border-slate-300"
-                      }`}
+                      className={`w-4 h-4 rounded-full border mt-1 flex items-center justify-center ${paymentMethod === pm.id
+                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        : "border-slate-300"
+                        }`}
                     >
                       {paymentMethod === pm.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                     </div>
@@ -334,7 +334,7 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
                 <div className="flex justify-between text-slate-600">
                   <span>Tiện ích &amp; dịch vụ đi kèm ({selectedAmenities.length})</span>
                   <span className="font-semibold text-slate-800">
-                    {pricing.amenitiesFee > 0 ? `+${formatVND(pricing.amenitiesFee)}` : "Miễn phí"}
+                    {formatAmenitiesFeeSummary(pricing.amenitiesFee)}
                   </span>
                 </div>
               )}

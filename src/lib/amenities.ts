@@ -1,31 +1,86 @@
 import { AMENITY_CATALOG, AMENITY_CATEGORIES } from "@/data/amenities";
-import { normalizeVietnamese } from "@/lib/utils";
+import { formatVND, normalizeVietnamese } from "@/lib/utils";
 import type {
+  AmenityCategoryGroup,
   AmenityCategoryId,
   AmenityCategoryMeta,
+  AmenityCategorySummary,
+  AmenityExplorerAction,
+  AmenityExplorerState,
+  AmenityExplorerView,
+  AmenityFeeFilterOption,
   AmenityFilterKey,
+  AmenityPricingDescriptor,
   Property,
+  PropertyAmenityOverride,
+  PropertyAmenityProjection,
   ResolvedPropertyAmenity,
+  SelectedAmenityDisplay,
+  SelectedBookingAmenity,
 } from "@/types";
 
-export type AmenityFeeFilter = "all" | "free" | "paid" | "selected";
+const CARD_HIGHLIGHT_LIMIT = 3;
+const FEATURED_AMENITY_LIMIT = 6;
+const EMPTY_OVERRIDES: readonly PropertyAmenityOverride[] = Object.freeze([]);
+const INCLUDED_NOTICE =
+  "Đã bao gồm sẵn trong kỳ nghỉ — bạn có thể sử dụng tự do không cần đăng ký thêm.";
 
-export { normalizeVietnamese };
+const CATEGORY_LABEL_MAP = new Map<AmenityCategoryId, string>(
+  AMENITY_CATEGORIES.map((category) => [category.id, category.label])
+);
 
-export function resolvePropertyAmenities(
-  property: Pick<Property, "resortAmenities">
-): ResolvedPropertyAmenity[] {
-  const overrides = property.resortAmenities ?? [];
-  const resolved: ResolvedPropertyAmenity[] = [];
+const PROJECTION_CACHE = new WeakMap<
+  readonly PropertyAmenityOverride[],
+  PropertyAmenityProjection
+>();
+
+function sanitizePositiveFee(price: number | undefined): number {
+  return typeof price === "number" && Number.isFinite(price) && price > 0 ? price : 0;
+}
+
+function groupResolvedAmenities(
+  amenities: readonly ResolvedPropertyAmenity[],
+  freezeItems = false
+): AmenityCategoryGroup[] {
+  const grouped = new Map<AmenityCategoryId, ResolvedPropertyAmenity[]>();
+  for (const item of amenities) {
+    const list = grouped.get(item.category);
+    if (list) {
+      list.push(item);
+    } else {
+      grouped.set(item.category, [item]);
+    }
+  }
+
+  const result: AmenityCategoryGroup[] = [];
+  for (const category of AMENITY_CATEGORIES) {
+    const items = grouped.get(category.id);
+    if (items && items.length > 0) {
+      const group: AmenityCategoryGroup = {
+        category,
+        items: freezeItems ? Object.freeze(items) : items,
+      };
+      result.push(freezeItems ? Object.freeze(group) : group);
+    }
+  }
+  return result;
+}
+
+function buildPropertyAmenityProjection(
+  overrides: readonly PropertyAmenityOverride[]
+): PropertyAmenityProjection {
+  const all: ResolvedPropertyAmenity[] = [];
+  const byId = new Map<string, ResolvedPropertyAmenity>();
+  const filterKeys = new Set<AmenityFilterKey>();
 
   for (const override of overrides) {
     const base = AMENITY_CATALOG[override.amenityId];
-    if (!base) continue;
+    if (!base || byId.has(base.id)) continue;
 
     const pricingType = override.pricingType ?? base.pricingType;
     const isPaid = pricingType === "paid";
 
-    resolved.push({
+    const item: ResolvedPropertyAmenity = Object.freeze({
       ...base,
       name: override.name ?? base.name,
       shortLabel: override.shortLabel ?? base.shortLabel,
@@ -39,86 +94,52 @@ export function resolvePropertyAmenities(
       priceUnit: isPaid ? (override.priceUnit ?? base.priceUnit) : undefined,
       featured: Boolean(override.featured),
     });
+
+    all.push(item);
+    byId.set(item.id, item);
+    for (const key of item.filterKeys) {
+      filterKeys.add(key);
+    }
   }
 
-  return resolved;
-}
+  const groups = Object.freeze(groupResolvedAmenities(all, true));
+  const categories: readonly AmenityCategorySummary[] = Object.freeze(
+    groups.map(({ category, items }) => Object.freeze({ category, count: items.length }))
+  );
+  const cardHighlights: readonly AmenityCategoryMeta[] = Object.freeze(
+    groups.slice(0, CARD_HIGHLIGHT_LIMIT).map((group) => group.category)
+  );
 
-export function groupAmenitiesByCategory(
-  amenities: ResolvedPropertyAmenity[]
-): Array<{ category: AmenityCategoryMeta; items: ResolvedPropertyAmenity[] }> {
-  return AMENITY_CATEGORIES.map((category) => ({
-    category,
-    items: amenities.filter((item) => item.category === category.id),
-  })).filter((group) => group.items.length > 0);
-}
+  const featuredItems = all.filter((item) => item.featured);
+  const nonFeaturedItems = all.filter((item) => !item.featured);
+  const featured = Object.freeze(
+    [...featuredItems, ...nonFeaturedItems].slice(0, FEATURED_AMENITY_LIMIT)
+  );
 
-export function getPropertyAmenityCategories(
-  amenities: ResolvedPropertyAmenity[]
-): Array<{ category: AmenityCategoryMeta; count: number }> {
-  return groupAmenitiesByCategory(amenities).map(({ category, items }) => ({
-    category,
-    count: items.length,
-  }));
-}
-
-export function getCardHighlightCategories(
-  amenities: ResolvedPropertyAmenity[],
-  limit = 3
-): AmenityCategoryMeta[] {
-  return groupAmenitiesByCategory(amenities)
-    .slice(0, limit)
-    .map((group) => group.category);
-}
-
-export function getFeaturedAmenities(
-  amenities: ResolvedPropertyAmenity[],
-  limit = 6
-): ResolvedPropertyAmenity[] {
-  const featured = amenities.filter((a) => a.featured);
-  const rest = amenities.filter((a) => !a.featured);
-  return [...featured, ...rest].slice(0, limit);
-}
-
-export function filterPropertyAmenities(
-  amenities: ResolvedPropertyAmenity[],
-  options: {
-    query?: string;
-    category?: AmenityCategoryId | "all";
-    feeFilter?: AmenityFeeFilter;
-    selectedIds?: string[];
-  } = {}
-): ResolvedPropertyAmenity[] {
-  const { query = "", category = "all", feeFilter = "all", selectedIds = [] } = options;
-  const normalizedQuery = normalizeVietnamese(query);
-  const selectedSet = new Set(selectedIds);
-
-  return amenities.filter((item) => {
-    if (category !== "all" && item.category !== category) {
-      return false;
-    }
-
-    if (feeFilter === "free" && item.pricingType === "paid") {
-      return false;
-    }
-    if (feeFilter === "paid" && item.pricingType !== "paid") {
-      return false;
-    }
-    if (feeFilter === "selected" && !selectedSet.has(item.id)) {
-      return false;
-    }
-
-    if (normalizedQuery.length > 0) {
-      const haystack = normalizeVietnamese(
-        `${item.name} ${item.shortLabel} ${item.description} ${item.location} ${item.notes ?? ""}`
-      );
-      if (!haystack.includes(normalizedQuery)) {
-        return false;
-      }
-    }
-
-    return true;
+  return Object.freeze({
+    all: Object.freeze(all),
+    totalCount: all.length,
+    byId,
+    groups,
+    categories,
+    cardHighlights,
+    featured,
+    filterKeys,
   });
+}
+
+export function projectPropertyAmenities(
+  property: Pick<Property, "resortAmenities">
+): PropertyAmenityProjection {
+  const overrides = property.resortAmenities ?? EMPTY_OVERRIDES;
+  const cached = PROJECTION_CACHE.get(overrides);
+  if (cached) {
+    return cached;
+  }
+
+  const projection = buildPropertyAmenityProjection(overrides);
+  PROJECTION_CACHE.set(overrides, projection);
+  return projection;
 }
 
 export function propertyHasAmenityFilters(
@@ -126,52 +147,51 @@ export function propertyHasAmenityFilters(
   requiredFilters: AmenityFilterKey[]
 ): boolean {
   if (requiredFilters.length === 0) return true;
-
-  const resolved = resolvePropertyAmenities(property);
-  const availableKeys = new Set<AmenityFilterKey>();
-  for (const item of resolved) {
-    for (const key of item.filterKeys) {
-      availableKeys.add(key);
-    }
-  }
-
-  return requiredFilters.every((key) => availableKeys.has(key));
+  const { filterKeys } = projectPropertyAmenities(property);
+  return requiredFilters.every((key) => filterKeys.has(key));
 }
 
-export interface AmenitiesModalFilterState {
-  activeCategory: AmenityCategoryId | "all";
-  searchQuery: string;
-  feeFilter: AmenityFeeFilter;
-  activeAmenityId: string | null;
-  mobileShowDetail: boolean;
+export function getAmenityCategoryLabel(categoryId: AmenityCategoryId): string {
+  return CATEGORY_LABEL_MAP.get(categoryId) ?? "Tiện ích";
 }
 
-export type AmenitiesModalAction =
-  | { type: "SET_CATEGORY"; category: AmenityCategoryId | "all" }
-  | { type: "SET_SEARCH"; query: string }
-  | { type: "SET_FEE_FILTER"; feeFilter: AmenityFeeFilter }
-  | { type: "SELECT_AMENITY"; amenityId: string }
-  | { type: "BACK_TO_LIST" }
-  | { type: "RESET_FILTERS" };
-
-export function createAmenitiesModalState(init: {
+export function createAmenityExplorerState(init: {
+  projection: PropertyAmenityProjection;
   initialAmenityId?: string | null;
   initialCategory?: AmenityCategoryId | "all";
-  fallbackAmenityId?: string | null;
-}): AmenitiesModalFilterState {
+}): AmenityExplorerState {
+  const { projection, initialAmenityId = null, initialCategory = "all" } = init;
+  const hasInitialCategory =
+    initialCategory === "all" ||
+    projection.categories.some((entry) => entry.category.id === initialCategory);
+  const resolvedCategory: AmenityCategoryId | "all" = hasInitialCategory ? initialCategory : "all";
+
+  const initialAmenity = initialAmenityId ? projection.byId.get(initialAmenityId) : undefined;
+  const isInitialAmenityVisible = Boolean(
+    initialAmenity &&
+      (resolvedCategory === "all" || initialAmenity.category === resolvedCategory)
+  );
+
+  const categoryFirstId =
+    resolvedCategory === "all"
+      ? (projection.all[0]?.id ?? null)
+      : (projection.groups.find((group) => group.category.id === resolvedCategory)?.items[0]?.id ??
+          projection.all[0]?.id ??
+          null);
+
   return {
-    activeCategory: init.initialCategory ?? "all",
+    activeCategory: resolvedCategory,
     searchQuery: "",
     feeFilter: "all",
-    activeAmenityId: init.initialAmenityId ?? init.fallbackAmenityId ?? null,
-    mobileShowDetail: Boolean(init.initialAmenityId),
+    activeAmenityId: isInitialAmenityVisible ? initialAmenity!.id : categoryFirstId,
+    mobileShowDetail: isInitialAmenityVisible,
   };
 }
 
-export function reduceAmenitiesModalState(
-  state: AmenitiesModalFilterState,
-  action: AmenitiesModalAction
-): AmenitiesModalFilterState {
+export function reduceAmenityExplorerState(
+  state: AmenityExplorerState,
+  action: AmenityExplorerAction
+): AmenityExplorerState {
   switch (action.type) {
     case "SET_CATEGORY":
       return { ...state, activeCategory: action.category, mobileShowDetail: false };
@@ -192,4 +212,166 @@ export function reduceAmenitiesModalState(
         mobileShowDetail: false,
       };
   }
+}
+
+export function deriveAmenityExplorerView(
+  projection: PropertyAmenityProjection,
+  state: AmenityExplorerState,
+  selectedAmenities: SelectedBookingAmenity[]
+): AmenityExplorerView {
+  const selectedAmenityIds = new Set<string>();
+  let selectedTotalFee = 0;
+
+  for (const item of selectedAmenities) {
+    if (!projection.byId.has(item.id) || selectedAmenityIds.has(item.id)) continue;
+    selectedAmenityIds.add(item.id);
+    if (item.pricingType === "paid") {
+      selectedTotalFee += sanitizePositiveFee(item.price);
+    }
+  }
+
+  const selectedCount = selectedAmenityIds.size;
+  const normalizedQuery = normalizeVietnamese(state.searchQuery);
+
+  const filteredItems = projection.all.filter((item) => {
+    if (state.activeCategory !== "all" && item.category !== state.activeCategory) {
+      return false;
+    }
+
+    if (state.feeFilter === "free" && item.pricingType === "paid") {
+      return false;
+    }
+    if (state.feeFilter === "paid" && item.pricingType !== "paid") {
+      return false;
+    }
+    if (state.feeFilter === "selected" && !selectedAmenityIds.has(item.id)) {
+      return false;
+    }
+
+    if (normalizedQuery.length > 0) {
+      const haystack = normalizeVietnamese(
+        `${item.name} ${item.shortLabel} ${item.description} ${item.location} ${item.notes ?? ""}`
+      );
+      if (!haystack.includes(normalizedQuery)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const groupedItems = groupResolvedAmenities(filteredItems);
+  const matchedActiveAmenity =
+    filteredItems.find((item) => item.id === state.activeAmenityId) ?? null;
+  const effectiveActiveAmenity = matchedActiveAmenity ?? filteredItems[0] ?? null;
+  const activeCategoryLabel = effectiveActiveAmenity
+    ? getAmenityCategoryLabel(effectiveActiveAmenity.category)
+    : "";
+  const mobileShowDetail = state.mobileShowDetail && matchedActiveAmenity !== null;
+
+  const feeFilterOptions: AmenityFeeFilterOption[] = [
+    { id: "all", label: "Tất cả" },
+    { id: "free", label: "Miễn phí" },
+    { id: "paid", label: "Có phụ phí" },
+    { id: "selected", label: `Đã chọn (${selectedCount})` },
+  ];
+
+  return {
+    totalCount: projection.totalCount,
+    availableCategories: projection.categories,
+    feeFilterOptions,
+    filteredItems,
+    groupedItems,
+    effectiveActiveAmenity,
+    activeCategoryLabel,
+    mobileShowDetail,
+    selectedAmenityIds,
+    selectedCount,
+    selectedTotalFee,
+    isEmpty: filteredItems.length === 0,
+  };
+}
+
+export function describeAmenityPricing(
+  amenity: Pick<ResolvedPropertyAmenity, "pricingType" | "price" | "priceUnit">
+): AmenityPricingDescriptor {
+  if (amenity.pricingType === "paid") {
+    const safePrice = sanitizePositiveFee(amenity.price);
+    const formattedPrice = safePrice > 0 ? formatVND(safePrice) : "0đ";
+    const compactBadge = safePrice > 0 ? `+${formattedPrice}` : "0đ";
+    return {
+      tone: "paid",
+      isSelectable: true,
+      compactBadge,
+      heroBadge: compactBadge,
+      detailPrice: amenity.priceUnit
+        ? `${formattedPrice} / ${amenity.priceUnit}`
+        : formattedPrice,
+      detailStatus: "Dịch vụ chọn thêm (cộng vào đơn)",
+      includedNotice: "",
+      selectActionLabel: `Yêu cầu thêm khi đặt phòng (${compactBadge})`,
+      selectedActionLabel: `Đã thêm vào đặt phòng (${compactBadge}) — Bấm để gỡ`,
+    };
+  }
+
+  if (amenity.pricingType === "free-reservation") {
+    return {
+      tone: "free-reservation",
+      isSelectable: true,
+      compactBadge: "Miễn phí • Đặt trước",
+      heroBadge: "Miễn phí • Cần đặt trước",
+      detailPrice: "Miễn phí (0đ)",
+      detailStatus: "Khuyến nghị đăng ký trước",
+      includedNotice: "",
+      selectActionLabel: "Đăng ký sử dụng miễn phí khi đặt phòng",
+      selectedActionLabel: "Đã đăng ký vào chuyến đi (Miễn phí) — Bấm để hủy",
+    };
+  }
+
+  return {
+    tone: "included",
+    isSelectable: false,
+    compactBadge: "Miễn phí",
+    heroBadge: "Miễn phí",
+    detailPrice: "Miễn phí • Bao gồm sẵn",
+    detailStatus: "Sử dụng tự do trong kỳ nghỉ",
+    includedNotice: INCLUDED_NOTICE,
+    selectActionLabel: "",
+    selectedActionLabel: "",
+  };
+}
+
+export function describeSelectedAmenity(
+  item: Pick<SelectedBookingAmenity, "pricingType" | "price" | "priceUnit">
+): SelectedAmenityDisplay {
+  if (item.pricingType === "paid") {
+    const safePrice = sanitizePositiveFee(item.price);
+    const fee = safePrice > 0 ? `+${formatVND(safePrice)}` : "0đ";
+    return {
+      tone: "paid",
+      subtitle: item.priceUnit ?? "Gói dịch vụ theo kỳ nghỉ",
+      compactFee: fee,
+      checkoutFee: fee,
+      confirmedFee: fee,
+    };
+  }
+
+  return {
+    tone: "free-reservation",
+    subtitle: "Miễn phí • Đăng ký giữ chỗ trước",
+    compactFee: "0đ • Đặt trước",
+    checkoutFee: "0đ",
+    confirmedFee: "Miễn phí • Đã đăng ký",
+  };
+}
+
+export function formatAmenitiesFeeSummary(
+  totalFee: number,
+  style: "plain" | "parenthesized" = "plain"
+): string {
+  const safeFee = sanitizePositiveFee(totalFee);
+  if (style === "parenthesized") {
+    return safeFee > 0 ? `(+${formatVND(safeFee)})` : "(Miễn phí 0đ)";
+  }
+  return safeFee > 0 ? `+${formatVND(safeFee)}` : "Miễn phí";
 }
