@@ -3,10 +3,9 @@
 import React, { useEffect, useMemo, useReducer } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Search, SearchX, Sparkles, X } from "lucide-react";
-import type { AmenityCategoryId, Property } from "@/types";
+import type { AmenityCategoryId, Property, SelectedBookingAmenity } from "@/types";
 import { AMENITY_CATEGORIES } from "@/data/amenities";
 import {
-  buildSelectedBookingAmenities,
   createAmenitiesModalState,
   filterPropertyAmenities,
   getPropertyAmenityCategories,
@@ -25,7 +24,7 @@ export interface PropertyAmenitiesModalProps {
   property: Property;
   initialAmenityId?: string | null;
   initialCategory?: AmenityCategoryId | "all";
-  selectedAmenityIds: string[];
+  selectedAmenities: SelectedBookingAmenity[];
   onToggleAmenity: (amenityId: string) => void;
   onClose: () => void;
 }
@@ -38,7 +37,7 @@ function PropertyAmenitiesModalContent({
   property,
   initialAmenityId = null,
   initialCategory = "all",
-  selectedAmenityIds,
+  selectedAmenities,
   onToggleAmenity,
   onClose,
 }: InnerProps) {
@@ -72,9 +71,9 @@ function PropertyAmenitiesModalContent({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [onClose]);
 
-  const selectedAmenities = useMemo(
-    () => buildSelectedBookingAmenities(resolvedAmenities, selectedAmenityIds),
-    [resolvedAmenities, selectedAmenityIds]
+  const selectedAmenityIds = useMemo(
+    () => selectedAmenities.map((item) => item.id),
+    [selectedAmenities]
   );
 
   const selectedTotalFee = useMemo(
@@ -437,7 +436,7 @@ export function PropertyAmenitiesModal({
   property,
   initialAmenityId = null,
   initialCategory = "all",
-  selectedAmenityIds,
+  selectedAmenities,
   onToggleAmenity,
   onClose,
 }: PropertyAmenitiesModalProps) {
@@ -449,7 +448,7 @@ export function PropertyAmenitiesModal({
           property={property}
           initialAmenityId={initialAmenityId}
           initialCategory={initialCategory}
-          selectedAmenityIds={selectedAmenityIds}
+          selectedAmenities={selectedAmenities}
           onToggleAmenity={onToggleAmenity}
           onClose={onClose}
         />

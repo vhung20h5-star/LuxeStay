@@ -1,33 +1,22 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { X, ShieldCheck, Lock, Sparkles, Trash2 } from "lucide-react";
+import { AlertCircle, Lock, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
-import {
-  buildSelectedBookingAmenities,
-  calculateBookingPricing,
-  resolvePropertyAmenities,
-} from "@/lib/amenities";
-import { computeStayDates } from "@/lib/bookingDraft";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import type { BookingDetails } from "@/types";
+import type { BookingQuote } from "@/types";
 
-export function BookingCheckoutModal() {
-  const {
-    checkoutProperty,
-    setCheckoutProperty,
-    setBookingSuccess,
-    bookingDraft,
-    searchCriteria,
-    removeBookingAmenity,
-    clearSelectedAmenities,
-  } = useBooking();
+function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
+  const { setCheckoutProperty, removeBookingAmenity, submitCheckout } = useBooking();
+  const { property, nights, guests, checkIn, checkOut, selectedAmenities, pricing } = quote;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Form state
   const [fullName, setFullName] = useState("Nguyễn Văn A");
@@ -36,80 +25,55 @@ export function BookingCheckoutModal() {
   const [note, setNote] = useState("Vui lòng chuẩn bị phòng tầng cao view thoáng giúp mình.");
   const [paymentMethod, setPaymentMethod] = useState<"momo" | "vnpay" | "card" | "hotel">("momo");
 
-  const resolvedAmenities = useMemo(
-    () => (checkoutProperty ? resolvePropertyAmenities(checkoutProperty) : []),
-    [checkoutProperty]
-  );
+  // Abort any in-flight reservation submission on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
-  const selectedAmenityIds = useMemo(
-    () =>
-      checkoutProperty && bookingDraft.propertyId === checkoutProperty.id
-        ? bookingDraft.selectedAmenityIds
-        : [],
-    [checkoutProperty, bookingDraft.propertyId, bookingDraft.selectedAmenityIds]
-  );
+  const handleClose = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsSubmitting(false);
+    setCheckoutProperty(null);
+  };
 
-  const selectedAmenities = useMemo(
-    () => buildSelectedBookingAmenities(resolvedAmenities, selectedAmenityIds),
-    [resolvedAmenities, selectedAmenityIds]
-  );
-
-  if (!checkoutProperty) return null;
-
-  const nights = bookingDraft.nights;
-  const adults = Math.min(bookingDraft.adults, checkoutProperty.maxGuests);
-  const { checkIn, checkOut } = computeStayDates(nights, searchCriteria.checkIn);
-  const pricing = calculateBookingPricing(
-    checkoutProperty.pricePerNight,
-    nights,
-    selectedAmenities
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !phone || !email) {
-      alert("Vui lòng điền đầy đủ họ tên, số điện thoại và email!");
-      return;
-    }
+    setErrorMessage(null);
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setIsSubmitting(true);
+    try {
+      const result = await submitCheckout(
+        { fullName, phone, email, note, paymentMethod },
+        controller.signal
+      );
 
-    // Snapshot amenities & pricing before async confirmation
-    const amenitiesSnapshot = [...selectedAmenities];
-    const pricingSnapshot = { ...pricing };
-
-    setTimeout(() => {
-      const randomBookingId = `LX-${Math.floor(100000 + Math.random() * 900000)}`;
-
-      const bookingInfo: BookingDetails = {
-        property: checkoutProperty,
-        checkIn,
-        checkOut,
-        nights,
-        guests: {
-          adults,
-          children: searchCriteria.guests.children,
-          rooms: searchCriteria.guests.rooms,
-        },
-        pricing: pricingSnapshot,
-        selectedAmenities: amenitiesSnapshot,
-        guestInfo: {
-          fullName,
-          email,
-          phone,
-          note,
-        },
-        paymentMethod,
-        bookingId: randomBookingId,
-        createdAt: new Date().toISOString(),
-      };
-
+      if (!result.ok) {
+        setErrorMessage(result.error);
+        setIsSubmitting(false);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+      setErrorMessage("Có lỗi xảy ra khi xác nhận đặt phòng. Vui lòng thử lại!");
       setIsSubmitting(false);
-      clearSelectedAmenities();
-      setCheckoutProperty(null);
-      setBookingSuccess(bookingInfo);
-    }, 1200);
+    }
   };
+
+  const guestSummary = [
+    `${guests.adults} người lớn`,
+    guests.children > 0 ? `${guests.children} trẻ em` : null,
+    guests.rooms > 1 ? `${guests.rooms} phòng` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -118,7 +82,7 @@ export function BookingCheckoutModal() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={() => setCheckoutProperty(null)}
+        onClick={handleClose}
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
       />
 
@@ -137,7 +101,7 @@ export function BookingCheckoutModal() {
             </div>
             <button
               type="button"
-              onClick={() => setCheckoutProperty(null)}
+              onClick={handleClose}
               className="p-2 text-slate-400 hover:text-slate-700 rounded-full"
               aria-label="Đóng"
             >
@@ -145,30 +109,34 @@ export function BookingCheckoutModal() {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-5 sm:p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className="p-5 sm:p-8 space-y-6 max-h-[80vh] overflow-y-auto"
+          >
             {/* Stay Summary Card */}
             <div className="flex gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
               <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
                 <Image
-                  src={checkoutProperty.images[0]}
-                  alt={checkoutProperty.title}
+                  src={property.images[0]}
+                  alt={property.title}
                   fill
                   className="object-cover"
                 />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                  {checkoutProperty.location.city}
+                  {property.location.city}
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 truncate mt-0.5">
-                  {checkoutProperty.title}
+                  {property.title}
                 </h4>
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 mt-1">
-                  <span>★ {checkoutProperty.rating}</span>
+                  <span>★ {property.rating}</span>
                   <span>•</span>
                   <span>{nights} đêm nghỉ</span>
                   <span>•</span>
-                  <span>{adults} khách</span>
+                  <span>{guestSummary}</span>
                   <span>•</span>
                   <span className="font-semibold text-slate-700">
                     {checkIn} → {checkOut}
@@ -216,7 +184,8 @@ export function BookingCheckoutModal() {
                         <button
                           type="button"
                           onClick={() => removeBookingAmenity(item.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          disabled={isSubmitting}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-40"
                           title="Bỏ dịch vụ này"
                           aria-label={`Bỏ ${item.name}`}
                         >
@@ -383,6 +352,16 @@ export function BookingCheckoutModal() {
 
             {/* Submit Action */}
             <div className="space-y-3">
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-xs font-semibold text-rose-800"
+                >
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
               <Button
                 type="submit"
                 variant="primary"
@@ -404,4 +383,12 @@ export function BookingCheckoutModal() {
       </div>
     </div>
   );
+}
+
+export function BookingCheckoutModal() {
+  const { checkoutProperty, bookingQuote } = useBooking();
+
+  if (!checkoutProperty || !bookingQuote) return null;
+
+  return <BookingCheckoutContent key={checkoutProperty.id} quote={bookingQuote} />;
 }

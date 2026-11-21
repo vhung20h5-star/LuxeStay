@@ -105,11 +105,71 @@ export interface SelectedBookingAmenity {
   priceUnit?: string;
 }
 
-export interface BookingDraft {
-  propertyId: string | null;
+export type BookingSessionStep = "idle" | "previewing" | "checking-out" | "confirmed";
+
+export interface BookingSessionState {
+  step: BookingSessionStep;
+  property: Property | null;
+  searchSeedKey: string;
+  checkInSeed: string;
   nights: number;
-  adults: number;
+  guests: {
+    adults: number;
+    children: number;
+    rooms: number;
+  };
   selectedAmenityIds: string[];
+  confirmedBooking: BookingDetails | null;
+}
+
+export interface BookingQuote {
+  property: Property;
+  nights: number;
+  checkIn: string;
+  checkOut: string;
+  guests: {
+    adults: number;
+    children: number;
+    rooms: number;
+  };
+  resolvedAmenities: ResolvedPropertyAmenity[];
+  selectedAmenityIds: string[];
+  selectedAmenities: SelectedBookingAmenity[];
+  pricing: {
+    basePrice: number;
+    nightsTotal: number;
+    cleaningFee: number;
+    serviceFee: number;
+    amenitiesFee: number;
+    discount: number;
+    total: number;
+  };
+}
+
+export interface CheckoutGuestInput {
+  fullName: string;
+  phone: string;
+  email: string;
+  note?: string;
+  paymentMethod: "momo" | "vnpay" | "card" | "hotel";
+}
+
+export interface ReservationSubmissionRequest {
+  quote: BookingQuote;
+  guestInfo: {
+    fullName: string;
+    phone: string;
+    email: string;
+    note?: string;
+  };
+  paymentMethod: "momo" | "vnpay" | "card" | "hotel";
+}
+
+export interface ReservationSubmitter {
+  submit(
+    request: ReservationSubmissionRequest,
+    options?: { signal?: AbortSignal }
+  ): Promise<BookingDetails>;
 }
 
 export interface PropertyReview {

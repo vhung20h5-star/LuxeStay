@@ -141,7 +141,9 @@ export function BookingSuccessModal() {
                   {guestInfo.fullName}
                 </span>
                 <span className="text-[11px] text-slate-500 block">
-                  {nights} đêm • {guests.adults} khách
+                  {nights} đêm • {guests.adults} người lớn
+                  {guests.children > 0 ? `, ${guests.children} trẻ em` : ""}
+                  {guests.rooms > 1 ? ` • ${guests.rooms} phòng` : ""}
                 </span>
               </div>
               <div className="pt-2 border-t border-slate-200">

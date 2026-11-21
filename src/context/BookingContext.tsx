@@ -1,22 +1,32 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type {
   BookingDetails,
-  BookingDraft,
+  BookingQuote,
+  BookingSessionState,
   CategoryId,
+  CheckoutGuestInput,
   FilterState,
   Property,
+  ReservationSubmitter,
   SearchCriteria,
 } from "@/types";
 import {
-  clampDraftAdults,
-  clampDraftNights,
-  createInitialDraft,
-  removeDraftAmenity,
-  syncDraftForProperty,
-  toggleDraftAmenity,
-} from "@/lib/bookingDraft";
+  closeCheckoutSession,
+  closePreviewSession,
+  createBrowserReservationAdapter,
+  createIdleBookingSession,
+  deriveBookingQuote,
+  dismissConfirmedBooking,
+  openPropertySession,
+  removeSessionAmenity,
+  startCheckoutSession,
+  submitBookingSession,
+  toggleSessionAmenity,
+  updateSessionAdults,
+  updateSessionNights,
+} from "@/lib/bookingSession";
 
 interface BookingContextType {
   // Favorites
@@ -34,24 +44,27 @@ interface BookingContextType {
   resetFilters: () => void;
   activeCategory: CategoryId;
   setActiveCategory: (cat: CategoryId) => void;
+  filterModalOpen: boolean;
+  setFilterModalOpen: (open: boolean) => void;
 
-  // Modals & Flows
+  // Deep Booking Session & Quote Interface
+  bookingSession: BookingSessionState;
+  bookingQuote: BookingQuote | null;
   selectedProperty: Property | null;
   setSelectedProperty: (property: Property | null) => void;
   checkoutProperty: Property | null;
   setCheckoutProperty: (property: Property | null) => void;
   bookingSuccess: BookingDetails | null;
   setBookingSuccess: (details: BookingDetails | null) => void;
-  filterModalOpen: boolean;
-  setFilterModalOpen: (open: boolean) => void;
-
-  // Synchronized Booking Draft
-  bookingDraft: BookingDraft;
+  proceedToCheckout: () => void;
   setDraftNights: (nights: number) => void;
-  setDraftAdults: (adults: number, maxGuests?: number) => void;
-  toggleBookingAmenity: (property: Property, amenityId: string) => void;
+  setDraftAdults: (adults: number) => void;
+  toggleBookingAmenity: (amenityId: string) => void;
   removeBookingAmenity: (amenityId: string) => void;
-  clearSelectedAmenities: () => void;
+  submitCheckout: (
+    input: CheckoutGuestInput,
+    signal?: AbortSignal
+  ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
 }
 
 const defaultSearch: SearchCriteria = {
@@ -78,9 +91,17 @@ const defaultFilters: FilterState = {
   sortBy: "popular",
 };
 
+const defaultReservationSubmitter = createBrowserReservationAdapter(1200);
+
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
 
-export function BookingProvider({ children }: { children: React.ReactNode }) {
+export function BookingProvider({
+  children,
+  reservationSubmitter = defaultReservationSubmitter,
+}: {
+  children: React.ReactNode;
+  reservationSubmitter?: ReservationSubmitter;
+}) {
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       if (typeof window !== "undefined") {
@@ -97,49 +118,95 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   const [searchCriteria, setSearchCriteria] = useState<SearchCriteria>(defaultSearch);
   const [filterState, setFilterState] = useState<FilterState>(defaultFilters);
   const [activeCategory, setActiveCategoryState] = useState<CategoryId>("all");
-
-  const [selectedProperty, setSelectedPropertyState] = useState<Property | null>(null);
-  const [checkoutProperty, setCheckoutPropertyState] = useState<Property | null>(null);
-  const [bookingSuccess, setBookingSuccess] = useState<BookingDetails | null>(null);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
-  const [bookingDraft, setBookingDraft] = useState<BookingDraft>(() => createInitialDraft());
 
-  const setSelectedProperty = useCallback((property: Property | null) => {
-    if (property) {
-      setBookingDraft((prev) => syncDraftForProperty(prev, property));
-    }
-    setSelectedPropertyState(property);
+  const [bookingSession, setBookingSession] = useState<BookingSessionState>(() =>
+    createIdleBookingSession()
+  );
+
+  const bookingQuote = useMemo(() => deriveBookingQuote(bookingSession), [bookingSession]);
+
+  const selectedProperty =
+    bookingSession.step === "previewing" ? bookingSession.property : null;
+  const checkoutProperty =
+    bookingSession.step === "checking-out" ? bookingSession.property : null;
+  const bookingSuccess =
+    bookingSession.step === "confirmed" ? bookingSession.confirmedBooking : null;
+
+  const setSelectedProperty = useCallback(
+    (property: Property | null) => {
+      setBookingSession((prev) =>
+        property
+          ? openPropertySession(prev, property, searchCriteria)
+          : closePreviewSession(prev)
+      );
+    },
+    [searchCriteria]
+  );
+
+  const setCheckoutProperty = useCallback(
+    (property: Property | null) => {
+      setBookingSession((prev) =>
+        property
+          ? startCheckoutSession(prev, property, searchCriteria)
+          : closeCheckoutSession(prev)
+      );
+    },
+    [searchCriteria]
+  );
+
+  const setBookingSuccess = useCallback((details: BookingDetails | null) => {
+    setBookingSession((prev) => {
+      if (!details) return dismissConfirmedBooking(prev);
+      return {
+        ...createIdleBookingSession(),
+        step: "confirmed",
+        confirmedBooking: details,
+      };
+    });
   }, []);
 
-  const setCheckoutProperty = useCallback((property: Property | null) => {
-    if (property) {
-      setBookingDraft((prev) => syncDraftForProperty(prev, property));
-    }
-    setCheckoutPropertyState(property);
-  }, []);
+  const proceedToCheckout = useCallback(() => {
+    setBookingSession((prev) =>
+      prev.property ? startCheckoutSession(prev, prev.property, searchCriteria) : prev
+    );
+  }, [searchCriteria]);
 
   const setDraftNights = useCallback((nights: number) => {
-    setBookingDraft((prev) => ({ ...prev, nights: clampDraftNights(nights) }));
+    setBookingSession((prev) => updateSessionNights(prev, nights));
   }, []);
 
-  const setDraftAdults = useCallback((adults: number, maxGuests = 10) => {
-    setBookingDraft((prev) => ({
-      ...prev,
-      adults: clampDraftAdults(adults, maxGuests),
-    }));
+  const setDraftAdults = useCallback((adults: number) => {
+    setBookingSession((prev) => updateSessionAdults(prev, adults));
   }, []);
 
-  const toggleBookingAmenity = useCallback((property: Property, amenityId: string) => {
-    setBookingDraft((prev) => toggleDraftAmenity(prev, property, amenityId));
+  const toggleBookingAmenity = useCallback((amenityId: string) => {
+    setBookingSession((prev) => toggleSessionAmenity(prev, amenityId));
   }, []);
 
   const removeBookingAmenity = useCallback((amenityId: string) => {
-    setBookingDraft((prev) => removeDraftAmenity(prev, amenityId));
+    setBookingSession((prev) => removeSessionAmenity(prev, amenityId));
   }, []);
 
-  const clearSelectedAmenities = useCallback(() => {
-    setBookingDraft((prev) => ({ ...prev, selectedAmenityIds: [] }));
-  }, []);
+  const submitCheckout = useCallback(
+    async (input: CheckoutGuestInput, signal?: AbortSignal) => {
+      const result = await submitBookingSession(bookingSession, input, reservationSubmitter, {
+        signal,
+      });
+      if (!result.ok) {
+        return result;
+      }
+      if (!signal?.aborted) {
+        setBookingSession((prev) =>
+          prev.step === "checking-out" && prev.property?.id === result.booking.property.id
+            ? result.nextSession
+            : prev
+        );
+      }
+      return { ok: true as const, booking: result.booking };
+    },
+    [bookingSession, reservationSubmitter]
+  );
 
   const setActiveCategory = (cat: CategoryId) => {
     setActiveCategoryState(cat);
@@ -181,20 +248,22 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         resetFilters,
         activeCategory,
         setActiveCategory,
+        filterModalOpen,
+        setFilterModalOpen,
+        bookingSession,
+        bookingQuote,
         selectedProperty,
         setSelectedProperty,
         checkoutProperty,
         setCheckoutProperty,
         bookingSuccess,
         setBookingSuccess,
-        filterModalOpen,
-        setFilterModalOpen,
-        bookingDraft,
+        proceedToCheckout,
         setDraftNights,
         setDraftAdults,
         toggleBookingAmenity,
         removeBookingAmenity,
-        clearSelectedAmenities,
+        submitCheckout,
       }}
     >
       {children}

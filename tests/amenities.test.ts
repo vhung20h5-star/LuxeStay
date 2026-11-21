@@ -9,8 +9,6 @@ import {
   getFeaturedAmenities,
   filterPropertyAmenities,
   propertyHasAmenityFilters,
-  buildSelectedBookingAmenities,
-  calculateBookingPricing,
   createAmenitiesModalState,
   reduceAmenitiesModalState,
 } from "@/lib/amenities";
@@ -123,36 +121,6 @@ test("propertyHasAmenityFilters uses AND semantics across filterKeys", () => {
   assert.equal(propertyHasAmenityFilters(prop, []), true);
   assert.equal(propertyHasAmenityFilters(prop, ["pool", "transport-shuttle"]), true);
   assert.equal(propertyHasAmenityFilters(prop, ["pool", "spa-wellness"]), false);
-});
-
-test("buildSelectedBookingAmenities ignores included or unknown ids and calculateBookingPricing sums paid add-ons", () => {
-  const resolved = resolvePropertyAmenities({
-    resortAmenities: [
-      { amenityId: "high-speed-wifi", pricingType: "included" },
-      { amenityId: "airport-shuttle", pricingType: "free-reservation" },
-      { amenityId: "herbal-spa", pricingType: "paid", price: 550000, priceUnit: "suất" },
-    ],
-  });
-  const selected = buildSelectedBookingAmenities(resolved, [
-    "high-speed-wifi",
-    "airport-shuttle",
-    "herbal-spa",
-    "non-existent",
-  ]);
-  assert.deepEqual(
-    selected.map((s) => ({ id: s.id, price: s.price })),
-    [
-      { id: "airport-shuttle", price: 0 },
-      { id: "herbal-spa", price: 550000 },
-    ]
-  );
-
-  const pricing = calculateBookingPricing(2000000, 3, selected);
-  assert.equal(pricing.nightsTotal, 6000000);
-  assert.equal(pricing.cleaningFee, 150000);
-  assert.equal(pricing.amenitiesFee, 550000);
-  assert.equal(pricing.discount, 100000);
-  assert.equal(pricing.total, 6600000);
 });
 
 test("reduceAmenitiesModalState returns mobile view to list on search, fee filter, category, and reset", () => {

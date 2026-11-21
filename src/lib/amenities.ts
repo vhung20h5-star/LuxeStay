@@ -5,13 +5,9 @@ import type {
   AmenityFilterKey,
   Property,
   ResolvedPropertyAmenity,
-  SelectedBookingAmenity,
 } from "@/types";
 
 export type AmenityFeeFilter = "all" | "free" | "paid" | "selected";
-
-export const CLEANING_FEE = 150000;
-export const SERVICE_DISCOUNT = 100000;
 
 export function normalizeVietnamese(input: string): string {
   return input
@@ -146,62 +142,6 @@ export function propertyHasAmenityFilters(
   }
 
   return requiredFilters.every((key) => availableKeys.has(key));
-}
-
-export function buildSelectedBookingAmenities(
-  amenities: ResolvedPropertyAmenity[],
-  selectedIds: string[]
-): SelectedBookingAmenity[] {
-  const selectedSet = new Set(selectedIds);
-  const result: SelectedBookingAmenity[] = [];
-
-  for (const item of amenities) {
-    if (!selectedSet.has(item.id)) continue;
-    if (item.pricingType !== "paid" && item.pricingType !== "free-reservation") continue;
-
-    result.push({
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      pricingType: item.pricingType,
-      price: item.pricingType === "paid" ? (item.price ?? 0) : 0,
-      priceUnit: item.pricingType === "paid" ? item.priceUnit : undefined,
-    });
-  }
-
-  return result;
-}
-
-export function calculateBookingPricing(
-  pricePerNight: number,
-  nights: number,
-  selectedAmenities: SelectedBookingAmenity[] = []
-): {
-  basePrice: number;
-  nightsTotal: number;
-  cleaningFee: number;
-  serviceFee: number;
-  amenitiesFee: number;
-  discount: number;
-  total: number;
-} {
-  const safeNights = Math.max(1, Math.floor(nights));
-  const nightsTotal = pricePerNight * safeNights;
-  const amenitiesFee = selectedAmenities.reduce(
-    (sum, item) => sum + (item.pricingType === "paid" ? item.price : 0),
-    0
-  );
-  const total = Math.max(0, nightsTotal + CLEANING_FEE + amenitiesFee - SERVICE_DISCOUNT);
-
-  return {
-    basePrice: pricePerNight,
-    nightsTotal,
-    cleaningFee: CLEANING_FEE,
-    serviceFee: 0,
-    amenitiesFee,
-    discount: SERVICE_DISCOUNT,
-    total,
-  };
 }
 
 export interface AmenitiesModalFilterState {

@@ -19,15 +19,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { AmenityCategoryId, Property } from "@/types";
+import type { AmenityCategoryId, BookingQuote } from "@/types";
 import { useBooking } from "@/context/BookingContext";
-import {
-  buildSelectedBookingAmenities,
-  calculateBookingPricing,
-  getFeaturedAmenities,
-  getPropertyAmenityCategories,
-  resolvePropertyAmenities,
-} from "@/lib/amenities";
+import { getFeaturedAmenities, getPropertyAmenityCategories } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -40,18 +34,20 @@ interface AmenitiesModalState {
   initialCategory: AmenityCategoryId | "all";
 }
 
-function PropertyModalContent({ property }: { property: Property }) {
+function PropertyModalContent({ quote }: { quote: BookingQuote }) {
   const {
     setSelectedProperty,
-    setCheckoutProperty,
+    proceedToCheckout,
     isFavorite,
     toggleFavorite,
-    bookingDraft,
     setDraftNights,
     setDraftAdults,
     toggleBookingAmenity,
     removeBookingAmenity,
   } = useBooking();
+
+  const { property, resolvedAmenities, selectedAmenities, selectedAmenityIds, pricing, nights, guests } =
+    quote;
 
   const [activePhoto, setActivePhoto] = useState(0);
   const [showShareToast, setShowShareToast] = useState(false);
@@ -72,7 +68,6 @@ function PropertyModalContent({ property }: { property: Property }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [amenitiesModal.isOpen, setSelectedProperty]);
 
-  const resolvedAmenities = useMemo(() => resolvePropertyAmenities(property), [property]);
   const categorySummaries = useMemo(
     () => getPropertyAmenityCategories(resolvedAmenities),
     [resolvedAmenities]
@@ -82,20 +77,7 @@ function PropertyModalContent({ property }: { property: Property }) {
     [resolvedAmenities]
   );
 
-  const selectedAmenityIds = useMemo(
-    () => (bookingDraft.propertyId === property.id ? bookingDraft.selectedAmenityIds : []),
-    [bookingDraft.propertyId, bookingDraft.selectedAmenityIds, property.id]
-  );
-
-  const selectedAmenities = useMemo(
-    () => buildSelectedBookingAmenities(resolvedAmenities, selectedAmenityIds),
-    [resolvedAmenities, selectedAmenityIds]
-  );
-
   const isFav = isFavorite(property.id);
-  const nights = bookingDraft.nights;
-  const adults = Math.min(bookingDraft.adults, property.maxGuests);
-  const pricing = calculateBookingPricing(property.pricePerNight, nights, selectedAmenities);
 
   const openAmenitiesModal = (opts?: {
     initialAmenityId?: string | null;
@@ -114,12 +96,6 @@ function PropertyModalContent({ property }: { property: Property }) {
       setShowShareToast(true);
       setTimeout(() => setShowShareToast(false), 2000);
     }
-  };
-
-  const handleProceedBooking = () => {
-    const propToBook = { ...property };
-    setSelectedProperty(null);
-    setCheckoutProperty(propToBook);
   };
 
   return (
@@ -534,7 +510,7 @@ function PropertyModalContent({ property }: { property: Property }) {
                       <div className="p-3 bg-slate-50 flex items-center justify-between">
                         <div>
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                            Số đêm lưu trú
+                            Số đêm lưu trú ({quote.checkIn} → {quote.checkOut})
                           </span>
                           <span className="text-xs font-bold text-slate-800">
                             {nights} đêm nghỉ dưỡng
@@ -544,7 +520,9 @@ function PropertyModalContent({ property }: { property: Property }) {
                           <button
                             type="button"
                             onClick={() => setDraftNights(nights - 1)}
-                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100"
+                            disabled={nights <= 1}
+                            aria-label="Giảm số đêm"
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             -
                           </button>
@@ -552,7 +530,9 @@ function PropertyModalContent({ property }: { property: Property }) {
                           <button
                             type="button"
                             onClick={() => setDraftNights(nights + 1)}
-                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100"
+                            disabled={nights >= 30}
+                            aria-label="Tăng số đêm"
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             +
                           </button>
@@ -564,21 +544,28 @@ function PropertyModalContent({ property }: { property: Property }) {
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                             Số khách
                           </span>
-                          <span className="text-xs font-bold text-slate-800">{adults} khách</span>
+                          <span className="text-xs font-bold text-slate-800">
+                            {guests.adults} người lớn
+                            {guests.children > 0 ? `, ${guests.children} trẻ em` : ""}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setDraftAdults(adults - 1, property.maxGuests)}
-                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100"
+                            onClick={() => setDraftAdults(guests.adults - 1)}
+                            disabled={guests.adults <= 1}
+                            aria-label="Giảm số khách"
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             -
                           </button>
-                          <span className="w-4 text-center text-xs font-bold">{adults}</span>
+                          <span className="w-4 text-center text-xs font-bold">{guests.adults}</span>
                           <button
                             type="button"
-                            onClick={() => setDraftAdults(adults + 1, property.maxGuests)}
-                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100"
+                            onClick={() => setDraftAdults(guests.adults + 1)}
+                            disabled={guests.adults >= property.maxGuests}
+                            aria-label="Tăng số khách"
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             +
                           </button>
@@ -681,7 +668,7 @@ function PropertyModalContent({ property }: { property: Property }) {
                       variant="primary"
                       size="lg"
                       className="w-full justify-center shadow-lg shadow-emerald-600/30 font-bold"
-                      onClick={handleProceedBooking}
+                      onClick={proceedToCheckout}
                     >
                       Tiến hành đặt phòng ngay
                       <ArrowRight className="w-4 h-4 ml-2" />
@@ -704,8 +691,8 @@ function PropertyModalContent({ property }: { property: Property }) {
         property={property}
         initialAmenityId={amenitiesModal.initialAmenityId}
         initialCategory={amenitiesModal.initialCategory}
-        selectedAmenityIds={selectedAmenityIds}
-        onToggleAmenity={(amenityId) => toggleBookingAmenity(property, amenityId)}
+        selectedAmenities={selectedAmenities}
+        onToggleAmenity={toggleBookingAmenity}
         onClose={() =>
           setAmenitiesModal((prev) => ({
             ...prev,
@@ -718,9 +705,9 @@ function PropertyModalContent({ property }: { property: Property }) {
 }
 
 export function PropertyModal() {
-  const { selectedProperty } = useBooking();
+  const { selectedProperty, bookingQuote } = useBooking();
 
-  if (!selectedProperty) return null;
+  if (!selectedProperty || !bookingQuote) return null;
 
-  return <PropertyModalContent key={selectedProperty.id} property={selectedProperty} />;
+  return <PropertyModalContent key={selectedProperty.id} quote={bookingQuote} />;
 }
