@@ -28,9 +28,9 @@ Bản tính giá và lịch trình dẫn xuất tất định từ một `Bookin
 - Chi tiết cấu thành giá: `basePrice`, `nightsTotal`, `cleaningFee` (`150.000đ`), `amenitiesFee`, `discount` (`100.000đ`) và `total` (`nightsTotal + cleaningFee + amenitiesFee - discount`).
 
 ### Reservation Submitter (Seam xác nhận đặt phòng)
-Seam xử lý bước gửi yêu cầu đặt phòng đã qua kiểm tra hợp lệ thông tin khách (`guestInfo`) và phương thức thanh toán (`paymentMethod`) để trả về vé xác nhận `BookingDetails`:
-- **`BrowserReservationAdapter`**: Adapter mặc định trên trình duyệt (mô phỏng độ trễ xác nhận bất đồng bộ có hỗ trợ hủy khi đóng hộp thoại, sẵn sàng thay bằng HTTP/Database adapter khi nối backend).
-- **`InMemoryReservationAdapter`**: Adapter phục vụ kiểm thử tự động chạy tức thì, tất định, không dùng `setTimeout`.
+Seam đặt tại `src/lib/persistencePort.ts` xử lý bước gửi yêu cầu đặt phòng đã qua kiểm tra hợp lệ thông tin khách (`guestInfo`) và phương thức thanh toán (`paymentMethod`) để trả về vé xác nhận `BookingDetails`:
+- **`BrowserReservationAdapter`**: Adapter mặc định trên trình duyệt (mô phỏng độ trễ xác nhận bất đồng bộ có hỗ trợ hủy `AbortSignal` khi đóng hộp thoại, sẵn sàng thay bằng HTTP/Database adapter khi nối backend).
+- **`InMemoryReservationAdapter`**: Adapter phục vụ kiểm thử tự động chạy tức thì, tất định, không dùng `setTimeout`, và hỗ trợ `getSubmittedBookings()`.
 
 ### Stay Catalog Query (Truy vấn danh mục chỗ nghỉ)
 Nguồn chân lý duy nhất quản lý toàn bộ điều kiện tìm kiếm, lọc và sắp xếp danh mục chỗ nghỉ (`destination`, `checkIn`/`checkOut`, `guests`, `category`, `minPrice`..`maxPrice`, `propertyTypes`, `minRating`, `amenities`, `freeCancellationOnly`, `sortBy`). Mọi caller trang chủ (`SearchBar`, `CategoryBar`, `FilterModal`, `PropertyList`, `TrendingDestinations`) đều đi qua cùng một interface, bảo đảm `reset` đặt lại trọn vẹn kể cả `sortBy` và tab loại hình.
@@ -52,3 +52,9 @@ Nguồn chân lý duy nhất (`describeAmenityPricing`, `describeSelectedAmenity
 
 ### Overlay Stack Coordinator (Bộ điều phối ngăn xếp lớp phủ)
 Module thuần `src/lib/overlayStack.ts` kết hợp React host mỏng `src/context/OverlayContext.tsx` điều phối tập trung toàn bộ hộp thoại và ngăn kéo (`FilterModal`, `FavoritesDrawer`, `AuthModal`, `PropertyModal`, `PropertyAmenitiesModal`, `BookingCheckoutModal`, `BookingSuccessModal`): phân tầng tất định theo `tier` (`base = 0`, `nested = 1`), cấp `z-index` động, xử lý phím `Escape` duy nhất cho lớp trên cùng, và khóa/khôi phục cuộn nền có đếm tham chiếu.
+
+### Favorites Repository (Kho lưu trữ yêu thích)
+Seam `FavoritesRepository` đặt tại `src/lib/persistencePort.ts` (`getSnapshot`, `getServerSnapshot`, `toggle`, `setAll`, `subscribe`) tách biệt việc lưu, chuẩn hóa danh sách mã chỗ nghỉ hợp lệ và đồng bộ đa tab khỏi React context — gồm `BrowserFavoritesAdapter` (`localStorage` + sự kiện `storage`, an toàn SSR/hydration với `useSyncExternalStore`) và `InMemoryFavoritesAdapter` (kiểm thử tất định).
+
+### App Ports (Cổng tích hợp ứng dụng)
+Gói các seam I/O bên ngoài của ứng dụng (`favorites: FavoritesRepository`, `reservations: ReservationSubmitter`) được khởi tạo qua `createBrowserAppPorts` (mặc định trên trình duyệt) hoặc `createInMemoryAppPorts` (kiểm thử/mô phỏng) và tiêm vào `BookingProvider`, cho phép thay bằng backend/database thật tại đúng một điểm mà không chạm logic nghiệp vụ hay giao diện.

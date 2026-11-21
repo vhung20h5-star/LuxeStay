@@ -5,7 +5,6 @@ import type {
   BookingSessionState,
   CheckoutGuestInput,
   Property,
-  ReservationSubmissionRequest,
   ReservationSubmitter,
   ResolvedPropertyAmenity,
   SearchCriteria,
@@ -115,10 +114,10 @@ function computeStayDates(
   const checkInDate = parsed
     ? new Date(parsed.date.getFullYear(), parsed.date.getMonth(), parsed.date.getDate())
     : new Date(
-        fallbackBaseDate.getFullYear(),
-        fallbackBaseDate.getMonth(),
-        fallbackBaseDate.getDate() + 1
-      );
+      fallbackBaseDate.getFullYear(),
+      fallbackBaseDate.getMonth(),
+      fallbackBaseDate.getDate() + 1
+    );
 
   const checkOutDate = new Date(
     checkInDate.getFullYear(),
@@ -477,68 +476,6 @@ function createAbortError(): Error {
   const error = new Error("Reservation submission aborted");
   error.name = "AbortError";
   return error;
-}
-
-function buildBookingDetails(
-  request: ReservationSubmissionRequest,
-  bookingId: string,
-  createdAt: string
-): BookingDetails {
-  return {
-    property: request.quote.property,
-    checkIn: request.quote.checkIn,
-    checkOut: request.quote.checkOut,
-    nights: request.quote.nights,
-    guests: { ...request.quote.guests },
-    pricing: { ...request.quote.pricing },
-    selectedAmenities: [...request.quote.selectedAmenities],
-    guestInfo: { ...request.guestInfo },
-    paymentMethod: request.paymentMethod,
-    bookingId,
-    createdAt,
-  };
-}
-
-export function createBrowserReservationAdapter(delayMs = 1200): ReservationSubmitter {
-  return {
-    submit(request, options) {
-      const signal = options?.signal;
-      if (signal?.aborted) {
-        return Promise.reject(createAbortError());
-      }
-
-      return new Promise<BookingDetails>((resolve, reject) => {
-        const onAbort = () => {
-          clearTimeout(timerId);
-          reject(createAbortError());
-        };
-
-        const timerId = setTimeout(() => {
-          signal?.removeEventListener("abort", onAbort);
-          const randomBookingId = `LX-${Math.floor(100000 + Math.random() * 900000)}`;
-          resolve(buildBookingDetails(request, randomBookingId, new Date().toISOString()));
-        }, delayMs);
-
-        signal?.addEventListener("abort", onAbort, { once: true });
-      });
-    },
-  };
-}
-
-export function createInMemoryReservationAdapter(overrides?: {
-  bookingId?: string;
-  createdAt?: string;
-}): ReservationSubmitter {
-  return {
-    async submit(request, options) {
-      if (options?.signal?.aborted) {
-        throw createAbortError();
-      }
-      const bookingId = overrides?.bookingId ?? "LX-TEST01";
-      const createdAt = overrides?.createdAt ?? "2026-11-21T00:00:00.000Z";
-      return buildBookingDetails(request, bookingId, createdAt);
-    },
-  };
 }
 
 export async function submitBookingSession(

@@ -1,10 +1,18 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { PROPERTIES } from "@/data/properties";
 import type {
   ActiveFilterChip,
   AmenityFilterKey,
+  AppPorts,
   BookingDetails,
   BookingQuote,
   BookingSessionState,
@@ -15,7 +23,6 @@ import type {
   Property,
   PropertyType,
   QuickSearchTrend,
-  ReservationSubmitter,
   SearchCriteria,
   SortOption,
   StayCatalogQueryState,
@@ -23,7 +30,6 @@ import type {
 import {
   closeCheckoutSession,
   closePreviewSession,
-  createBrowserReservationAdapter,
   createIdleBookingSession,
   deriveBookingQuote,
   dismissConfirmedBooking,
@@ -35,6 +41,7 @@ import {
   updateSessionAdults,
   updateSessionNights,
 } from "@/lib/bookingSession";
+import { createBrowserAppPorts } from "@/lib/persistencePort";
 import {
   adjustQueryGuests,
   applyQuickSearchTrend,
@@ -54,8 +61,8 @@ import {
 } from "@/lib/catalogQuery";
 
 interface BookingContextType {
-  // Favorites
-  favorites: string[];
+  // Favorites (backed by FavoritesRepository port)
+  favorites: readonly string[];
   toggleFavorite: (id: string) => void;
   isFavorite: (id: string) => boolean;
   favoritesDrawerOpen: boolean;
@@ -104,28 +111,42 @@ interface BookingContextType {
   ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
 }
 
-const defaultReservationSubmitter = createBrowserReservationAdapter(1200);
+const VALID_PROPERTY_IDS = new Set(PROPERTIES.map((property) => property.id));
+const defaultAppPorts = createBrowserAppPorts({
+  validPropertyIds: VALID_PROPERTY_IDS,
+  reservationDelayMs: 1200,
+});
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
 
 export function BookingProvider({
   children,
-  reservationSubmitter = defaultReservationSubmitter,
+  ports,
 }: {
   children: React.ReactNode;
-  reservationSubmitter?: ReservationSubmitter;
+  ports?: Partial<AppPorts>;
 }) {
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("travel_favorites");
-        if (saved) return JSON.parse(saved);
-      }
-    } catch {
-      // Fallback
-    }
-    return ["stay-01", "stay-02"];
-  });
+  const favoritesRepository = ports?.favorites ?? defaultAppPorts.favorites;
+  const reservationSubmitter = ports?.reservations ?? defaultAppPorts.reservations;
+
+  const subscribeFavorites = useCallback(
+    (listener: () => void) => favoritesRepository.subscribe(listener),
+    [favoritesRepository]
+  );
+  const getFavoritesSnapshot = useCallback(
+    () => favoritesRepository.getSnapshot(),
+    [favoritesRepository]
+  );
+  const getFavoritesServerSnapshot = useCallback(
+    () => favoritesRepository.getServerSnapshot(),
+    [favoritesRepository]
+  );
+
+  const favorites = useSyncExternalStore(
+    subscribeFavorites,
+    getFavoritesSnapshot,
+    getFavoritesServerSnapshot
+  );
 
   const [favoritesDrawerOpen, setFavoritesDrawerOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
@@ -292,69 +313,102 @@ export function BookingProvider({
     [bookingSession, reservationSubmitter]
   );
 
-  // Favorites
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => {
-      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-      try {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("travel_favorites", JSON.stringify(next));
-        }
-      } catch { }
-      return next;
-    });
-  };
-
-  const isFavorite = (id: string) => favorites.includes(id);
-
-  return (
-    <BookingContext.Provider
-      value={{
-        favorites,
-        toggleFavorite,
-        isFavorite,
-        favoritesDrawerOpen,
-        setFavoritesDrawerOpen,
-        catalogQuery,
-        catalogResult,
-        searchCriteria,
-        filterState,
-        activeCategory,
-        setDestination,
-        setDates,
-        adjustGuests,
-        setActiveCategory,
-        selectPropertyTypeTab,
-        togglePropertyType,
-        setPriceRange,
-        setMinRating,
-        toggleAmenityFilter,
-        setFreeCancellationOnly,
-        setSortBy,
-        applyQuickTrend,
-        removeFilterChip,
-        resetFilters,
-        filterModalOpen,
-        setFilterModalOpen,
-        bookingSession,
-        bookingQuote,
-        selectedProperty,
-        setSelectedProperty,
-        checkoutProperty,
-        setCheckoutProperty,
-        bookingSuccess,
-        setBookingSuccess,
-        proceedToCheckout,
-        setDraftNights,
-        setDraftAdults,
-        toggleBookingAmenity,
-        removeBookingAmenity,
-        submitCheckout,
-      }}
-    >
-      {children}
-    </BookingContext.Provider>
+  // Favorites (delegated to FavoritesRepository port)
+  const toggleFavorite = useCallback(
+    (id: string) => {
+      favoritesRepository.toggle(id);
+    },
+    [favoritesRepository]
   );
+
+  const isFavorite = useCallback((id: string) => favorites.includes(id), [favorites]);
+
+  const contextValue = useMemo<BookingContextType>(
+    () => ({
+      favorites,
+      toggleFavorite,
+      isFavorite,
+      favoritesDrawerOpen,
+      setFavoritesDrawerOpen,
+      catalogQuery,
+      catalogResult,
+      searchCriteria,
+      filterState,
+      activeCategory,
+      setDestination,
+      setDates,
+      adjustGuests,
+      setActiveCategory,
+      selectPropertyTypeTab,
+      togglePropertyType,
+      setPriceRange,
+      setMinRating,
+      toggleAmenityFilter,
+      setFreeCancellationOnly,
+      setSortBy,
+      applyQuickTrend,
+      removeFilterChip,
+      resetFilters,
+      filterModalOpen,
+      setFilterModalOpen,
+      bookingSession,
+      bookingQuote,
+      selectedProperty,
+      setSelectedProperty,
+      checkoutProperty,
+      setCheckoutProperty,
+      bookingSuccess,
+      setBookingSuccess,
+      proceedToCheckout,
+      setDraftNights,
+      setDraftAdults,
+      toggleBookingAmenity,
+      removeBookingAmenity,
+      submitCheckout,
+    }),
+    [
+      favorites,
+      toggleFavorite,
+      isFavorite,
+      favoritesDrawerOpen,
+      catalogQuery,
+      catalogResult,
+      searchCriteria,
+      filterState,
+      activeCategory,
+      setDestination,
+      setDates,
+      adjustGuests,
+      setActiveCategory,
+      selectPropertyTypeTab,
+      togglePropertyType,
+      setPriceRange,
+      setMinRating,
+      toggleAmenityFilter,
+      setFreeCancellationOnly,
+      setSortBy,
+      applyQuickTrend,
+      removeFilterChip,
+      resetFilters,
+      filterModalOpen,
+      bookingSession,
+      bookingQuote,
+      selectedProperty,
+      setSelectedProperty,
+      checkoutProperty,
+      setCheckoutProperty,
+      bookingSuccess,
+      setBookingSuccess,
+      proceedToCheckout,
+      setDraftNights,
+      setDraftAdults,
+      toggleBookingAmenity,
+      removeBookingAmenity,
+      submitCheckout,
+    ]
+  );
+
+  return <BookingContext.Provider value={contextValue}>{children}</BookingContext.Provider>;
 }
 
 export function useBooking() {

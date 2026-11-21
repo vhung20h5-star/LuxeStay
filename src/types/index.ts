@@ -391,7 +391,7 @@ export interface BookingDetails {
     discount: number;
     total: number;
   };
-  selectedAmenities: SelectedBookingAmenity[];
+  selectedAmenities: readonly SelectedBookingAmenity[];
   guestInfo: {
     fullName: string;
     email: string;
@@ -436,5 +436,36 @@ export interface OverlayStackSnapshot {
   topmostId: string | null;
   shouldLockBodyScroll: boolean;
   count: number;
+}
+
+export interface StorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export interface StorageEventLike {
+  key: string | null;
+}
+
+export interface StorageEventTargetLike {
+  addEventListener(type: "storage", listener: (event: StorageEventLike) => void): void;
+  removeEventListener(type: "storage", listener: (event: StorageEventLike) => void): void;
+}
+
+export interface FavoritesRepository {
+  getSnapshot(): readonly string[];
+  getServerSnapshot(): readonly string[];
+  toggle(propertyId: string): readonly string[];
+  setAll(propertyIds: readonly string[]): readonly string[];
+  subscribe(listener: () => void): () => void;
+}
+
+export interface InMemoryReservationAdapter extends ReservationSubmitter {
+  getSubmittedBookings(): readonly BookingDetails[];
+}
+
+export interface AppPorts {
+  favorites: FavoritesRepository;
+  reservations: ReservationSubmitter;
 }
 

@@ -14,9 +14,11 @@ import {
   deriveBookingQuote,
   validateCheckoutGuestInput,
   submitBookingSession,
+} from "@/lib/bookingSession";
+import {
   createBrowserReservationAdapter,
   createInMemoryReservationAdapter,
-} from "@/lib/bookingSession";
+} from "@/lib/persistencePort";
 import type { SearchCriteria } from "@/types";
 
 const stay02 = PROPERTIES.find((p) => p.id === "stay-02")!; // maxGuests 6, airport-shuttle free-reservation, herbal-spa paid 650_000
