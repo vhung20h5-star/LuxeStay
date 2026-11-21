@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpDown, SlidersHorizontal, SearchX } from "lucide-react";
 import { PROPERTIES } from "@/data/properties";
+import { propertyHasAmenityFilters } from "@/lib/amenities";
 import { useBooking } from "@/context/BookingContext";
 import { PropertyCard } from "./PropertyCard";
 import { Button } from "@/components/ui/Button";
@@ -60,10 +61,7 @@ export function PropertyList() {
       if (filterState.freeCancellationOnly && !prop.freeCancellation) return false;
 
       // 8. Amenities
-      if (
-        filterState.amenities.length > 0 &&
-        !filterState.amenities.every((a) => prop.amenities.includes(a))
-      ) {
+      if (!propertyHasAmenityFilters(prop, filterState.amenities)) {
         return false;
       }
 

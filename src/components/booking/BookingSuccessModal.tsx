@@ -9,6 +9,7 @@ import {
   Download,
   X,
   PhoneCall,
+  Sparkles,
 } from "lucide-react";
 import Image from "next/image";
 import { useBooking } from "@/context/BookingContext";
@@ -32,7 +33,17 @@ export function BookingSuccessModal() {
 
   if (!bookingSuccess) return null;
 
-  const { property, guestInfo, pricing, bookingId, checkIn, checkOut } = bookingSuccess;
+  const {
+    property,
+    guestInfo,
+    pricing,
+    bookingId,
+    checkIn,
+    checkOut,
+    nights,
+    guests,
+    selectedAmenities,
+  } = bookingSuccess;
 
   const handlePrint = () => {
     window.print();
@@ -126,17 +137,55 @@ export function BookingSuccessModal() {
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">
                   Khách lưu trú
                 </span>
-                <span className="font-bold text-slate-900 block mt-0.5">{guestInfo.fullName}</span>
+                <span className="font-bold text-slate-900 block mt-0.5">
+                  {guestInfo.fullName}
+                </span>
+                <span className="text-[11px] text-slate-500 block">
+                  {nights} đêm • {guests.adults} khách
+                </span>
               </div>
               <div className="pt-2 border-t border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">
                   Tổng thanh toán
                 </span>
-                <span className="font-bold text-emerald-700 block mt-0.5">
+                <span className="font-bold text-emerald-700 block mt-0.5 text-sm">
                   {formatVND(pricing.total)}
                 </span>
               </div>
             </div>
+
+            {/* Registered Resort Amenities & Services */}
+            {selectedAmenities.length > 0 && (
+              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <span>Tiện ích &amp; dịch vụ đi kèm đã đăng ký ({selectedAmenities.length})</span>
+                  </div>
+                  {pricing.amenitiesFee > 0 && (
+                    <span className="text-emerald-700">+{formatVND(pricing.amenitiesFee)}</span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  {selectedAmenities.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-2 text-xs bg-white/90 px-3 py-2 rounded-xl border border-emerald-100"
+                    >
+                      <span className="font-medium text-slate-800 truncate">{item.name}</span>
+                      <span
+                        className={`font-bold shrink-0 ${
+                          item.price > 0 ? "text-amber-700" : "text-teal-700"
+                        }`}
+                      >
+                        {item.price > 0 ? `+${formatVND(item.price)}` : "Miễn phí • Đã đăng ký"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Note & Host contact */}
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-start gap-3 text-xs text-amber-900">

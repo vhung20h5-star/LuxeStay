@@ -15,7 +15,9 @@ import {
 import { Property } from "@/types";
 import { useBooking } from "@/context/BookingContext";
 import { formatVND } from "@/lib/utils";
+import { getCardHighlightCategories, resolvePropertyAmenities } from "@/lib/amenities";
 import { Badge } from "@/components/ui/Badge";
+import { AmenityIcon } from "@/components/property/AmenityIcon";
 
 export interface PropertyCardProps {
   property: Property;
@@ -40,6 +42,9 @@ export function PropertyCard({ property }: PropertyCardProps) {
     property.originalPrice && property.originalPrice > property.pricePerNight
       ? Math.round(((property.originalPrice - property.pricePerNight) / property.originalPrice) * 100)
       : 0;
+
+  const resolvedAmenities = resolvePropertyAmenities(property);
+  const highlightCategories = getCardHighlightCategories(resolvedAmenities, 3);
 
   return (
     <motion.div
@@ -183,6 +188,24 @@ export function PropertyCard({ property }: PropertyCardProps) {
               </span>
             )}
           </div>
+
+          {/* Resort Amenity Category Preview Chips */}
+          {resolvedAmenities.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+              {highlightCategories.map((cat) => (
+                <span
+                  key={cat.id}
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-100/90 border border-slate-200/70 px-2 py-0.5 rounded-full"
+                >
+                  <AmenityIcon name={cat.iconName} className="w-3 h-3 text-emerald-600" />
+                  <span>{cat.shortLabel}</span>
+                </span>
+              ))}
+              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50/80 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+                +{resolvedAmenities.length} tiện ích
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Pricing & CTA */}

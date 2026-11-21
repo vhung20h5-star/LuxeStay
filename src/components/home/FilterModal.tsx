@@ -6,7 +6,9 @@ import { useBooking } from "@/context/BookingContext";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Check } from "lucide-react";
-import { PropertyType } from "@/types";
+import type { AmenityFilterKey, PropertyType } from "@/types";
+import { AMENITY_FILTER_OPTIONS } from "@/data/amenities";
+import { AmenityIcon } from "@/components/property/AmenityIcon";
 
 export function FilterModal() {
   const { filterModalOpen, setFilterModalOpen, filterState, setFilterState, resetFilters } =
@@ -18,16 +20,6 @@ export function FilterModal() {
     { id: "villa", label: "Villa biệt thự", desc: "Sang trọng, hồ bơi riêng biệt" },
     { id: "resort", label: "Resort 5 Sao", desc: "Nghỉ dưỡng thượng lưu ven biển/núi" },
     { id: "glamping", label: "Glamping", desc: "Cắm trại cao cấp giữa thiên nhiên" },
-  ];
-
-  const amenityOptions = [
-    "View ngắm mây trọn thung lũng",
-    "Hồ bơi vô cực riêng tư tràn bờ",
-    "Bồn tắm gỗ ngoài trời",
-    "Bữa sáng tự chọn tại phòng",
-    "Bếp nướng BBQ sân vườn",
-    "Lò sưởi củi ấm áp",
-    "Xe đưa đón sân bay",
   ];
 
   const togglePropertyType = (type: PropertyType) => {
@@ -42,7 +34,7 @@ export function FilterModal() {
     });
   };
 
-  const toggleAmenity = (amenity: string) => {
+  const toggleAmenity = (amenity: AmenityFilterKey) => {
     setFilterState((prev) => {
       const exists = prev.amenities.includes(amenity);
       return {
@@ -166,23 +158,27 @@ export function FilterModal() {
 
         {/* 4. Tiện ích nổi bật */}
         <div>
-          <h4 className="text-sm font-bold text-slate-800 mb-3">Tiện ích ưu tiên</h4>
+          <h4 className="text-sm font-bold text-slate-800 mb-3">Tiện ích khu nghỉ dưỡng ưu tiên</h4>
           <div className="flex flex-wrap gap-2">
-            {amenityOptions.map((amenity) => {
-              const isSelected = filterState.amenities.includes(amenity);
+            {AMENITY_FILTER_OPTIONS.map((opt) => {
+              const isSelected = filterState.amenities.includes(opt.key);
               return (
                 <button
-                  key={amenity}
+                  key={opt.key}
                   type="button"
-                  onClick={() => toggleAmenity(amenity)}
+                  onClick={() => toggleAmenity(opt.key)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5 ${
                     isSelected
                       ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
+                      : "bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40"
                   }`}
                 >
-                  {isSelected && <Check className="w-3 h-3" />}
-                  <span>{amenity}</span>
+                  {isSelected ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <AmenityIcon name={opt.iconName} className="w-3.5 h-3.5 text-emerald-600" />
+                  )}
+                  <span>{opt.label}</span>
                 </button>
               );
             })}

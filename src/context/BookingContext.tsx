@@ -1,7 +1,22 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
-import { Property, SearchCriteria, FilterState, BookingDetails, CategoryId } from "@/types";
+import React, { createContext, useCallback, useContext, useState } from "react";
+import type {
+  BookingDetails,
+  BookingDraft,
+  CategoryId,
+  FilterState,
+  Property,
+  SearchCriteria,
+} from "@/types";
+import {
+  clampDraftAdults,
+  clampDraftNights,
+  createInitialDraft,
+  removeDraftAmenity,
+  syncDraftForProperty,
+  toggleDraftAmenity,
+} from "@/lib/bookingDraft";
 
 interface BookingContextType {
   // Favorites
@@ -29,6 +44,14 @@ interface BookingContextType {
   setBookingSuccess: (details: BookingDetails | null) => void;
   filterModalOpen: boolean;
   setFilterModalOpen: (open: boolean) => void;
+
+  // Synchronized Booking Draft
+  bookingDraft: BookingDraft;
+  setDraftNights: (nights: number) => void;
+  setDraftAdults: (adults: number, maxGuests?: number) => void;
+  toggleBookingAmenity: (property: Property, amenityId: string) => void;
+  removeBookingAmenity: (amenityId: string) => void;
+  clearSelectedAmenities: () => void;
 }
 
 const defaultSearch: SearchCriteria = {
@@ -75,10 +98,48 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
   const [filterState, setFilterState] = useState<FilterState>(defaultFilters);
   const [activeCategory, setActiveCategoryState] = useState<CategoryId>("all");
 
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [checkoutProperty, setCheckoutProperty] = useState<Property | null>(null);
+  const [selectedProperty, setSelectedPropertyState] = useState<Property | null>(null);
+  const [checkoutProperty, setCheckoutPropertyState] = useState<Property | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<BookingDetails | null>(null);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft>(() => createInitialDraft());
+
+  const setSelectedProperty = useCallback((property: Property | null) => {
+    if (property) {
+      setBookingDraft((prev) => syncDraftForProperty(prev, property));
+    }
+    setSelectedPropertyState(property);
+  }, []);
+
+  const setCheckoutProperty = useCallback((property: Property | null) => {
+    if (property) {
+      setBookingDraft((prev) => syncDraftForProperty(prev, property));
+    }
+    setCheckoutPropertyState(property);
+  }, []);
+
+  const setDraftNights = useCallback((nights: number) => {
+    setBookingDraft((prev) => ({ ...prev, nights: clampDraftNights(nights) }));
+  }, []);
+
+  const setDraftAdults = useCallback((adults: number, maxGuests = 10) => {
+    setBookingDraft((prev) => ({
+      ...prev,
+      adults: clampDraftAdults(adults, maxGuests),
+    }));
+  }, []);
+
+  const toggleBookingAmenity = useCallback((property: Property, amenityId: string) => {
+    setBookingDraft((prev) => toggleDraftAmenity(prev, property, amenityId));
+  }, []);
+
+  const removeBookingAmenity = useCallback((amenityId: string) => {
+    setBookingDraft((prev) => removeDraftAmenity(prev, amenityId));
+  }, []);
+
+  const clearSelectedAmenities = useCallback(() => {
+    setBookingDraft((prev) => ({ ...prev, selectedAmenityIds: [] }));
+  }, []);
 
   const setActiveCategory = (cat: CategoryId) => {
     setActiveCategoryState(cat);
@@ -128,6 +189,12 @@ export function BookingProvider({ children }: { children: React.ReactNode }) {
         setBookingSuccess,
         filterModalOpen,
         setFilterModalOpen,
+        bookingDraft,
+        setDraftNights,
+        setDraftAdults,
+        toggleBookingAmenity,
+        removeBookingAmenity,
+        clearSelectedAmenities,
       }}
     >
       {children}

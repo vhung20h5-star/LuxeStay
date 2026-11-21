@@ -1,17 +1,31 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { X, ShieldCheck, Lock } from "lucide-react";
+import { X, ShieldCheck, Lock, Sparkles, Trash2 } from "lucide-react";
 import { useBooking } from "@/context/BookingContext";
+import {
+  buildSelectedBookingAmenities,
+  calculateBookingPricing,
+  resolvePropertyAmenities,
+} from "@/lib/amenities";
+import { computeStayDates } from "@/lib/bookingDraft";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { BookingDetails } from "@/types";
+import type { BookingDetails } from "@/types";
 
 export function BookingCheckoutModal() {
-  const { checkoutProperty, setCheckoutProperty, setBookingSuccess } = useBooking();
+  const {
+    checkoutProperty,
+    setCheckoutProperty,
+    setBookingSuccess,
+    bookingDraft,
+    searchCriteria,
+    removeBookingAmenity,
+    clearSelectedAmenities,
+  } = useBooking();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -22,13 +36,34 @@ export function BookingCheckoutModal() {
   const [note, setNote] = useState("Vui lòng chuẩn bị phòng tầng cao view thoáng giúp mình.");
   const [paymentMethod, setPaymentMethod] = useState<"momo" | "vnpay" | "card" | "hotel">("momo");
 
+  const resolvedAmenities = useMemo(
+    () => (checkoutProperty ? resolvePropertyAmenities(checkoutProperty) : []),
+    [checkoutProperty]
+  );
+
+  const selectedAmenityIds = useMemo(
+    () =>
+      checkoutProperty && bookingDraft.propertyId === checkoutProperty.id
+        ? bookingDraft.selectedAmenityIds
+        : [],
+    [checkoutProperty, bookingDraft.propertyId, bookingDraft.selectedAmenityIds]
+  );
+
+  const selectedAmenities = useMemo(
+    () => buildSelectedBookingAmenities(resolvedAmenities, selectedAmenityIds),
+    [resolvedAmenities, selectedAmenityIds]
+  );
+
   if (!checkoutProperty) return null;
 
-  const nights = 2;
-  const baseTotal = checkoutProperty.pricePerNight * nights;
-  const cleaningFee = 150000;
-  const discount = 100000;
-  const total = baseTotal + cleaningFee - discount;
+  const nights = bookingDraft.nights;
+  const adults = Math.min(bookingDraft.adults, checkoutProperty.maxGuests);
+  const { checkIn, checkOut } = computeStayDates(nights, searchCriteria.checkIn);
+  const pricing = calculateBookingPricing(
+    checkoutProperty.pricePerNight,
+    nights,
+    selectedAmenities
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,27 +74,25 @@ export function BookingCheckoutModal() {
 
     setIsSubmitting(true);
 
+    // Snapshot amenities & pricing before async confirmation
+    const amenitiesSnapshot = [...selectedAmenities];
+    const pricingSnapshot = { ...pricing };
+
     setTimeout(() => {
       const randomBookingId = `LX-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const bookingInfo: BookingDetails = {
         property: checkoutProperty,
-        checkIn: "15/11/2026",
-        checkOut: "17/11/2026",
+        checkIn,
+        checkOut,
         nights,
         guests: {
-          adults: 2,
-          children: 0,
-          rooms: 1,
+          adults,
+          children: searchCriteria.guests.children,
+          rooms: searchCriteria.guests.rooms,
         },
-        pricing: {
-          basePrice: checkoutProperty.pricePerNight,
-          nightsTotal: baseTotal,
-          cleaningFee,
-          serviceFee: 0,
-          discount,
-          total,
-        },
+        pricing: pricingSnapshot,
+        selectedAmenities: amenitiesSnapshot,
         guestInfo: {
           fullName,
           email,
@@ -72,6 +105,7 @@ export function BookingCheckoutModal() {
       };
 
       setIsSubmitting(false);
+      clearSelectedAmenities();
       setCheckoutProperty(null);
       setBookingSuccess(bookingInfo);
     }, 1200);
@@ -102,8 +136,10 @@ export function BookingCheckoutModal() {
               <p className="text-xs text-slate-500">Hoàn tất chỉ trong 1 phút • Bảo mật 256-bit SSL</p>
             </div>
             <button
+              type="button"
               onClick={() => setCheckoutProperty(null)}
               className="p-2 text-slate-400 hover:text-slate-700 rounded-full"
+              aria-label="Đóng"
             >
               <X className="w-5 h-5" />
             </button>
@@ -127,15 +163,71 @@ export function BookingCheckoutModal() {
                 <h4 className="text-sm font-bold text-slate-900 truncate mt-0.5">
                   {checkoutProperty.title}
                 </h4>
-                <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 mt-1">
                   <span>★ {checkoutProperty.rating}</span>
                   <span>•</span>
                   <span>{nights} đêm nghỉ</span>
                   <span>•</span>
-                  <span>2 người lớn</span>
+                  <span>{adults} khách</span>
+                  <span>•</span>
+                  <span className="font-semibold text-slate-700">
+                    {checkIn} → {checkOut}
+                  </span>
                 </div>
               </div>
             </div>
+
+            {/* Selected Resort Amenities & Services (Removable) */}
+            {selectedAmenities.length > 0 && (
+              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <span>Tiện ích &amp; dịch vụ đi kèm đã chọn ({selectedAmenities.length})</span>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-700">
+                    {pricing.amenitiesFee > 0 ? `+${formatVND(pricing.amenitiesFee)}` : "Miễn phí"}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {selectedAmenities.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-emerald-100"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-800 truncate">{item.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {item.pricingType === "paid"
+                            ? item.priceUnit ?? "Gói dịch vụ theo kỳ nghỉ"
+                            : "Miễn phí • Đăng ký giữ chỗ trước"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`text-xs font-bold ${
+                            item.price > 0 ? "text-amber-700" : "text-teal-700"
+                          }`}
+                        >
+                          {item.price > 0 ? `+${formatVND(item.price)}` : "0đ"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeBookingAmenity(item.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          title="Bỏ dịch vụ này"
+                          aria-label={`Bỏ ${item.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Step 1: Guest Information */}
             <div className="space-y-4">
@@ -180,7 +272,7 @@ export function BookingCheckoutModal() {
                   rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="Ví dụ: Nhận phòng muộn sau 19h, cần phòng yên tĩnh..."
+                  placeholder="Ví dụ: Nhận phòng muộn sau 19h, mã chuyến bay đón sân bay..."
                   className="w-full rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
@@ -263,19 +355,29 @@ export function BookingCheckoutModal() {
             <div className="p-4 rounded-2xl bg-slate-50 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>Giá phòng ({nights} đêm)</span>
-                <span>{formatVND(baseTotal)}</span>
+                <span>{formatVND(pricing.nightsTotal)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Phí dịch vụ & dọn dẹp</span>
-                <span>{formatVND(cleaningFee)}</span>
+                <span>Phí dịch vụ &amp; dọn dẹp</span>
+                <span>{formatVND(pricing.cleaningFee)}</span>
               </div>
+              {selectedAmenities.length > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Tiện ích &amp; dịch vụ đi kèm ({selectedAmenities.length})</span>
+                  <span className="font-semibold text-slate-800">
+                    {pricing.amenitiesFee > 0 ? `+${formatVND(pricing.amenitiesFee)}` : "Miễn phí"}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-emerald-700 font-semibold">
                 <span>Giảm giá khuyến mãi</span>
-                <span>-{formatVND(discount)}</span>
+                <span>-{formatVND(pricing.discount)}</span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-bold text-slate-900">
                 <span>Tổng số tiền thanh toán</span>
-                <span className="text-lg font-black text-emerald-700">{formatVND(total)}</span>
+                <span className="text-lg font-black text-emerald-700">
+                  {formatVND(pricing.total)}
+                </span>
               </div>
             </div>
 
@@ -289,7 +391,7 @@ export function BookingCheckoutModal() {
                 className="w-full justify-center shadow-lg shadow-emerald-600/30 font-bold"
               >
                 <Lock className="w-4 h-4 mr-2" />
-                Xác nhận đặt phòng ngay ({formatVND(total)})
+                Xác nhận đặt phòng ngay ({formatVND(pricing.total)})
               </Button>
 
               <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
