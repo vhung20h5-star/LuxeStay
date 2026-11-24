@@ -1,9 +1,16 @@
 import type {
   LocaleCode,
+  PromotionCampaignTargetFilter,
   PromotionCampaignTheme,
   PromotionVoucher,
+  Property,
+  VoucherAudience,
 } from "@luxestay/contracts";
-import { filterVouchersByAudience } from "@luxestay/domain";
+import {
+  filterVouchersByAudience,
+  resolveEligibleVoucherForProperty,
+  resolveVoucherScopeLabels,
+} from "@luxestay/domain";
 
 export interface CountdownParts {
   mounted: boolean;
@@ -189,4 +196,117 @@ export function computeCarouselScrollState(
     canScrollLeft: scrollLeft > tolerance,
     canScrollRight: scrollLeft + clientWidth < scrollWidth - tolerance,
   };
+}
+
+/** Copies a promo code or text snippet to the browser clipboard when available. */
+export function writeTextToClipboard(text: string): void {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(text).catch(() => {});
+  }
+}
+
+/** Returns live active voucher counts across each DealsCenter audience filter pill. */
+export function buildDealAudienceCounts(
+  vouchers: readonly PromotionVoucher[],
+  now: Date = new Date()
+): Record<VoucherAudience, number> {
+  return {
+    all: filterVouchersByAudience(vouchers, "all", now).length,
+    "new-user": filterVouchersByAudience(vouchers, "new-user", now).length,
+    member: filterVouchersByAudience(vouchers, "member", now).length,
+  };
+}
+
+export interface CampaignScopePill {
+  key: string;
+  kind: "flashDeal" | "destination" | "category" | "propertyType" | "all";
+  label: string;
+}
+
+/** Formats campaign targetFilter dimensions into concise display pills. */
+export function buildCampaignScopePills(
+  targetFilter: PromotionCampaignTargetFilter,
+  locale: LocaleCode
+): CampaignScopePill[] {
+  const pills: CampaignScopePill[] = [];
+
+  if (targetFilter.flashDealOnly) {
+    pills.push({
+      key: "flash-deal",
+      kind: "flashDeal",
+      label: locale === "en" ? "Flash Deal stays" : "Chỗ nghỉ Flash Deal",
+    });
+  }
+
+  for (const dest of new Set(targetFilter.destinations ?? [])) {
+    pills.push({
+      key: `dest-${dest}`,
+      kind: "destination",
+      label: dest,
+    });
+  }
+
+  const categories = [...new Set(targetFilter.categories ?? [])];
+  const propertyTypes = [...new Set(targetFilter.propertyTypes ?? [])];
+  const { categoryLabels, propertyTypeLabels } = resolveVoucherScopeLabels({
+    applicableCategories: categories,
+    applicablePropertyTypes: propertyTypes,
+  });
+
+  categories.forEach((catId, idx) => {
+    pills.push({
+      key: `cat-${catId}`,
+      kind: "category",
+      label: categoryLabels[idx] ?? catId,
+    });
+  });
+
+  propertyTypes.forEach((typeId, idx) => {
+    pills.push({
+      key: `type-${typeId}`,
+      kind: "propertyType",
+      label: propertyTypeLabels[idx] ?? typeId,
+    });
+  });
+
+  if (pills.length === 0) {
+    pills.push({
+      key: "all-stays",
+      kind: "all",
+      label: locale === "en" ? "All LuxeStay stays" : "Toàn bộ chỗ nghỉ LuxeStay",
+    });
+  }
+
+  return pills;
+}
+
+export interface DealStayPromoResolution {
+  effectiveVoucher: PromotionVoucher | null;
+  wasAutoSwitched: boolean;
+}
+
+/** Resolves the auto-applied voucher for a campaign property, halting when expired. */
+export function resolveDealStayPromo(options: {
+  expired: boolean;
+  selectedVoucher: PromotionVoucher | null;
+  campaignVouchers: readonly PromotionVoucher[];
+  property: Pick<Property, "propertyType" | "category">;
+}): DealStayPromoResolution {
+  if (options.expired) {
+    return { effectiveVoucher: null, wasAutoSwitched: false };
+  }
+
+  const effectiveVoucher = resolveEligibleVoucherForProperty(
+    options.selectedVoucher,
+    options.campaignVouchers,
+    options.property
+  );
+
+  const wasAutoSwitched = Boolean(
+    options.selectedVoucher &&
+      effectiveVoucher &&
+      effectiveVoucher.code !== options.selectedVoucher.code
+  );
+
+  return { effectiveVoucher, wasAutoSwitched };
 }
