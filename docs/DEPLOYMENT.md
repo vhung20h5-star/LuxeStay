@@ -49,6 +49,7 @@ File cấu hình [vercel.json](../vercel.json) ở thư mục gốc chia 1 Verce
 - **`frontend` (`apps/web`, Next.js 16):**
   - Build: `cd ../.. && npx turbo run build --filter=@luxestay/web...`
   - Nhận **Service Binding** `API_BASE_URL` (URL nội bộ trỏ thẳng sang service `backend` khi SSR — không đi qua CDN/Firewall).
+  - Cấu hình `images.unoptimized: true` trong [next.config.ts](../apps/web/next.config.ts) vì Vercel Services (Beta) không gắn route tối ưu ảnh `/_next/image` (mọi ảnh Unsplash đã kèm tham số Imgix CDN `?auto=format&fit=crop`).
   - Trình duyệt gọi API cùng domain với `NEXT_PUBLIC_API_BASE_URL=/` -> mọi request tới `/api/v1/*` dùng chung origin nên cookie `luxestay_session` (`HttpOnly; SameSite=Lax; Secure`) hoạt động đồng nhất trên cả Production và Preview URLs.
 - **`backend` (`apps/api`, Hono 4 trên Vercel Functions / Fluid Compute):**
   - Entrypoint: `src/server.ts` (lazy-init an toàn lúc build, tái sử dụng `pg.Pool` kết hợp `attachDatabasePool` từ `@vercel/functions`).
