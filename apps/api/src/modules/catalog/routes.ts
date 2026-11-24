@@ -5,7 +5,7 @@ import {
   buildApiError,
   buildApiSuccess,
 } from "@luxestay/contracts";
-import { evaluatePromotionVoucher, hasPriorSuccessfulBookings } from "@luxestay/domain";
+import { evaluatePromotionVoucher } from "@luxestay/domain";
 import { buildMeta } from "../../middleware/errorHandler.js";
 import type { ApiEnvBindings } from "../../types.js";
 import type { ApiReservationRepository } from "../reservations/repository.js";
@@ -65,18 +65,15 @@ export function createCatalogRoutes(
     }
 
     const authUser = c.get("authUser");
-    const [snapshot, property, userReservations] = await Promise.all([
+    const [snapshot, property, priorSuccessful] = await Promise.all([
       catalogService.getCatalogSnapshot(),
       parsed.data.propertyId
         ? catalogService.getPropertyById(parsed.data.propertyId)
         : Promise.resolve(null),
       authUser && deps?.reservationRepository
-        ? deps.reservationRepository.findByUserId(authUser.id)
-        : Promise.resolve(null),
+        ? deps.reservationRepository.hasSuccessfulBookingByUserId(authUser.id)
+        : Promise.resolve(undefined),
     ]);
-    const priorSuccessful = userReservations
-      ? hasPriorSuccessfulBookings(userReservations)
-      : undefined;
 
     const evaluation = evaluatePromotionVoucher(
       parsed.data.code,

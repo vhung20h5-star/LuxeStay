@@ -36,6 +36,8 @@ import {
   promotionCampaignsTable,
   promotionsTable,
   propertiesTable,
+  propertyAvailabilityTable,
+  reservationsTable,
 } from "../dist/db/schema/index.js";
 import {
   backfillPromotionsIfNeeded,
@@ -57,7 +59,11 @@ import {
   signWebhookPayload,
   WEBHOOK_SIGNATURE_HEADER,
 } from "../dist/modules/payments/signature.js";
-import { mapReservationRowsToBookingDetails } from "../dist/modules/reservations/postgresRepository.js";
+import {
+  createPostgresReservationRepository,
+  mapReservationRowsToBookingDetails,
+} from "../dist/modules/reservations/postgresRepository.js";
+import { createInMemoryReservationRepository } from "../dist/modules/reservations/repository.js";
 import { z } from "zod";
 
 function extractCookieHeader(response: Response): string {
@@ -1909,4 +1915,259 @@ test("mapCampaignRowToDomain and createPostgresDealsRepository map rows into Pro
   assert.equal(await pgRepo.getCampaignBySlug("   "), null);
   const bySlug = await pgRepo.getCampaignBySlug(" BIEN-HE-PHU-QUOC-NHA-TRANG ");
   assert.equal(bySlug?.id, "camp-bien-he-phu-quoc");
+});
+
+test("In-lock hasPriorSuccessfulBookings and lightweight hasSuccessfulBookingByUserId block concurrent WELCOME150 and skip full hydration", async () => {
+  // 1. Concurrent WELCOME150 requests on the same property for a new user: exactly 1 succeeds, 1 fails
+  const { app: raceApp } = createApiApp({ nodeEnv: "test" });
+  const raceReg = await raceApp.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Lê Song Song",
+      email: "concurrent@luxestay.vn",
+      phone: "0903334455",
+      password: "password123",
+    }),
+  });
+  assert.equal(raceReg.status, 201);
+  const raceCookie = extractCookieHeader(raceReg);
+
+  const [res1, res2] = await Promise.all([
+    raceApp.request(API_ENDPOINTS.reservations, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: raceCookie },
+      body: JSON.stringify({
+        propertyId: "stay-01",
+        checkInSeed: "2026-12-07",
+        nights: 2,
+        guests: { adults: 2, children: 0, rooms: 1 },
+        selectedAmenityIds: [],
+        guestInfo: {
+          fullName: "Lê Song Song",
+          phone: "0903334455",
+          email: "concurrent@luxestay.vn",
+        },
+        paymentMethod: "hotel",
+        promoCode: "WELCOME150",
+      }),
+    }),
+    raceApp.request(API_ENDPOINTS.reservations, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: raceCookie },
+      body: JSON.stringify({
+        propertyId: "stay-01",
+        checkInSeed: "2026-12-15",
+        nights: 2,
+        guests: { adults: 2, children: 0, rooms: 1 },
+        selectedAmenityIds: [],
+        guestInfo: {
+          fullName: "Lê Song Song",
+          phone: "0903334455",
+          email: "concurrent@luxestay.vn",
+        },
+        paymentMethod: "hotel",
+        promoCode: "WELCOME150",
+      }),
+    }),
+  ]);
+  const statuses = [res1.status, res2.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [201, 400]);
+
+  // 2. Spy repository verifies validateVoucher & createReservation never call findByUserId and skip user check when no promoCode
+  const baseRepo = createInMemoryReservationRepository();
+  let findByUserIdCalls = 0;
+  let hasSuccessfulCalls = 0;
+  const capturedLockOptions: Array<{ userId?: string } | undefined> = [];
+
+  const spyRepo = {
+    ...baseRepo,
+    async findByUserId(userId: string) {
+      findByUserIdCalls += 1;
+      return baseRepo.findByUserId(userId);
+    },
+    async hasSuccessfulBookingByUserId(userId: string) {
+      hasSuccessfulCalls += 1;
+      return baseRepo.hasSuccessfulBookingByUserId(userId);
+    },
+    async createWithPropertyLock(
+      propertyId: string,
+      prepare: Parameters<typeof baseRepo.createWithPropertyLock>[1],
+      lockOptions?: { userId?: string }
+    ) {
+      capturedLockOptions.push(lockOptions);
+      return baseRepo.createWithPropertyLock(propertyId, prepare, lockOptions);
+    },
+  };
+
+  const { app: spyApp } = createApiApp({
+    nodeEnv: "test",
+    reservationRepository: spyRepo,
+  });
+
+  const spyReg = await spyApp.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Phạm Tối Ưu",
+      email: "spy@luxestay.vn",
+      phone: "0904445566",
+      password: "password123",
+    }),
+  });
+  assert.equal(spyReg.status, 201);
+  const spyCookie = extractCookieHeader(spyReg);
+
+  // validateVoucher uses hasSuccessfulBookingByUserId, never findByUserId
+  const valRes = await spyApp.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(valRes.status, 200);
+  assert.equal(findByUserIdCalls, 0);
+  assert.equal(hasSuccessfulCalls, 1);
+
+  // createReservation WITHOUT promoCode passes undefined userId in lockOptions and avoids extra user check
+  const noPromoBook = await spyApp.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-07",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Phạm Tối Ưu",
+        phone: "0904445566",
+        email: "spy@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(noPromoBook.status, 201);
+  assert.equal(findByUserIdCalls, 0);
+  assert.equal(hasSuccessfulCalls, 1);
+  assert.equal(capturedLockOptions[0]?.userId, undefined);
+
+  // createReservation WITH WELCOME150 passes userId in lockOptions and rejects repeat user inside lock
+  const promoBook = await spyApp.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-15",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Phạm Tối Ưu",
+        phone: "0904445566",
+        email: "spy@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(promoBook.status, 400);
+  assert.equal(findByUserIdCalls, 0);
+  assert.ok(capturedLockOptions[1]?.userId);
+
+  // 3. Postgres repository hasSuccessfulBookingByUserId & createWithPropertyLock run lightweight SQL without hydrateRows/getSnapshot
+  let snapshotCalls = 0;
+  const queriedTables: unknown[] = [];
+  let userBookingQueryResult: Array<{ bookingId: string }> = [{ bookingId: "LX-PRIOR1" }];
+
+  const buildSelectChain = () => ({
+    from(table: unknown) {
+      queriedTables.push(table);
+      return {
+        where() {
+          const resultPromise = Promise.resolve([]);
+          return {
+            async for() {
+              return [{ id: "stay-01" }];
+            },
+            async orderBy() {
+              return [];
+            },
+            async limit() {
+              return table === reservationsTable ? userBookingQueryResult : [];
+            },
+            then: resultPromise.then.bind(resultPromise),
+          };
+        },
+      };
+    },
+  });
+
+  const pgStubDb = {
+    select: buildSelectChain,
+    async transaction<T>(fn: (tx: typeof pgStubDb) => Promise<T>): Promise<T> {
+      return fn({
+        select: buildSelectChain,
+        transaction: pgStubDb.transaction,
+      });
+    },
+  } as unknown as LuxeStayDb;
+
+  const baseCatalogRepo = createSeedCatalogRepository();
+  const spyCatalogRepo = {
+    ...baseCatalogRepo,
+    async getSnapshot() {
+      snapshotCalls += 1;
+      return baseCatalogRepo.getSnapshot();
+    },
+  };
+
+  const pgReservationRepo = createPostgresReservationRepository({
+    db: pgStubDb,
+    catalogRepository: spyCatalogRepo,
+  });
+
+  // Blank userId short-circuits without querying DB
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("   "), false);
+  assert.equal(queriedTables.length, 0);
+
+  // Populated user booking returns true and queries ONLY reservationsTable (no getSnapshot)
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("user-1"), true);
+  assert.deepEqual(queriedTables, [reservationsTable]);
+  assert.equal(snapshotCalls, 0);
+
+  // Empty user booking returns false
+  userBookingQueryResult = [];
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("user-2"), false);
+
+  // createWithPropertyLock without userId does NOT execute extra user-booking query
+  queriedTables.length = 0;
+  let capturedPriorWithoutUser: boolean | undefined;
+  await pgReservationRepo.createWithPropertyLock("stay-01", (ctx) => {
+    capturedPriorWithoutUser = ctx.hasPriorSuccessfulBookings;
+    return { ok: false, status: 400, code: "VALIDATION_ERROR", message: "stop" };
+  });
+  assert.equal(capturedPriorWithoutUser, false);
+  assert.deepEqual(queriedTables, [propertiesTable, propertyAvailabilityTable, reservationsTable]);
+  assert.equal(snapshotCalls, 0);
+
+  // createWithPropertyLock with userId executes lightweight user-booking check inside tx
+  queriedTables.length = 0;
+  userBookingQueryResult = [{ bookingId: "LX-PRIOR1" }];
+  let capturedPriorWithUser: boolean | undefined;
+  await pgReservationRepo.createWithPropertyLock(
+    "stay-01",
+    (ctx) => {
+      capturedPriorWithUser = ctx.hasPriorSuccessfulBookings;
+      return { ok: false, status: 400, code: "VALIDATION_ERROR", message: "stop" };
+    },
+    { userId: "user-1" }
+  );
+  assert.equal(capturedPriorWithUser, true);
+  assert.deepEqual(queriedTables, [
+    propertiesTable,
+    propertyAvailabilityTable,
+    reservationsTable,
+    reservationsTable,
+  ]);
+  assert.equal(snapshotCalls, 0);
 });
