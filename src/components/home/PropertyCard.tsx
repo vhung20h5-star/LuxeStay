@@ -12,8 +12,8 @@ import {
   Sparkles,
   Check,
 } from "lucide-react";
-import { Property } from "@/types";
-import { useBooking } from "@/context/BookingContext";
+import type { Property } from "@/types";
+import { useBookingSession, useFavorites } from "@/context/BookingContext";
 import { formatVND } from "@/lib/utils";
 import { projectPropertyAmenities } from "@/lib/amenities";
 import { Badge } from "@/components/ui/Badge";
@@ -24,7 +24,8 @@ export interface PropertyCardProps {
 }
 
 export function PropertyCard({ property }: PropertyCardProps) {
-  const { isFavorite, toggleFavorite, setSelectedProperty, setCheckoutProperty } = useBooking();
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const { setSelectedProperty, setCheckoutProperty } = useBookingSession();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const isFav = isFavorite(property.id);
 

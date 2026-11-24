@@ -12,14 +12,14 @@ import {
   Sparkles,
 } from "lucide-react";
 import Image from "next/image";
-import { useBooking } from "@/context/BookingContext";
+import { useBookingSession } from "@/context/BookingContext";
 import { useOverlayLayer } from "@/context/OverlayContext";
 import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
 export function BookingSuccessModal() {
-  const { bookingSuccess, setBookingSuccess } = useBooking();
+  const { bookingSuccess, setBookingSuccess } = useBookingSession();
 
   const overlayLayer = useOverlayLayer({
     id: "booking-success-modal",

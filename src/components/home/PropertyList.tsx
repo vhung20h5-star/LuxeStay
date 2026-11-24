@@ -3,7 +3,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpDown, SlidersHorizontal, SearchX, X } from "lucide-react";
-import { useBooking } from "@/context/BookingContext";
+import { useCatalog } from "@/context/BookingContext";
 import { PropertyCard } from "./PropertyCard";
 import { Button } from "@/components/ui/Button";
 import type { SortOption } from "@/types";
@@ -17,7 +17,7 @@ export function PropertyList() {
     removeFilterChip,
     resetFilters,
     setFilterModalOpen,
-  } = useBooking();
+  } = useCatalog();
 
   const { items: filteredProperties, activeChips, activeFilterCount } = catalogResult;
 

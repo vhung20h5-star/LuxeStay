@@ -304,6 +304,43 @@ export interface Destination {
   popularFor: string;
 }
 
+export interface TestimonialItem {
+  id: string;
+  name: string;
+  role: string;
+  avatar: string;
+  rating: number;
+  stayName: string;
+  content: string;
+  tripType: string;
+}
+
+export interface PromotionVoucher {
+  id: string;
+  code: string;
+  description: string;
+  tone: "emerald" | "amber";
+}
+
+export interface ServerReservationIntent {
+  propertyId: string;
+  checkInSeed?: string;
+  nights: number;
+  guests: {
+    adults: number;
+    children: number;
+    rooms: number;
+  };
+  selectedAmenityIds: string[];
+  guestInfo: {
+    fullName: string;
+    phone: string;
+    email: string;
+    note?: string;
+  };
+  paymentMethod: "momo" | "vnpay" | "card" | "hotel";
+}
+
 export interface SearchCriteria {
   destination: string;
   checkIn: string;

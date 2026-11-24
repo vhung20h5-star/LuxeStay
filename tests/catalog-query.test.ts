@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DESTINATIONS } from "@/data/destinations";
 import { PROPERTIES } from "@/data/properties";
 import {
   DEFAULT_MIN_PRICE,
@@ -9,6 +10,9 @@ import {
   PRICE_RANGE_PRESETS,
   QUICK_SEARCH_TRENDS,
   QUICK_DATE_PRESETS,
+  getQuickDatePresets,
+  filterDestinations,
+  resolveFavoriteProperties,
   formatSearchDateRange,
   createDefaultCatalogQuery,
   setQueryDestination,
@@ -210,4 +214,27 @@ test("QUICK_DATE_PRESETS use ISO dates and setQueryDates clears stale non-ISO or
 
   assert.equal(formatSearchDateRange("2026-12-25", "2026-12-28"), "25/12/2026 - 28/12/2026");
   assert.equal(formatSearchDateRange("2026-12-25", ""), "Từ 25/12/2026");
+});
+
+test("getQuickDatePresets computes dynamic ISO ranges relative to baseDate and filterDestinations / resolveFavoriteProperties isolate UI queries", () => {
+  const presets = getQuickDatePresets(new Date(2027, 4, 10)); // Mon 10/05/2027
+  assert.equal(presets.length, 4);
+  assert.equal(presets[0].checkIn, "2027-05-15");
+  assert.equal(presets[0].checkOut, "2027-05-16");
+  assert.equal(presets[3].checkIn, "2027-12-25");
+  assert.equal(presets[3].checkOut, "2027-12-28");
+
+  // filterDestinations matches diacritic-insensitively on name, province, and popularFor
+  const matched = filterDestinations(DESTINATIONS, "lam dong");
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].id, "da-lat");
+  assert.equal(filterDestinations(DESTINATIONS, "   ").length, DESTINATIONS.length);
+
+  // resolveFavoriteProperties returns matching properties without UI importing PROPERTIES directly
+  const saved = resolveFavoriteProperties(PROPERTIES, ["stay-02", "unknown-id", "stay-01"]);
+  assert.deepEqual(
+    saved.map((p) => p.id),
+    ["stay-01", "stay-02"]
+  );
+  assert.deepEqual(resolveFavoriteProperties(PROPERTIES, []), []);
 });

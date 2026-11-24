@@ -4,11 +4,10 @@ import React from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { ArrowRight, Compass } from "lucide-react";
-import { DESTINATIONS } from "@/data/destinations";
-import { useBooking } from "@/context/BookingContext";
+import { useCatalog } from "@/context/BookingContext";
 
 export function TrendingDestinations() {
-  const { setDestination } = useBooking();
+  const { destinations, setDestination } = useCatalog();
 
   const handleSelect = (destName: string) => {
     setDestination(destName);
@@ -39,7 +38,7 @@ export function TrendingDestinations() {
 
         {/* Destinations Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
-          {DESTINATIONS.map((dest, idx) => (
+          {destinations.map((dest, idx) => (
             <motion.div
               key={dest.id}
               initial={{ opacity: 0, y: 20 }}

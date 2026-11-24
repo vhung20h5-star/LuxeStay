@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Sparkles, Clock, Copy, Check, Gift, ArrowRight } from "lucide-react";
+import { PROMOTION_EXPIRY_LABEL, PROMOTION_VOUCHERS } from "@/data/promotions";
 import { Button } from "@/components/ui/Button";
 
 export function PromotionBanner() {
@@ -90,60 +91,42 @@ export function PromotionBanner() {
               <span className="text-xs uppercase font-bold tracking-wider text-amber-300 flex items-center gap-1.5">
                 <Gift className="w-4 h-4" /> Mã giảm giá độc quyền
               </span>
-              <span className="text-xs text-slate-300">HSD: 30/11/2026</span>
+              <span className="text-xs text-slate-300">HSD: {PROMOTION_EXPIRY_LABEL}</span>
             </div>
 
-            {/* Voucher 1 */}
-            <div className="bg-slate-950/50 border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-[11px] text-slate-400 block">Giảm 250.000đ cho đơn từ 1.5tr</span>
-                <span className="font-mono font-black text-lg text-emerald-400 tracking-wider">
-                  LUXESTAY250
-                </span>
-              </div>
-              <button
-                onClick={() => handleCopy("LUXESTAY250")}
-                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            {PROMOTION_VOUCHERS.map((voucher) => (
+              <div
+                key={voucher.id}
+                className="bg-slate-950/50 border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3"
               >
-                {copiedCode === "LUXESTAY250" ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>Đã sao chép</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>Sao chép</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Voucher 2 */}
-            <div className="bg-slate-950/50 border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-[11px] text-slate-400 block">Giảm 10% tối đa 500.000đ</span>
-                <span className="font-mono font-black text-lg text-amber-400 tracking-wider">
-                  SUMMERVIBE
-                </span>
+                <div>
+                  <span className="text-[11px] text-slate-400 block">{voucher.description}</span>
+                  <span
+                    className={`font-mono font-black text-lg tracking-wider ${
+                      voucher.tone === "amber" ? "text-amber-400" : "text-emerald-400"
+                    }`}
+                  >
+                    {voucher.code}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleCopy(voucher.code)}
+                  className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  {copiedCode === voucher.code ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Đã sao chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <button
-                onClick={() => handleCopy("SUMMERVIBE")}
-                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              >
-                {copiedCode === "SUMMERVIBE" ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>Đã sao chép</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>Sao chép</span>
-                  </>
-                )}
-              </button>
-            </div>
+            ))}
 
             <Button
               variant="luxury"

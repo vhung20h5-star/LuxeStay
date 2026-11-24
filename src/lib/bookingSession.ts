@@ -9,6 +9,7 @@ import type {
   ResolvedPropertyAmenity,
   SearchCriteria,
   SelectedBookingAmenity,
+  ServerReservationIntent,
 } from "@/types";
 
 export const CLEANING_FEE = 150000;
@@ -453,6 +454,14 @@ export function validateCheckoutGuestInput(
     };
   }
 
+  const normalizedPhoneDigits = phone.replace(/[\s.-]/g, "");
+  if (!/^(?:\+?84|0)\d{8,10}$/.test(normalizedPhoneDigits)) {
+    return {
+      ok: false,
+      error: "Số điện thoại chưa đúng định dạng. Vui lòng kiểm tra lại!",
+    };
+  }
+
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return {
       ok: false,
@@ -469,6 +478,115 @@ export function validateCheckoutGuestInput(
       note,
       paymentMethod: input.paymentMethod,
     },
+  };
+}
+
+export function processServerReservationIntent(
+  intent: ServerReservationIntent,
+  properties: readonly Property[],
+  options?: {
+    bookingId?: string;
+    createdAt?: string;
+    fallbackBaseDate?: Date;
+  }
+):
+  | { ok: true; booking: BookingDetails }
+  | { ok: false; error: string; status: number } {
+  if (!intent || typeof intent.propertyId !== "string" || !intent.propertyId.trim()) {
+    return {
+      ok: false,
+      error: "Thiếu mã chỗ nghỉ cần đặt phòng.",
+      status: 400,
+    };
+  }
+
+  const property = properties.find((item) => item.id === intent.propertyId.trim());
+  if (!property) {
+    return {
+      ok: false,
+      error: "Chỗ nghỉ không tồn tại hoặc đã ngừng nhận đặt phòng.",
+      status: 404,
+    };
+  }
+
+  const validPaymentMethods = new Set(["momo", "vnpay", "card", "hotel"]);
+  if (!validPaymentMethods.has(intent.paymentMethod)) {
+    return {
+      ok: false,
+      error: "Phương thức thanh toán không hợp lệ.",
+      status: 400,
+    };
+  }
+
+  const validation = validateCheckoutGuestInput({
+    fullName: intent.guestInfo?.fullName ?? "",
+    phone: intent.guestInfo?.phone ?? "",
+    email: intent.guestInfo?.email ?? "",
+    note: intent.guestInfo?.note,
+    paymentMethod: intent.paymentMethod,
+  });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: validation.error,
+      status: 400,
+    };
+  }
+
+  const fallbackBaseDate = options?.fallbackBaseDate ?? new Date();
+  const parsedIn = parseDateInput(intent.checkInSeed, fallbackBaseDate.getFullYear());
+  const validCheckInSeed = parsedIn ? (intent.checkInSeed?.trim() ?? "") : "";
+
+  const serverSession: BookingSessionState = {
+    step: "checking-out",
+    property,
+    searchSeedKey: "",
+    checkInSeed: validCheckInSeed,
+    nights: clampNights(intent.nights),
+    guests: {
+      adults: clampAdults(intent.guests?.adults ?? 1, property.maxGuests),
+      children: Math.max(0, Math.floor(intent.guests?.children ?? 0)),
+      rooms: Math.max(1, Math.floor(intent.guests?.rooms ?? 1)),
+    },
+    selectedAmenityIds: Array.isArray(intent.selectedAmenityIds)
+      ? intent.selectedAmenityIds.filter((id): id is string => typeof id === "string")
+      : [],
+    confirmedBooking: null,
+  };
+
+  const serverQuote = deriveBookingQuote(serverSession, fallbackBaseDate);
+  if (!serverQuote) {
+    return {
+      ok: false,
+      error: "Không thể tính báo giá cho chỗ nghỉ này.",
+      status: 422,
+    };
+  }
+
+  const bookingId =
+    options?.bookingId ?? `LX-${Math.floor(100000 + Math.random() * 900000)}`;
+  const createdAt = options?.createdAt ?? new Date().toISOString();
+  const { fullName, phone, email, note, paymentMethod } = validation.value;
+
+  const booking: BookingDetails = Object.freeze({
+    property: serverQuote.property,
+    checkIn: serverQuote.checkIn,
+    checkOut: serverQuote.checkOut,
+    nights: serverQuote.nights,
+    guests: Object.freeze({ ...serverQuote.guests }),
+    pricing: Object.freeze({ ...serverQuote.pricing }),
+    selectedAmenities: Object.freeze(
+      serverQuote.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ fullName, phone, email, note }),
+    paymentMethod,
+    bookingId,
+    createdAt,
+  });
+
+  return {
+    ok: true,
+    booking,
   };
 }
 

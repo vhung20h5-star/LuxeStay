@@ -5,6 +5,7 @@ import type {
   InMemoryReservationAdapter,
   ReservationSubmissionRequest,
   ReservationSubmitter,
+  ServerReservationIntent,
   StorageEventLike,
   StorageEventTargetLike,
   StorageLike,
@@ -49,22 +50,32 @@ function snapshotReservationRequest(
   };
 }
 
+function freezeBookingDetails(details: BookingDetails): BookingDetails {
+  return Object.freeze({
+    ...details,
+    guests: Object.freeze({ ...details.guests }),
+    pricing: Object.freeze({ ...details.pricing }),
+    selectedAmenities: Object.freeze(
+      details.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ ...details.guestInfo }),
+  });
+}
+
 function buildBookingDetails(
   request: ReservationSubmissionRequest,
   bookingId: string,
   createdAt: string
 ): BookingDetails {
-  return Object.freeze({
+  return freezeBookingDetails({
     property: request.quote.property,
     checkIn: request.quote.checkIn,
     checkOut: request.quote.checkOut,
     nights: request.quote.nights,
-    guests: Object.freeze({ ...request.quote.guests }),
-    pricing: Object.freeze({ ...request.quote.pricing }),
-    selectedAmenities: Object.freeze(
-      request.quote.selectedAmenities.map((item) => Object.freeze({ ...item }))
-    ),
-    guestInfo: Object.freeze({ ...request.guestInfo }),
+    guests: request.quote.guests,
+    pricing: request.quote.pricing,
+    selectedAmenities: request.quote.selectedAmenities,
+    guestInfo: request.guestInfo,
     paymentMethod: request.paymentMethod,
     bookingId,
     createdAt,
@@ -379,9 +390,66 @@ export function createInMemoryReservationAdapter(overrides?: {
   };
 }
 
+export interface HttpReservationAdapterOptions {
+  endpoint?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export function createHttpReservationAdapter(
+  options?: HttpReservationAdapterOptions
+): ReservationSubmitter {
+  const endpoint = options?.endpoint ?? "/api/reservations";
+
+  return {
+    async submit(request, submitOptions) {
+      const signal = submitOptions?.signal;
+      if (signal?.aborted) {
+        throw createAbortError();
+      }
+
+      const fetchFn = options?.fetchImpl ?? (typeof fetch !== "undefined" ? fetch : undefined);
+      if (!fetchFn) {
+        throw new Error("Fetch API is not available in this environment");
+      }
+
+      const intent: ServerReservationIntent = {
+        propertyId: request.quote.property.id,
+        checkInSeed: request.quote.checkIn,
+        nights: request.quote.nights,
+        guests: { ...request.quote.guests },
+        selectedAmenityIds: [...request.quote.selectedAmenityIds],
+        guestInfo: { ...request.guestInfo },
+        paymentMethod: request.paymentMethod,
+      };
+
+      const response = await fetchFn(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(intent),
+        signal,
+      });
+
+      const payload = (await response.json()) as
+        | { ok: true; booking: BookingDetails }
+        | { ok: false; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(
+          !payload.ok && payload.error
+            ? payload.error
+            : "Không thể xác nhận đặt phòng từ máy chủ."
+        );
+      }
+
+      return freezeBookingDetails(payload.booking);
+    },
+  };
+}
+
 export function createBrowserAppPorts(options?: {
   validPropertyIds?: ReadonlySet<string>;
   reservationDelayMs?: number;
+  useServerReservationApi?: boolean;
   storage?: StorageLike;
   eventTarget?: StorageEventTargetLike;
 }): AppPorts {
@@ -391,7 +459,9 @@ export function createBrowserAppPorts(options?: {
       storage: options?.storage,
       eventTarget: options?.eventTarget,
     }),
-    reservations: createBrowserReservationAdapter(options?.reservationDelayMs),
+    reservations: options?.useServerReservationApi
+      ? createHttpReservationAdapter()
+      : createBrowserReservationAdapter(options?.reservationDelayMs),
   };
 }
 

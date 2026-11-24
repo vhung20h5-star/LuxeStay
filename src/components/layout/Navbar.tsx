@@ -12,22 +12,15 @@ import {
   User,
   ShieldCheck,
 } from "lucide-react";
-import { useBooking } from "@/context/BookingContext";
-import { useOverlayLayer } from "@/context/OverlayContext";
+import { useFavorites } from "@/context/BookingContext";
 import { Button } from "@/components/ui/Button";
+import { AuthModal } from "./AuthModal";
 
 export function Navbar() {
-  const { favorites, setFavoritesDrawerOpen } = useBooking();
+  const { favorites, setFavoritesDrawerOpen } = useFavorites();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-
-  const authOverlay = useOverlayLayer({
-    id: "auth-modal",
-    kind: "auth-modal",
-    isOpen: authModalOpen,
-    onClose: () => setAuthModalOpen(false),
-  });
 
   useEffect(() => {
     const handleScroll = () => {
@@ -222,63 +215,7 @@ export function Navbar() {
         </AnimatePresence>
       </header>
 
-      {/* Simple Demo Auth Dialog */}
-      <AnimatePresence>
-        {authModalOpen && (
-          <div
-            className="fixed inset-0 flex items-center justify-center p-4"
-            style={{ zIndex: authOverlay.zIndex }}
-          >
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setAuthModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
-              aria-hidden="true"
-            />
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Đăng nhập LuxeStay"
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl z-10 text-center"
-            >
-              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">Chào mừng đến với LuxeStay</h3>
-              <p className="text-xs text-slate-500 mt-1 mb-6">
-                Đăng nhập để nhận ưu đãi thành viên giảm tới 25% cho chuyến đi tiếp theo
-              </p>
-              <div className="space-y-3">
-                <Button
-                  variant="outline"
-                  className="w-full justify-center"
-                  onClick={() => setAuthModalOpen(false)}
-                >
-                  Tiếp tục với Google
-                </Button>
-                <Button
-                  variant="primary"
-                  className="w-full justify-center"
-                  onClick={() => setAuthModalOpen(false)}
-                >
-                  Tiếp tục với Số điện thoại
-                </Button>
-              </div>
-              <button
-                onClick={() => setAuthModalOpen(false)}
-                className="mt-4 text-xs font-medium text-slate-400 hover:text-slate-600"
-              >
-                Để sau, xem phòng trước
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
     </>
   );
 }

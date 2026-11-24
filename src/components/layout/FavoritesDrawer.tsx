@@ -4,20 +4,19 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Heart, Trash2, ArrowRight } from "lucide-react";
 import Image from "next/image";
-import { useBooking } from "@/context/BookingContext";
+import { useBookingSession, useFavorites } from "@/context/BookingContext";
 import { useOverlayLayer } from "@/context/OverlayContext";
-import { PROPERTIES } from "@/data/properties";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
 export function FavoritesDrawer() {
   const {
-    favorites,
+    favoriteProperties: savedProperties,
     toggleFavorite,
     favoritesDrawerOpen,
     setFavoritesDrawerOpen,
-    setSelectedProperty,
-  } = useBooking();
+  } = useFavorites();
+  const { setSelectedProperty } = useBookingSession();
 
   const overlayLayer = useOverlayLayer({
     id: "favorites-drawer",
@@ -25,8 +24,6 @@ export function FavoritesDrawer() {
     isOpen: favoritesDrawerOpen,
     onClose: () => setFavoritesDrawerOpen(false),
   });
-
-  const savedProperties = PROPERTIES.filter((p) => favorites.includes(p.id));
 
   return (
     <AnimatePresence>

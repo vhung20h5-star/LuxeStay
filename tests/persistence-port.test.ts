@@ -4,6 +4,7 @@ import { PROPERTIES } from "@/data/properties";
 import {
   createIdleBookingSession,
   deriveBookingQuote,
+  processServerReservationIntent,
   startCheckoutSession,
 } from "@/lib/bookingSession";
 import {
@@ -14,6 +15,7 @@ import {
   createBrowserFavoritesAdapter,
   createInMemoryFavoritesAdapter,
   createBrowserReservationAdapter,
+  createHttpReservationAdapter,
   createInMemoryReservationAdapter,
   createBrowserAppPorts,
   createInMemoryAppPorts,
@@ -363,4 +365,36 @@ test("Reservation adapters and AppPorts factories provide working browser and in
     createInMemoryReservationAdapter().submit(request, { signal: preAborted.signal }),
     (err: unknown) => err instanceof Error && err.name === "AbortError"
   );
+
+  // HTTP reservation adapter sends ServerReservationIntent (stripping client pricing) and returns frozen BookingDetails
+  let capturedBody: unknown = null;
+  const httpAdapter = createHttpReservationAdapter({
+    endpoint: "/api/reservations",
+    fetchImpl: async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body));
+      const serverResult = processServerReservationIntent(
+        capturedBody as Parameters<typeof processServerReservationIntent>[0],
+        PROPERTIES,
+        { bookingId: "LX-HTTP01", createdAt: "2026-11-22T12:00:00.000Z", fallbackBaseDate: baseDate }
+      );
+      return new Response(JSON.stringify(serverResult), {
+        status: serverResult.ok ? 201 : serverResult.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  // Even if client quote.pricing.total was tampered to 0, server recalculates real total
+  const tamperedRequest = {
+    ...request,
+    quote: {
+      ...request.quote,
+      pricing: { ...request.quote.pricing, total: 0 },
+    },
+  };
+  const httpBooking = await httpAdapter.submit(tamperedRequest);
+  assert.equal(httpBooking.bookingId, "LX-HTTP01");
+  assert.equal(httpBooking.pricing.total, request.quote.pricing.total);
+  assert.equal(Object.isFrozen(httpBooking), true);
+  assert.equal(Object.isFrozen(httpBooking.pricing), true);
 });

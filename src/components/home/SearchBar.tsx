@@ -12,14 +12,12 @@ import {
   Plus,
   Minus,
 } from "lucide-react";
-import { useBooking } from "@/context/BookingContext";
-import { DESTINATIONS } from "@/data/destinations";
+import { useCatalog } from "@/context/BookingContext";
 import {
   formatSearchDateRange,
-  QUICK_DATE_PRESETS,
+  getQuickDatePresets,
   QUICK_SEARCH_TRENDS,
 } from "@/lib/catalogQuery";
-import { normalizeVietnamese } from "@/lib/utils";
 import type { PropertyType, QuickSearchTrend } from "@/types";
 
 const PROPERTY_TYPE_TABS: Array<{ id: PropertyType | "all"; label: string }> = [
@@ -35,12 +33,13 @@ export function SearchBar() {
   const {
     searchCriteria,
     catalogResult,
+    filteredDestinations,
     setDestination,
     setDates,
     adjustGuests,
     selectPropertyTypeTab,
     applyQuickTrend,
-  } = useBooking();
+  } = useCatalog();
 
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
@@ -48,6 +47,7 @@ export function SearchBar() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
+  const quickDatePresets = useMemo(() => getQuickDatePresets(), []);
 
   // Close popovers on outside click
   useEffect(() => {
@@ -61,15 +61,6 @@ export function SearchBar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const filteredDestinations = useMemo(() => {
-    const q = normalizeVietnamese(searchCriteria.destination);
-    if (!q) return DESTINATIONS;
-    return DESTINATIONS.filter((dest) => {
-      const hay = normalizeVietnamese(`${dest.name} ${dest.province} ${dest.popularFor}`);
-      return hay.includes(q);
-    });
-  }, [searchCriteria.destination]);
 
   const scrollToProperties = () => {
     const target = document.getElementById("properties-section");
@@ -285,7 +276,7 @@ export function SearchBar() {
                     Chọn lịch trình nhanh
                   </span>
                   <div className="grid grid-cols-2 gap-2 mb-4">
-                    {QUICK_DATE_PRESETS.map((preset) => (
+                    {quickDatePresets.map((preset) => (
                       <button
                         key={preset.id}
                         type="button"

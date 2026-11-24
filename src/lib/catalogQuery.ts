@@ -7,6 +7,7 @@ import type {
   AmenityFilterKey,
   CatalogQueryResult,
   CategoryId,
+  Destination,
   PriceRangePreset,
   Property,
   PropertyType,
@@ -28,36 +29,77 @@ export interface QuickDatePreset {
   checkOut: string; // YYYY-MM-DD
 }
 
-export const QUICK_DATE_PRESETS: QuickDatePreset[] = [
-  {
-    id: "weekend",
-    label: "Cuối tuần này (T7 - CN)",
-    displayRange: "14/11 → 15/11",
-    checkIn: "2026-11-14",
-    checkOut: "2026-11-15",
-  },
-  {
-    id: "3d2n",
-    label: "3 ngày 2 đêm (T6 - CN)",
-    displayRange: "20/11 → 22/11",
-    checkIn: "2026-11-20",
-    checkOut: "2026-11-22",
-  },
-  {
-    id: "midweek",
-    label: "Giữa tuần thư giãn",
-    displayRange: "18/11 → 20/11",
-    checkIn: "2026-11-18",
-    checkOut: "2026-11-20",
-  },
-  {
-    id: "yearend",
-    label: "Kỳ nghỉ cuối năm",
-    displayRange: "25/12 → 28/12",
-    checkIn: "2026-12-25",
-    checkOut: "2026-12-28",
-  },
-];
+function addLocalDays(base: Date, days: number): Date {
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+}
+
+function toISODateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toShortDayMonth(date: Date): string {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+}
+
+export function getQuickDatePresets(baseDate: Date = new Date()): QuickDatePreset[] {
+  const anchor = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  const dayOfWeek = anchor.getDay(); // 0 = Sun .. 6 = Sat
+  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7 || 7;
+
+  const weekendIn = addLocalDays(anchor, daysUntilSaturday);
+  const weekendOut = addLocalDays(weekendIn, 1);
+
+  const nextFriday = addLocalDays(weekendIn, 6);
+  const nextSunday = addLocalDays(nextFriday, 2);
+
+  const midweekIn = addLocalDays(weekendIn, 4);
+  const midweekOut = addLocalDays(midweekIn, 2);
+
+  const yearEndYear =
+    anchor.getMonth() === 11 && anchor.getDate() > 25
+      ? anchor.getFullYear() + 1
+      : anchor.getFullYear();
+  const yearEndIn = new Date(yearEndYear, 11, 25);
+  const yearEndOut = new Date(yearEndYear, 11, 28);
+
+  return [
+    {
+      id: "weekend",
+      label: "Cuối tuần này (T7 - CN)",
+      displayRange: `${toShortDayMonth(weekendIn)} → ${toShortDayMonth(weekendOut)}`,
+      checkIn: toISODateString(weekendIn),
+      checkOut: toISODateString(weekendOut),
+    },
+    {
+      id: "3d2n",
+      label: "3 ngày 2 đêm (T6 - CN)",
+      displayRange: `${toShortDayMonth(nextFriday)} → ${toShortDayMonth(nextSunday)}`,
+      checkIn: toISODateString(nextFriday),
+      checkOut: toISODateString(nextSunday),
+    },
+    {
+      id: "midweek",
+      label: "Giữa tuần thư giãn",
+      displayRange: `${toShortDayMonth(midweekIn)} → ${toShortDayMonth(midweekOut)}`,
+      checkIn: toISODateString(midweekIn),
+      checkOut: toISODateString(midweekOut),
+    },
+    {
+      id: "yearend",
+      label: "Kỳ nghỉ cuối năm",
+      displayRange: `${toShortDayMonth(yearEndIn)} → ${toShortDayMonth(yearEndOut)}`,
+      checkIn: toISODateString(yearEndIn),
+      checkOut: toISODateString(yearEndOut),
+    },
+  ];
+}
+
+export const QUICK_DATE_PRESETS: QuickDatePreset[] = getQuickDatePresets(new Date(2026, 10, 12));
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -87,6 +129,18 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   resort: "Resort 5 Sao",
   glamping: "Glamping",
 };
+
+export const PROPERTY_TYPE_OPTIONS: ReadonlyArray<{
+  id: PropertyType;
+  label: string;
+  desc: string;
+}> = Object.freeze([
+  { id: "homestay", label: "Homestay", desc: "Ấm cúng, gần gũi và mộc mạc" },
+  { id: "hotel", label: "Khách sạn", desc: "Tiện nghi, dịch vụ lễ tân 24/7" },
+  { id: "villa", label: "Villa biệt thự", desc: "Sang trọng, hồ bơi riêng biệt" },
+  { id: "resort", label: "Resort 5 Sao", desc: "Nghỉ dưỡng thượng lưu ven biển/núi" },
+  { id: "glamping", label: "Glamping", desc: "Cắm trại cao cấp giữa thiên nhiên" },
+]);
 
 export const PRICE_RANGE_PRESETS: PriceRangePreset[] = [
   { id: "all", label: "Mọi mức giá", minPrice: DEFAULT_MIN_PRICE, maxPrice: DEFAULT_MAX_PRICE },
@@ -569,4 +623,26 @@ export function executeCatalogQuery(
     activeChips: buildActiveChips(query),
     activePropertyTypeTab,
   };
+}
+
+export function filterDestinations(
+  destinations: readonly Destination[],
+  query: string
+): Destination[] {
+  const normalizedQuery = normalizeVietnamese(query);
+  if (!normalizedQuery) return [...destinations];
+
+  return destinations.filter((dest) => {
+    const haystack = normalizeVietnamese(`${dest.name} ${dest.province} ${dest.popularFor}`);
+    return haystack.includes(normalizedQuery);
+  });
+}
+
+export function resolveFavoriteProperties(
+  properties: readonly Property[],
+  favoriteIds: readonly string[]
+): Property[] {
+  if (favoriteIds.length === 0) return [];
+  const favoriteSet = new Set(favoriteIds);
+  return properties.filter((property) => favoriteSet.has(property.id));
 }

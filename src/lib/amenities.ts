@@ -169,15 +169,15 @@ export function createAmenityExplorerState(init: {
   const initialAmenity = initialAmenityId ? projection.byId.get(initialAmenityId) : undefined;
   const isInitialAmenityVisible = Boolean(
     initialAmenity &&
-      (resolvedCategory === "all" || initialAmenity.category === resolvedCategory)
+    (resolvedCategory === "all" || initialAmenity.category === resolvedCategory)
   );
 
   const categoryFirstId =
     resolvedCategory === "all"
       ? (projection.all[0]?.id ?? null)
       : (projection.groups.find((group) => group.category.id === resolvedCategory)?.items[0]?.id ??
-          projection.all[0]?.id ??
-          null);
+        projection.all[0]?.id ??
+        null);
 
   return {
     activeCategory: resolvedCategory,

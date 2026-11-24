@@ -13,6 +13,7 @@ import {
   removeSessionAmenity,
   deriveBookingQuote,
   validateCheckoutGuestInput,
+  processServerReservationIntent,
   submitBookingSession,
 } from "@/lib/bookingSession";
 import {
@@ -154,6 +155,15 @@ test("validateCheckoutGuestInput rejects missing required fields or invalid emai
     validateCheckoutGuestInput({
       fullName: "Nguyễn Văn A",
       phone: "",
+      email: "a@b.com",
+      paymentMethod: "momo",
+    }).ok,
+    false
+  );
+  assert.equal(
+    validateCheckoutGuestInput({
+      fullName: "Nguyễn Văn A",
+      phone: "invalid-phone",
       email: "a@b.com",
       paymentMethod: "momo",
     }).ok,
@@ -366,4 +376,60 @@ test("submitBookingSession rejects closed idle session and enforces AbortSignal 
     ),
     (err: unknown) => err instanceof Error && err.name === "AbortError"
   );
+});
+
+test("processServerReservationIntent recalculates authoritative server pricing and rejects invalid property or guest phone", () => {
+  const unknownProperty = processServerReservationIntent(
+    {
+      propertyId: "non-existent",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Văn A",
+        phone: "0912345678",
+        email: "a@b.com",
+      },
+      paymentMethod: "momo",
+    },
+    PROPERTIES,
+    { fallbackBaseDate: baseDate }
+  );
+  assert.equal(unknownProperty.ok, false);
+  if (!unknownProperty.ok) {
+    assert.equal(unknownProperty.status, 404);
+  }
+
+  const res = processServerReservationIntent(
+    {
+      propertyId: "stay-02",
+      checkInSeed: "2026-12-10",
+      nights: 3,
+      guests: { adults: 99, children: 1, rooms: 1 }, // clamped to stay02.maxGuests (6)
+      selectedAmenityIds: ["herbal-spa", "airport-shuttle", "high-speed-wifi"],
+      guestInfo: {
+        fullName: " Trần Thị B ",
+        phone: "+84 912 345 678",
+        email: "tranthib@example.com",
+      },
+      paymentMethod: "vnpay",
+    },
+    PROPERTIES,
+    {
+      bookingId: "LX-SERVER1",
+      createdAt: "2026-11-22T10:00:00.000Z",
+      fallbackBaseDate: baseDate,
+    }
+  );
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.equal(res.booking.bookingId, "LX-SERVER1");
+    assert.equal(res.booking.guests.adults, stay02.maxGuests);
+    assert.equal(res.booking.pricing.nightsTotal, stay02.pricePerNight * 3);
+    assert.equal(res.booking.pricing.amenitiesFee, 650000);
+    assert.equal(
+      res.booking.pricing.total,
+      stay02.pricePerNight * 3 + 150000 + 650000 - 100000
+    );
+  }
 });

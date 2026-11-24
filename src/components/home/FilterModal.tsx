@@ -2,17 +2,17 @@
 
 import React from "react";
 import { Modal } from "@/components/ui/Modal";
-import { useBooking } from "@/context/BookingContext";
+import { useCatalog } from "@/context/BookingContext";
 import { formatVND } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Check } from "lucide-react";
-import type { PropertyType } from "@/types";
 import { AMENITY_FILTER_OPTIONS } from "@/data/amenities";
 import {
   DEFAULT_MAX_PRICE,
   PRICE_RANGE_PRESETS,
   PRICE_SLIDER_MIN,
   PRICE_SLIDER_STEP,
+  PROPERTY_TYPE_OPTIONS,
 } from "@/lib/catalogQuery";
 import { AmenityIcon } from "@/components/property/AmenityIcon";
 
@@ -28,15 +28,7 @@ export function FilterModal() {
     toggleAmenityFilter,
     setFreeCancellationOnly,
     resetFilters,
-  } = useBooking();
-
-  const propertyTypeOptions: { id: PropertyType; label: string; desc: string }[] = [
-    { id: "homestay", label: "Homestay", desc: "Ấm cúng, gần gũi và mộc mạc" },
-    { id: "hotel", label: "Khách sạn", desc: "Tiện nghi, dịch vụ lễ tân 24/7" },
-    { id: "villa", label: "Villa biệt thự", desc: "Sang trọng, hồ bơi riêng biệt" },
-    { id: "resort", label: "Resort 5 Sao", desc: "Nghỉ dưỡng thượng lưu ven biển/núi" },
-    { id: "glamping", label: "Glamping", desc: "Cắm trại cao cấp giữa thiên nhiên" },
-  ];
+  } = useCatalog();
 
   return (
     <Modal
@@ -107,7 +99,7 @@ export function FilterModal() {
         <div>
           <h4 className="text-sm font-bold text-slate-800 mb-3">Loại hình lưu trú</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {propertyTypeOptions.map((opt) => {
+            {PROPERTY_TYPE_OPTIONS.map((opt) => {
               const isChecked = filterState.propertyTypes.includes(opt.id);
               return (
                 <button

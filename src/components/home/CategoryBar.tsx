@@ -3,41 +3,21 @@
 import React, { useRef } from "react";
 import { motion } from "framer-motion";
 import {
-  Compass,
-  Mountain,
-  Waves,
-  Home,
-  Flame,
-  Tent,
-  Trees,
-  Building2,
-  Sparkles,
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { useBooking } from "@/context/BookingContext";
-import { CATEGORIES } from "@/data/categories";
-
-const iconMap: Record<string, React.ReactNode> = {
-  Compass: <Compass className="w-5 h-5" />,
-  Mountain: <Mountain className="w-5 h-5" />,
-  Waves: <Waves className="w-5 h-5" />,
-  Home: <Home className="w-5 h-5" />,
-  Flame: <Flame className="w-5 h-5" />,
-  Tent: <Tent className="w-5 h-5" />,
-  Trees: <Trees className="w-5 h-5" />,
-  Building2: <Building2 className="w-5 h-5" />,
-  Sparkles: <Sparkles className="w-5 h-5" />,
-};
+import { useCatalog } from "@/context/BookingContext";
+import { AmenityIcon } from "@/components/property/AmenityIcon";
 
 export function CategoryBar() {
   const {
+    categories,
     activeCategory,
     setActiveCategory,
     setFilterModalOpen,
     catalogResult,
-  } = useBooking();
+  } = useCatalog();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +48,7 @@ export function CategoryBar() {
             ref={scrollContainerRef}
             className="flex-1 flex items-center gap-3 sm:gap-4 overflow-x-auto no-scrollbar py-1"
           >
-            {CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const isActive = activeCategory === cat.id;
               return (
                 <button
@@ -87,7 +67,7 @@ export function CategoryBar() {
                         : "text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-100"
                     }`}
                   >
-                    {iconMap[cat.iconName] || <Compass className="w-5 h-5" />}
+                    <AmenityIcon name={cat.iconName} className="w-5 h-5" />
                   </div>
                   <span className="text-xs">{cat.label}</span>
 

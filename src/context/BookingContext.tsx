@@ -8,6 +8,8 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
+import { CATEGORIES } from "@/data/categories";
+import { DESTINATIONS } from "@/data/destinations";
 import { PROPERTIES } from "@/data/properties";
 import type {
   ActiveFilterChip,
@@ -17,8 +19,10 @@ import type {
   BookingQuote,
   BookingSessionState,
   CatalogQueryResult,
+  Category,
   CategoryId,
   CheckoutGuestInput,
+  Destination,
   FilterState,
   Property,
   PropertyType,
@@ -41,13 +45,18 @@ import {
   updateSessionAdults,
   updateSessionNights,
 } from "@/lib/bookingSession";
-import { createBrowserAppPorts } from "@/lib/persistencePort";
+import {
+  createBrowserAppPorts,
+  createHttpReservationAdapter,
+} from "@/lib/persistencePort";
 import {
   adjustQueryGuests,
   applyQuickSearchTrend,
   createDefaultCatalogQuery,
   executeCatalogQuery,
+  filterDestinations,
   removeActiveFilterChip,
+  resolveFavoriteProperties,
   setQueryCategory,
   setQueryDates,
   setQueryDestination,
@@ -60,20 +69,24 @@ import {
   toggleQueryPropertyType,
 } from "@/lib/catalogQuery";
 
-interface BookingContextType {
-  // Favorites (backed by FavoritesRepository port)
+export interface FavoritesContextValue {
   favorites: readonly string[];
+  favoriteProperties: Property[];
   toggleFavorite: (id: string) => void;
   isFavorite: (id: string) => boolean;
   favoritesDrawerOpen: boolean;
   setFavoritesDrawerOpen: (open: boolean) => void;
+}
 
-  // Deep Stay Catalog Query Interface
+export interface CatalogContextValue {
   catalogQuery: StayCatalogQueryState;
   catalogResult: CatalogQueryResult;
   searchCriteria: SearchCriteria;
   filterState: FilterState;
   activeCategory: CategoryId;
+  categories: readonly Category[];
+  destinations: readonly Destination[];
+  filteredDestinations: Destination[];
   setDestination: (destination: string) => void;
   setDates: (dates: { checkIn?: string; checkOut?: string }) => void;
   adjustGuests: (field: "adults" | "children" | "rooms", delta: number) => void;
@@ -90,8 +103,9 @@ interface BookingContextType {
   resetFilters: () => void;
   filterModalOpen: boolean;
   setFilterModalOpen: (open: boolean) => void;
+}
 
-  // Deep Booking Session & Quote Interface
+export interface BookingSessionContextValue {
   bookingSession: BookingSessionState;
   bookingQuote: BookingQuote | null;
   selectedProperty: Property | null;
@@ -111,12 +125,22 @@ interface BookingContextType {
   ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
 }
 
+export type BookingContextType = FavoritesContextValue &
+  CatalogContextValue &
+  BookingSessionContextValue;
+
 const VALID_PROPERTY_IDS = new Set(PROPERTIES.map((property) => property.id));
-const defaultAppPorts = createBrowserAppPorts({
+const defaultBrowserPorts = createBrowserAppPorts({
   validPropertyIds: VALID_PROPERTY_IDS,
   reservationDelayMs: 1200,
 });
+const defaultHttpReservationAdapter = createHttpReservationAdapter({
+  endpoint: "/api/reservations",
+});
 
+const FavoritesContext = createContext<FavoritesContextValue | undefined>(undefined);
+const CatalogContext = createContext<CatalogContextValue | undefined>(undefined);
+const BookingSessionContext = createContext<BookingSessionContextValue | undefined>(undefined);
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
 
 export function BookingProvider({
@@ -126,9 +150,28 @@ export function BookingProvider({
   children: React.ReactNode;
   ports?: Partial<AppPorts>;
 }) {
-  const favoritesRepository = ports?.favorites ?? defaultAppPorts.favorites;
-  const reservationSubmitter = ports?.reservations ?? defaultAppPorts.reservations;
+  const favoritesRepository = ports?.favorites ?? defaultBrowserPorts.favorites;
+  const reservationSubmitter = useMemo(() => {
+    if (ports?.reservations) return ports.reservations;
+    return {
+      async submit(
+        request: Parameters<typeof defaultHttpReservationAdapter.submit>[0],
+        options?: Parameters<typeof defaultHttpReservationAdapter.submit>[1]
+      ) {
+        try {
+          return await defaultHttpReservationAdapter.submit(request, options);
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") {
+            throw err;
+          }
+          // Fallback to browser adapter if running in static/offline preview without API route
+          return defaultBrowserPorts.reservations.submit(request, options);
+        }
+      },
+    };
+  }, [ports?.reservations]);
 
+  // 1. Favorites Domain State
   const subscribeFavorites = useCallback(
     (listener: () => void) => favoritesRepository.subscribe(listener),
     [favoritesRepository]
@@ -149,9 +192,41 @@ export function BookingProvider({
   );
 
   const [favoritesDrawerOpen, setFavoritesDrawerOpen] = useState(false);
-  const [filterModalOpen, setFilterModalOpen] = useState(false);
 
-  // Unified Stay Catalog Query State
+  const favoriteProperties = useMemo(
+    () => resolveFavoriteProperties(PROPERTIES, favorites),
+    [favorites]
+  );
+
+  const toggleFavorite = useCallback(
+    (id: string) => {
+      favoritesRepository.toggle(id);
+    },
+    [favoritesRepository]
+  );
+
+  const isFavorite = useCallback((id: string) => favorites.includes(id), [favorites]);
+
+  const favoritesValue = useMemo<FavoritesContextValue>(
+    () => ({
+      favorites,
+      favoriteProperties,
+      toggleFavorite,
+      isFavorite,
+      favoritesDrawerOpen,
+      setFavoritesDrawerOpen,
+    }),
+    [
+      favorites,
+      favoriteProperties,
+      toggleFavorite,
+      isFavorite,
+      favoritesDrawerOpen,
+    ]
+  );
+
+  // 2. Stay Catalog Query Domain State
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState<StayCatalogQueryState>(() =>
     createDefaultCatalogQuery()
   );
@@ -164,20 +239,11 @@ export function BookingProvider({
   const filterState = catalogQuery.filters;
   const activeCategory = catalogQuery.filters.category;
 
-  // Unified Booking Session State
-  const [bookingSession, setBookingSession] = useState<BookingSessionState>(() =>
-    createIdleBookingSession()
+  const filteredDestinations = useMemo(
+    () => filterDestinations(DESTINATIONS, searchCriteria.destination),
+    [searchCriteria.destination]
   );
-  const bookingQuote = useMemo(() => deriveBookingQuote(bookingSession), [bookingSession]);
 
-  const selectedProperty =
-    bookingSession.step === "previewing" ? bookingSession.property : null;
-  const checkoutProperty =
-    bookingSession.step === "checking-out" ? bookingSession.property : null;
-  const bookingSuccess =
-    bookingSession.step === "confirmed" ? bookingSession.confirmedBooking : null;
-
-  // Catalog Query Commands
   const setDestination = useCallback((destination: string) => {
     setCatalogQuery((prev) => setQueryDestination(prev, destination));
   }, []);
@@ -237,7 +303,71 @@ export function BookingProvider({
     setCatalogQuery(createDefaultCatalogQuery());
   }, []);
 
-  // Booking Session Commands
+  const catalogValue = useMemo<CatalogContextValue>(
+    () => ({
+      catalogQuery,
+      catalogResult,
+      searchCriteria,
+      filterState,
+      activeCategory,
+      categories: CATEGORIES,
+      destinations: DESTINATIONS,
+      filteredDestinations,
+      setDestination,
+      setDates,
+      adjustGuests,
+      setActiveCategory,
+      selectPropertyTypeTab,
+      togglePropertyType,
+      setPriceRange,
+      setMinRating,
+      toggleAmenityFilter,
+      setFreeCancellationOnly,
+      setSortBy,
+      applyQuickTrend,
+      removeFilterChip,
+      resetFilters,
+      filterModalOpen,
+      setFilterModalOpen,
+    }),
+    [
+      catalogQuery,
+      catalogResult,
+      searchCriteria,
+      filterState,
+      activeCategory,
+      filteredDestinations,
+      setDestination,
+      setDates,
+      adjustGuests,
+      setActiveCategory,
+      selectPropertyTypeTab,
+      togglePropertyType,
+      setPriceRange,
+      setMinRating,
+      toggleAmenityFilter,
+      setFreeCancellationOnly,
+      setSortBy,
+      applyQuickTrend,
+      removeFilterChip,
+      resetFilters,
+      filterModalOpen,
+    ]
+  );
+
+  // 3. Booking Session & Checkout Domain State
+  const [bookingSession, setBookingSession] = useState<BookingSessionState>(() =>
+    createIdleBookingSession()
+  );
+  const bookingQuote = useMemo(() => deriveBookingQuote(bookingSession), [bookingSession]);
+
+  const selectedProperty =
+    bookingSession.step === "previewing" ? bookingSession.property : null;
+  const checkoutProperty =
+    bookingSession.step === "checking-out" ? bookingSession.property : null;
+  const bookingSuccess =
+    bookingSession.step === "confirmed" ? bookingSession.confirmedBooking : null;
+
   const setSelectedProperty = useCallback(
     (property: Property | null) => {
       setBookingSession((prev) =>
@@ -313,44 +443,8 @@ export function BookingProvider({
     [bookingSession, reservationSubmitter]
   );
 
-  // Favorites (delegated to FavoritesRepository port)
-  const toggleFavorite = useCallback(
-    (id: string) => {
-      favoritesRepository.toggle(id);
-    },
-    [favoritesRepository]
-  );
-
-  const isFavorite = useCallback((id: string) => favorites.includes(id), [favorites]);
-
-  const contextValue = useMemo<BookingContextType>(
+  const bookingSessionValue = useMemo<BookingSessionContextValue>(
     () => ({
-      favorites,
-      toggleFavorite,
-      isFavorite,
-      favoritesDrawerOpen,
-      setFavoritesDrawerOpen,
-      catalogQuery,
-      catalogResult,
-      searchCriteria,
-      filterState,
-      activeCategory,
-      setDestination,
-      setDates,
-      adjustGuests,
-      setActiveCategory,
-      selectPropertyTypeTab,
-      togglePropertyType,
-      setPriceRange,
-      setMinRating,
-      toggleAmenityFilter,
-      setFreeCancellationOnly,
-      setSortBy,
-      applyQuickTrend,
-      removeFilterChip,
-      resetFilters,
-      filterModalOpen,
-      setFilterModalOpen,
       bookingSession,
       bookingQuote,
       selectedProperty,
@@ -367,30 +461,6 @@ export function BookingProvider({
       submitCheckout,
     }),
     [
-      favorites,
-      toggleFavorite,
-      isFavorite,
-      favoritesDrawerOpen,
-      catalogQuery,
-      catalogResult,
-      searchCriteria,
-      filterState,
-      activeCategory,
-      setDestination,
-      setDates,
-      adjustGuests,
-      setActiveCategory,
-      selectPropertyTypeTab,
-      togglePropertyType,
-      setPriceRange,
-      setMinRating,
-      toggleAmenityFilter,
-      setFreeCancellationOnly,
-      setSortBy,
-      applyQuickTrend,
-      removeFilterChip,
-      resetFilters,
-      filterModalOpen,
       bookingSession,
       bookingQuote,
       selectedProperty,
@@ -408,10 +478,53 @@ export function BookingProvider({
     ]
   );
 
-  return <BookingContext.Provider value={contextValue}>{children}</BookingContext.Provider>;
+  const combinedFacadeValue = useMemo<BookingContextType>(
+    () => ({
+      ...favoritesValue,
+      ...catalogValue,
+      ...bookingSessionValue,
+    }),
+    [favoritesValue, catalogValue, bookingSessionValue]
+  );
+
+  return (
+    <FavoritesContext.Provider value={favoritesValue}>
+      <CatalogContext.Provider value={catalogValue}>
+        <BookingSessionContext.Provider value={bookingSessionValue}>
+          <BookingContext.Provider value={combinedFacadeValue}>
+            {children}
+          </BookingContext.Provider>
+        </BookingSessionContext.Provider>
+      </CatalogContext.Provider>
+    </FavoritesContext.Provider>
+  );
 }
 
-export function useBooking() {
+export function useFavorites(): FavoritesContextValue {
+  const context = useContext(FavoritesContext);
+  if (!context) {
+    throw new Error("useFavorites must be used within a BookingProvider");
+  }
+  return context;
+}
+
+export function useCatalog(): CatalogContextValue {
+  const context = useContext(CatalogContext);
+  if (!context) {
+    throw new Error("useCatalog must be used within a BookingProvider");
+  }
+  return context;
+}
+
+export function useBookingSession(): BookingSessionContextValue {
+  const context = useContext(BookingSessionContext);
+  if (!context) {
+    throw new Error("useBookingSession must be used within a BookingProvider");
+  }
+  return context;
+}
+
+export function useBooking(): BookingContextType {
   const context = useContext(BookingContext);
   if (!context) {
     throw new Error("useBooking must be used within a BookingProvider");

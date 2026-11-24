@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { AlertCircle, Lock, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
-import { useBooking } from "@/context/BookingContext";
+import { useBookingSession } from "@/context/BookingContext";
 import { useOverlayLayer } from "@/context/OverlayContext";
 import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@/lib/amenities";
 import { formatVND } from "@/lib/utils";
@@ -13,19 +13,27 @@ import { Input } from "@/components/ui/Input";
 import type { BookingQuote } from "@/types";
 
 function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
-  const { setCheckoutProperty, removeBookingAmenity, submitCheckout } = useBooking();
+  const { setCheckoutProperty, removeBookingAmenity, submitCheckout } = useBookingSession();
   const { property, nights, guests, checkIn, checkOut, selectedAmenities, pricing } = quote;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Form state
-  const [fullName, setFullName] = useState("Nguyễn Văn A");
-  const [phone, setPhone] = useState("0912 345 678");
-  const [email, setEmail] = useState("nguyenvana@gmail.com");
-  const [note, setNote] = useState("Vui lòng chuẩn bị phòng tầng cao view thoáng giúp mình.");
+  // Form state (clean by default; no pre-filled personal data)
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [note, setNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"momo" | "vnpay" | "card" | "hotel">("momo");
+
+  const fillDemoGuestInfo = () => {
+    setFullName("Khách Hàng Trải Nghiệm");
+    setPhone("0912 345 678");
+    setEmail("demo.guest@luxestay.vn");
+    setNote("Vui lòng chuẩn bị phòng tầng cao view thoáng giúp mình.");
+    setErrorMessage(null);
+  };
 
   // Abort any in-flight reservation submission on unmount
   useEffect(() => {
@@ -216,11 +224,20 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
 
             {/* Step 1: Guest Information */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">
-                  1
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                  <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">
+                    1
+                  </div>
+                  <span>Thông tin khách lưu trú</span>
                 </div>
-                <span>Thông tin khách lưu trú</span>
+                <button
+                  type="button"
+                  onClick={fillDemoGuestInfo}
+                  className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  Điền nhanh thông tin mẫu
+                </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -400,7 +417,7 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
 }
 
 export function BookingCheckoutModal() {
-  const { checkoutProperty, bookingQuote } = useBooking();
+  const { checkoutProperty, bookingQuote } = useBookingSession();
 
   if (!checkoutProperty || !bookingQuote) return null;
 

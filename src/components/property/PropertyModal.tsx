@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { AmenityCategoryId, BookingQuote } from "@/types";
-import { useBooking } from "@/context/BookingContext";
+import { useBookingSession, useFavorites } from "@/context/BookingContext";
 import { useOverlayLayer } from "@/context/OverlayContext";
 import {
   describeAmenityPricing,
@@ -41,16 +41,15 @@ interface AmenitiesModalState {
 }
 
 function PropertyModalContent({ quote }: { quote: BookingQuote }) {
+  const { isFavorite, toggleFavorite } = useFavorites();
   const {
     setSelectedProperty,
     proceedToCheckout,
-    isFavorite,
-    toggleFavorite,
     setDraftNights,
     setDraftAdults,
     toggleBookingAmenity,
     removeBookingAmenity,
-  } = useBooking();
+  } = useBookingSession();
 
   const { property, selectedAmenities, selectedAmenityIds, pricing, nights, guests } = quote;
 
@@ -153,9 +152,8 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                   aria-label="Lưu yêu thích"
                 >
                   <Heart
-                    className={`w-5 h-5 ${
-                      isFav ? "fill-rose-500 text-rose-500" : "text-slate-600"
-                    }`}
+                    className={`w-5 h-5 ${isFav ? "fill-rose-500 text-rose-500" : "text-slate-600"
+                      }`}
                   />
                 </button>
 
@@ -234,11 +232,10 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                       key={idx}
                       type="button"
                       onClick={() => setActivePhoto(idx)}
-                      className={`relative h-20 md:h-[7.2rem] rounded-xl overflow-hidden border-2 transition-all ${
-                        idx === activePhoto
-                          ? "border-emerald-600 scale-102 shadow-md"
-                          : "border-transparent opacity-75 hover:opacity-100"
-                      }`}
+                      className={`relative h-20 md:h-[7.2rem] rounded-xl overflow-hidden border-2 transition-all ${idx === activePhoto
+                        ? "border-emerald-600 scale-102 shadow-md"
+                        : "border-transparent opacity-75 hover:opacity-100"
+                        }`}
                     >
                       <Image src={img} alt="Thumb" fill className="object-cover" />
                     </button>
@@ -382,18 +379,16 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                                 initialCategory: "all",
                               })
                             }
-                            className={`text-left flex items-center gap-3 p-3 rounded-2xl border transition-all group ${
-                              isItemSelected
-                                ? "bg-emerald-50/70 border-emerald-400 shadow-xs"
-                                : "bg-slate-50/80 border-slate-100 hover:border-emerald-300 hover:bg-white hover:shadow-xs"
-                            }`}
+                            className={`text-left flex items-center gap-3 p-3 rounded-2xl border transition-all group ${isItemSelected
+                              ? "bg-emerald-50/70 border-emerald-400 shadow-xs"
+                              : "bg-slate-50/80 border-slate-100 hover:border-emerald-300 hover:bg-white hover:shadow-xs"
+                              }`}
                           >
                             <div
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                                isItemSelected
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-white text-emerald-700 border border-slate-200/70 group-hover:border-emerald-200"
-                              }`}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isItemSelected
+                                ? "bg-emerald-600 text-white"
+                                : "bg-white text-emerald-700 border border-slate-200/70 group-hover:border-emerald-200"
+                                }`}
                             >
                               <AmenityIcon name={item.iconName} className="w-4 h-4" />
                             </div>
@@ -606,9 +601,8 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                                 </span>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <span
-                                    className={`font-bold text-[11px] ${
-                                      display.tone === "paid" ? "text-amber-700" : "text-teal-700"
-                                    }`}
+                                    className={`font-bold text-[11px] ${display.tone === "paid" ? "text-amber-700" : "text-teal-700"
+                                      }`}
                                   >
                                     {display.compactFee}
                                   </span>
@@ -710,7 +704,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
 }
 
 export function PropertyModal() {
-  const { selectedProperty, bookingQuote } = useBooking();
+  const { selectedProperty, bookingQuote } = useBookingSession();
 
   if (!selectedProperty || !bookingQuote) return null;
 
