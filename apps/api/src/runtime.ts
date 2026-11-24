@@ -4,6 +4,7 @@ import { createDbClient, type DbClientHandle } from "./db/client.js";
 import { createPostgresAuthRepository } from "./modules/auth/postgresRepository.js";
 import { createPostgresAvailabilityRepository } from "./modules/availability/postgresRepository.js";
 import { createPostgresCatalogRepository } from "./modules/catalog/postgresRepository.js";
+import { createPostgresDealsRepository } from "./modules/deals/postgresRepository.js";
 import { createPostgresFavoritesRepository } from "./modules/favorites/postgresRepository.js";
 import { createPostgresNotificationRepository } from "./modules/notifications/postgresRepository.js";
 import { createPostgresPaymentRepository } from "./modules/payments/postgresRepository.js";
@@ -48,6 +49,7 @@ export function createApiRuntime(
     appOptions = {
       ...appOptions,
       catalogRepository,
+      dealsRepository: createPostgresDealsRepository(dbClient.db),
       availabilityRepository,
       reservationRepository,
       reviewRepository,

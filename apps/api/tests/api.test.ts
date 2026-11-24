@@ -10,6 +10,8 @@ import {
   BookingDetailsSchema,
   CatalogSnapshotSchema,
   CreateReviewResultSchema,
+  DealDetailSchema,
+  DealsHubSchema,
   createApiSuccessSchema,
   FavoritesListDataSchema,
   HealthDataSchema,
@@ -20,6 +22,7 @@ import {
   OtpRequestResultSchema,
   PaymentGatewaySessionSchema,
   PaymentWebhookResultSchema,
+  PromotionCampaignSchema,
   PromotionVoucherSchema,
   PropertyAvailabilityDataSchema,
   PropertySchema,
@@ -45,6 +48,11 @@ import {
   mapPropertyRowToDomain,
 } from "../dist/modules/catalog/postgresRepository.js";
 import { createSeedCatalogRepository } from "../dist/modules/catalog/repository.js";
+import {
+  createPostgresDealsRepository,
+  mapCampaignRowToDomain,
+} from "../dist/modules/deals/postgresRepository.js";
+import { createInMemoryDealsRepository } from "../dist/modules/deals/repository.js";
 import {
   signWebhookPayload,
   WEBHOOK_SIGNATURE_HEADER,
@@ -1548,4 +1556,357 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
   assert.deepEqual(populatedResult, { backfilled: false });
   assert.equal(populatedStub.insertedRowsByTable.size, 0);
   assert.equal(populatedStub.otherWriteTables.length, 0);
+});
+
+test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
+  const { app } = createApiApp();
+
+  // 1. Deals hub returns 5 campaigns (1 hero + 4 carousel) and 6 vouchers
+  const hubRes = await app.request(API_ENDPOINTS.deals);
+  assert.equal(hubRes.status, 200);
+  const hubParsed = createApiSuccessSchema(DealsHubSchema).safeParse(await hubRes.json());
+  assert.equal(hubParsed.success, true);
+  if (hubParsed.success) {
+    assert.equal(hubParsed.data.data.campaigns.length, 5);
+    assert.equal(
+      hubParsed.data.data.campaigns.filter((c) => c.placement === "hero").length,
+      1
+    );
+    assert.equal(
+      hubParsed.data.data.campaigns.filter((c) => c.placement === "carousel").length,
+      4
+    );
+    assert.equal(hubParsed.data.data.vouchers.length, 6);
+  }
+
+  // 2. Deal detail resolves matched properties and vouchers
+  const detailRes = await app.request(API_ENDPOINTS.dealBySlug("bien-he-phu-quoc-nha-trang"));
+  assert.equal(detailRes.status, 200);
+  const detailParsed = createApiSuccessSchema(DealDetailSchema).safeParse(await detailRes.json());
+  assert.equal(detailParsed.success, true);
+  if (detailParsed.success) {
+    assert.deepEqual(
+      detailParsed.data.data.properties.map((p) => p.id),
+      ["stay-02", "stay-07", "stay-08", "stay-10"]
+    );
+    assert.deepEqual(
+      detailParsed.data.data.vouchers.map((v) => v.code),
+      ["NEWSTAY250", "LUXESTAY250"]
+    );
+  }
+
+  // 3. Slug whitespace/case normalization
+  const normalizedRes = await app.request("/api/v1/deals/%20BIEN-HE-PHU-QUOC-NHA-TRANG%20");
+  assert.equal(normalizedRes.status, 200);
+  const normalizedDetail = createApiSuccessSchema(DealDetailSchema).parse(
+    await normalizedRes.json()
+  ).data;
+  assert.equal(normalizedDetail.campaign.slug, "bien-he-phu-quoc-nha-trang");
+
+  // 4. Unknown slug returns 404 NOT_FOUND
+  const missingRes = await app.request(API_ENDPOINTS.dealBySlug("does-not-exist"));
+  assert.equal(missingRes.status, 404);
+  const missingErr = ApiErrorResponseSchema.parse(await missingRes.json());
+  assert.equal(missingErr.error.code, "NOT_FOUND");
+
+  // 5. Custom dealsRepository: inactive -> 404; active but expired -> 200
+  const baseCampaign = PROMOTION_CAMPAIGNS[0]!;
+  const customDealsRepo = createInMemoryDealsRepository([
+    {
+      ...baseCampaign,
+      id: "camp-inactive",
+      slug: "inactive-campaign",
+      isActive: false,
+    },
+    {
+      ...baseCampaign,
+      id: "camp-expired-active",
+      slug: "expired-active-campaign",
+      startsAt: "2019-01-01T00:00:00.000Z",
+      endsAt: "2020-01-01T00:00:00.000Z",
+      isActive: true,
+    },
+  ]);
+
+  const { app: customApp, repositories } = createApiApp({
+    dealsRepository: customDealsRepo,
+  });
+  assert.equal("deals" in repositories, true);
+
+  const inactiveRes = await customApp.request(API_ENDPOINTS.dealBySlug("inactive-campaign"));
+  assert.equal(inactiveRes.status, 404);
+  const inactiveErr = ApiErrorResponseSchema.parse(await inactiveRes.json());
+  assert.equal(inactiveErr.error.code, "NOT_FOUND");
+
+  const expiredRes = await customApp.request(API_ENDPOINTS.dealBySlug("expired-active-campaign"));
+  assert.equal(expiredRes.status, 200);
+  const expiredParsed = createApiSuccessSchema(DealDetailSchema).safeParse(
+    await expiredRes.json()
+  );
+  assert.equal(expiredParsed.success, true);
+});
+
+test("Server-authoritative voucher validation enforces property eligibility and new-user repeat-booking rules across validate and reservations", async () => {
+  const { app } = createApiApp({ nodeEnv: "test" });
+
+  // 1. Property-type eligibility on /api/v1/vouchers/validate
+  const hotelHomestayRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "stay-03" }),
+  });
+  assert.equal(hotelHomestayRes.status, 200);
+  const hotelHomestay = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await hotelHomestayRes.json()
+  ).data;
+  assert.equal(hotelHomestay.valid, false);
+  assert.equal(hotelHomestay.discount, 0);
+
+  const validHomestayRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "stay-01" }),
+  });
+  assert.equal(validHomestayRes.status, 200);
+  const validHomestay = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await validHomestayRes.json()
+  ).data;
+  assert.equal(validHomestay.valid, true);
+  assert.equal(validHomestay.discount, 200000);
+
+  // 2. Guest visitor validating WELCOME150 gets valid: true
+  const guestWelcomeRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(guestWelcomeRes.status, 200);
+  const guestWelcome = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await guestWelcomeRes.json()
+  ).data;
+  assert.equal(guestWelcome.valid, true);
+  assert.equal(guestWelcome.discount, 150000);
+
+  // 3. Newly registered user with 0 bookings validates & books WELCOME150, then is blocked on repeat attempt
+  const userAReg = await app.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Nguyễn Mới",
+      email: "newuser-a@luxestay.vn",
+      phone: "0901112233",
+      password: "password123",
+    }),
+  });
+  assert.equal(userAReg.status, 201);
+  const userACookie = extractCookieHeader(userAReg);
+
+  const userAValidate1 = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(
+    createApiSuccessSchema(VoucherValidationResultSchema).parse(await userAValidate1.json()).data
+      .valid,
+    true
+  );
+
+  const userABook1 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-07",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Mới",
+        phone: "0901112233",
+        email: "newuser-a@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(userABook1.status, 201);
+  const userABooking1 = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await userABook1.json()
+  ).data;
+  assert.equal(userABooking1.status, "confirmed");
+  assert.equal(userABooking1.pricing.appliedPromoCode, "WELCOME150");
+  assert.equal(userABooking1.pricing.discount, 150000);
+
+  // Second attempt with WELCOME150 must fail on both /vouchers/validate and /reservations
+  const userAValidate2 = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  const userAValidate2Data = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await userAValidate2.json()
+  ).data;
+  assert.equal(userAValidate2Data.valid, false);
+  assert.equal(userAValidate2Data.discount, 0);
+
+  const userABook2 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-15",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Mới",
+        phone: "0901112233",
+        email: "newuser-a@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(userABook2.status, 400);
+
+  // 4. Another user whose only prior reservation is cancelled STILL qualifies for WELCOME150
+  const userBReg = await app.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Trần Hủy Đơn",
+      email: "newuser-b@luxestay.vn",
+      phone: "0902223344",
+      password: "password123",
+    }),
+  });
+  assert.equal(userBReg.status, 201);
+  const userBCookie = extractCookieHeader(userBReg);
+
+  const userBBook1 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-21",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Trần Hủy Đơn",
+        phone: "0902223344",
+        email: "newuser-b@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(userBBook1.status, 201);
+  const userBBooking1 = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await userBBook1.json()
+  ).data;
+
+  const userBCancel = await app.request(
+    API_ENDPOINTS.cancelReservation(userBBooking1.bookingId!),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: userBCookie },
+      body: JSON.stringify({ reason: "Đổi kế hoạch" }),
+    }
+  );
+  assert.equal(userBCancel.status, 200);
+
+  const userBValidateAfterCancel = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(
+    createApiSuccessSchema(VoucherValidationResultSchema).parse(
+      await userBValidateAfterCancel.json()
+    ).data.valid,
+    true
+  );
+
+  // 5. Tampered VIPRESORT1M on stay-01 (mountain-view) by authenticated user -> 400
+  const tamperedVipRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-22",
+      nights: 4,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Trần Hủy Đơn",
+        phone: "0902223344",
+        email: "newuser-b@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "VIPRESORT1M",
+    }),
+  });
+  assert.equal(tamperedVipRes.status, 400);
+});
+
+test("mapCampaignRowToDomain and createPostgresDealsRepository map rows into PromotionCampaignSchema-valid domain objects", async () => {
+  const sampleRow = {
+    id: "camp-bien-he-phu-quoc",
+    slug: "bien-he-phu-quoc-nha-trang",
+    placement: "carousel" as const,
+    badge: "ĐẢO NGỌC & BIỂN XANH",
+    title: "Deal biển siêu hot",
+    subtitle: "Biệt thự sát biển và resort hồ bơi vô cực tại Phú Quốc, Nha Trang & Đà Nẵng.",
+    highlightText: "Giảm đến 250K",
+    periodLabel: "Đến 31/12/2026",
+    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80",
+    theme: "coral-summer" as const,
+    ctaLabel: "Xem ưu đãi",
+    terms: ["Điều khoản 1", "Điều khoản 2"],
+    voucherCodes: ["NEWSTAY250", "LUXESTAY250"],
+    targetFilter: { destinations: ["Phú Quốc", "Nha Trang", "Đà Nẵng"] },
+    startsAt: "2026-11-01T00:00:00.000Z",
+    endsAt: "2026-12-31T23:59:59.000Z",
+    isActive: true,
+    sortOrder: 1,
+  };
+
+  const mapped = mapCampaignRowToDomain(sampleRow);
+  const parsed = PromotionCampaignSchema.safeParse(mapped);
+  assert.equal(parsed.success, true);
+  assert.equal("sortOrder" in mapped, false);
+  assert.deepEqual(mapped.targetFilter, {
+    destinations: ["Phú Quốc", "Nha Trang", "Đà Nẵng"],
+  });
+  assert.deepEqual(mapped.voucherCodes, ["NEWSTAY250", "LUXESTAY250"]);
+
+  const stubDb = {
+    select() {
+      return {
+        from() {
+          return {
+            async orderBy() {
+              return [sampleRow];
+            },
+            where() {
+              return {
+                async limit() {
+                  return [sampleRow];
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as unknown as LuxeStayDb;
+
+  const pgRepo = createPostgresDealsRepository(stubDb);
+  const all = await pgRepo.getCampaigns();
+  assert.equal(all.length, 1);
+  assert.equal(all[0]?.slug, "bien-he-phu-quoc-nha-trang");
+  assert.equal(await pgRepo.getCampaignBySlug("   "), null);
+  const bySlug = await pgRepo.getCampaignBySlug(" BIEN-HE-PHU-QUOC-NHA-TRANG ");
+  assert.equal(bySlug?.id, "camp-bien-he-phu-quoc");
 });

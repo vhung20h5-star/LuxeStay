@@ -11,6 +11,7 @@ import {
   canManageProperty,
   evaluateReservationCancellation,
   evaluateReservationCompletion,
+  hasPriorSuccessfulBookings,
   processServerReservationIntent,
 } from "@luxestay/domain";
 import type { ApiCatalogRepository } from "../catalog/repository.js";
@@ -82,10 +83,18 @@ export function createReservationService(deps: {
 
   return {
     async createReservation(intent, context) {
-      const snapshot = await deps.catalogRepository.getSnapshot();
+      const authUser = context?.authUser ?? null;
+      const [snapshot, userReservations] = await Promise.all([
+        deps.catalogRepository.getSnapshot(),
+        authUser
+          ? deps.reservationRepository.findByUserId(authUser.id)
+          : Promise.resolve(null),
+      ]);
+      const priorSuccessful = userReservations
+        ? hasPriorSuccessfulBookings(userReservations)
+        : undefined;
       const propertyId = intent.propertyId?.trim() ?? "";
       const bookingId = `LX-${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-      const authUser = context?.authUser ?? null;
 
       // Fast path when propertyId is missing or non-existent (no lock needed)
       if (!propertyId || !snapshot.properties.some((p) => p.id === propertyId)) {
@@ -95,6 +104,7 @@ export function createReservationService(deps: {
           vouchers: snapshot.promotions.vouchers,
           userId: authUser?.id,
           isAuthenticated: Boolean(authUser),
+          hasPriorSuccessfulBookings: priorSuccessful,
         });
         if (!result.ok) {
           return {
@@ -117,6 +127,7 @@ export function createReservationService(deps: {
             vouchers: snapshot.promotions.vouchers,
             userId: authUser?.id,
             isAuthenticated: Boolean(authUser),
+            hasPriorSuccessfulBookings: priorSuccessful,
             dailyOverrides,
             existingReservations,
             enforceAvailability: true,
