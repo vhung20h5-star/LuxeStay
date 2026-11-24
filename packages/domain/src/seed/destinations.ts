@@ -41,7 +41,7 @@ export const DESTINATIONS: Destination[] = [
     id: "hoi-an",
     name: "Hội An",
     province: "Quảng Nam",
-    image: "https://images.unsplash.com/photo-1557750298-47962451bebb?auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80",
     propertiesCount: 780,
     tag: "Phố cổ di sản",
     popularFor: "Đèn lồng lung linh, sông Hoài, ẩm thực trứ danh",

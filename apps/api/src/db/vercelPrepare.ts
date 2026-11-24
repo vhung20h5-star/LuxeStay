@@ -1,8 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDbClient } from "./client.js";
-import { propertiesTable } from "./schema/index.js";
+import { destinationsTable, propertiesTable } from "./schema/index.js";
 import { seedDatabase } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,6 +65,23 @@ export async function prepareDatabaseIfConfigured(
       await seedDatabase(client.db);
       console.log("[luxestay-api] Migrations + initial seed completed.");
       return { status: "migrated_and_seeded" };
+    }
+
+    // Repair known retired upstream destination image URL without overwriting user/host catalog edits.
+    const hoiAnSeed = SEED_CATALOG_SNAPSHOT.destinations.find((d) => d.id === "hoi-an");
+    if (hoiAnSeed) {
+      await client.db
+        .update(destinationsTable)
+        .set({ image: hoiAnSeed.image })
+        .where(
+          and(
+            eq(destinationsTable.id, "hoi-an"),
+            eq(
+              destinationsTable.image,
+              "https://images.unsplash.com/photo-1557750298-47962451bebb?auto=format&fit=crop&w=800&q=80"
+            )
+          )
+        );
     }
 
     console.log("[luxestay-api] Migrations up to date; properties already seeded (skipping overwrite).");
