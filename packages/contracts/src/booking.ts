@@ -11,6 +11,7 @@ import {
   type Property,
   type ResolvedPropertyAmenity,
 } from "./catalog.js";
+import { NightlyPriceBreakdownSchema } from "./availability.js";
 import { PaymentTransactionSchema } from "./payment.js";
 
 export const VN_PHONE_REGEX = /^(?:\+?84|0)\d{8,10}$/;
@@ -38,6 +39,8 @@ export type SelectedBookingAmenity = z.infer<typeof SelectedBookingAmenitySchema
 export const BookingPricingSchema = z.object({
   basePrice: z.number().nonnegative(),
   nightsTotal: z.number().nonnegative(),
+  seasonalSurcharge: z.number().default(0),
+  nightlyBreakdown: z.array(NightlyPriceBreakdownSchema).readonly().optional(),
   cleaningFee: z.number().nonnegative(),
   serviceFee: z.number().nonnegative(),
   amenitiesFee: z.number().nonnegative(),
@@ -164,6 +167,7 @@ export const BookingDetailsSchema = z.object({
   status: ReservationStatusSchema.default("confirmed"),
   paymentExpiresAt: z.string().min(1).optional(),
   payment: PaymentTransactionSchema.optional(),
+  completedAt: z.string().min(1).optional(),
   cancelledAt: z.string().min(1).optional(),
   cancellationReason: z.string().min(1).optional(),
 });

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   API_ENDPOINTS,
   CancelReservationInputSchema,
+  CompleteReservationInputSchema,
   ReservationLookupInputSchema,
   ServerReservationIntentSchema,
   buildApiError,
@@ -178,6 +179,51 @@ export function createReservationRoutes(reservationService: ReservationService) 
     }
 
     const result = await reservationService.cancelReservation(bookingId, parsed.data, {
+      authUser,
+    });
+    if (!result.ok) {
+      return c.json(
+        buildApiError(result.code, result.message, undefined, buildMeta(c)),
+        result.status
+      );
+    }
+
+    return c.json(buildApiSuccess(result.booking, buildMeta(c)), 200);
+  });
+
+  routes.post("/api/v1/reservations/:bookingId/complete", async (c) => {
+    const bookingId = c.req.param("bookingId");
+    const authUser = c.get("authUser");
+
+    let rawBody: unknown = {};
+    const contentLength = c.req.header("content-length");
+    const contentType = c.req.header("content-type") ?? "";
+    if (contentType.includes("application/json") && contentLength !== "0") {
+      try {
+        const text = await c.req.text();
+        rawBody = text.trim() ? JSON.parse(text) : {};
+      } catch {
+        return c.json(
+          buildApiError(
+            "INVALID_JSON",
+            "Dữ liệu xác nhận hoàn tất lưu trú không đúng định dạng JSON.",
+            undefined,
+            buildMeta(c)
+          ),
+          400
+        );
+      }
+    }
+
+    const parsed = CompleteReservationInputSchema.safeParse(rawBody);
+    if (!parsed.success || (!authUser && !parsed.data.contact)) {
+      const message = !parsed.success
+        ? (parsed.error.issues[0]?.message ?? "Dữ liệu xác nhận hoàn tất lưu trú không hợp lệ.")
+        : "Vui lòng đăng nhập hoặc cung cấp email/số điện thoại đặt phòng để xác nhận hoàn tất lưu trú.";
+      return c.json(buildApiError("VALIDATION_ERROR", message, undefined, buildMeta(c)), 400);
+    }
+
+    const result = await reservationService.completeReservation(bookingId, parsed.data, {
       authUser,
     });
     if (!result.ok) {

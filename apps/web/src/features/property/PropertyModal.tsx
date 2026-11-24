@@ -9,6 +9,7 @@ import {
   Bath,
   Bed,
   Check,
+  CheckCircle2,
   ChevronRight,
   ExternalLink,
   Heart,
@@ -34,7 +35,9 @@ import { formatVND } from "@luxestay/domain";
 import { Button } from "@/shared/ui/Button";
 import { Badge } from "@/shared/ui/Badge";
 import { AmenityIcon } from "./AmenityIcon";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import { PropertyAmenitiesModal } from "./PropertyAmenitiesModal";
+import { SeasonalPricingSummary } from "./SeasonalPricingSummary";
 
 interface AmenitiesModalState {
   isOpen: boolean;
@@ -47,6 +50,7 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
   const {
     setSelectedProperty,
     proceedToCheckout,
+    setDraftCheckIn,
     setDraftNights,
     setDraftAdults,
     toggleBookingAmenity,
@@ -330,6 +334,16 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                     </p>
                   </div>
 
+                  {/* Live Availability & Seasonal Pricing Calendar */}
+                  <AvailabilityCalendar
+                    propertyId={property.id}
+                    selectedCheckIn={quote.checkIn}
+                    nights={nights}
+                    rooms={guests.rooms}
+                    onSelectCheckIn={setDraftCheckIn}
+                    compact
+                  />
+
                   {/* Interactive Resort Amenities & Services Section */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between gap-2">
@@ -474,8 +488,16 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                                 className="rounded-full object-cover"
                               />
                               <div>
-                                <div className="text-xs font-bold text-slate-900">
-                                  {rev.authorName}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-xs font-bold text-slate-900">
+                                    {rev.authorName}
+                                  </span>
+                                  {rev.isVerified && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      Đã xác thực
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-slate-400">{rev.date}</div>
                               </div>
@@ -636,14 +658,11 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
 
                     {/* Price Calculation Breakdown */}
                     <div className="space-y-2.5 text-xs text-slate-600">
-                      <div className="flex justify-between">
-                        <span>
-                          {formatVND(property.pricePerNight)} x {nights} đêm
-                        </span>
-                        <span className="font-semibold text-slate-800">
-                          {formatVND(pricing.nightsTotal)}
-                        </span>
-                      </div>
+                      <SeasonalPricingSummary
+                        pricing={pricing}
+                        nights={nights}
+                        rooms={guests.rooms}
+                      />
 
                       <div className="flex justify-between">
                         <span>Phí dọn dẹp &amp; vệ sinh tiêu chuẩn</span>

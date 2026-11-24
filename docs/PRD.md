@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD) — LuxeStay (`travel-service`)
 
-- **Phiên bản tài liệu:** 1.3 (Phase 2 Completed — Baseline v0.4.0)
+- **Phiên bản tài liệu:** 1.5 (Phase 3 Completed — Baseline v0.6.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Trạng thái:** Living Document (Active)
 - **Tài liệu liên quan:**
@@ -34,8 +34,10 @@
 | Hệ thống Tiện ích khu nghỉ dưỡng (51 mục / 7 nhóm) | **Đã triển khai đầy đủ** | Master–Detail Explorer + đồng bộ dịch vụ chọn thêm vào báo giá |
 | Quản lý, Lịch sử & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`) | **Đã triển khai đầy đủ** | Hiển thị **"Đơn đặt phòng của tôi"** khi đăng nhập, tra cứu khách vãng lai bằng `bookingId` + email/SĐT VN, hủy theo chính sách `freeCancellation`, xem email vé điện tử & in PDF |
 | Điều phối lớp phủ (7 Modal/Drawer) & ARIA Dialog | **Đã triển khai đầy đủ** | Quản lý `z-index`, `Escape`, scroll lock tập trung |
-| Lịch trống phòng chống đặt trùng, Đánh giá xác thực & Cổng Chủ nhà | **Chưa triển khai** | Mục tiêu **Phase 3** |
-| Đa ngôn ngữ / Đa tiền tệ (`Navbar`) | **Tĩnh (VNĐ • Tiếng Việt)** | Mục tiêu **Phase 3** |
+| Lịch trống phòng, Chống đặt trùng & Giá theo mùa | **Đã triển khai đầy đủ** | `GET /api/v1/properties/:id/availability`, khóa `SELECT ... FOR UPDATE` chống đặt trùng (`409 CONFLICT`), phụ thu cuối tuần T6–T7 (+20%) & lễ VN (+30%), `AvailabilityCalendar` & `SeasonalPricingSummary` |
+| Đánh giá xác thực lưu trú (Verified Reviews) | **Đã triển khai đầy đủ** | Chỉ khách đã hoàn tất lưu trú (`completed` hoặc qua 12:00 `checkOut`) được gửi review qua `POST /api/v1/properties/:id/reviews` (chặn gửi trùng `booking_id UNIQUE`), tự tính lại `rating`/`reviewCount` atomic & hiện badge **"Đã xác thực lưu trú"** |
+| Cổng Chủ nhà & Quản trị (Host/Admin Portal `/host`) | **Đã triển khai đầy đủ** | RBAC `guest \| host \| admin`, `properties.owner_user_id`, CRUD chỗ nghỉ, khóa ngày & ghi đè giá `property_availability`, quản lý đơn khách & báo cáo doanh thu (`GET /api/v1/host/analytics`) |
+| Đa ngôn ngữ (`VI`/`EN`), Đa tiền tệ (`VNĐ`/`USD`) & Playwright E2E | **Đã triển khai đầy đủ** | `LocaleContext` lưu `localStorage` qua `useSyncExternalStore` không đổi URL, nút chuyển đổi trên `Navbar`, và bộ Playwright Chromium E2E (`e2e/`, `npm run test:e2e`) chạy trong CI |
 
 ---
 
@@ -138,6 +140,33 @@
   - `PropertyCard` có liên kết trực tiếp trên tiêu đề dẫn tới `/stays/[id]`; `PropertyModal` có nút **"Trang chi tiết"** và nút **"Chia sẻ"** sao chép URL `/stays/[id]`.
   - Trang chủ `/` đồng bộ 2 chiều trạng thái `StayCatalogQueryState` với URL query string (`dest`, `in`, `out`, `adults`, `children`, `rooms`, `cat`, `min`, `max`, `types`, `rating`, `amenities`, `freeCancel`, `sort`), bỏ qua giá trị mặc định để URL gọn và tự sanitize mọi tham số không hợp lệ.
 
+### FR-11: Lịch phòng trống, Chống đặt trùng & Giá theo mùa
+- **Mục đích:** Đảm bảo tồn kho phòng chính xác theo từng đêm, ngăn tuyệt đối 2 khách đặt trùng cùng một căn/phòng và minh bạch phụ thu cuối tuần/ngày lễ ngay từ bước chọn ngày.
+- **Hành vi chuẩn:**
+  - `GET /api/v1/properties/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` trả về lịch 45 ngày gồm tồn kho còn lại (`remainingUnits`), trạng thái khóa ngày (`isBlocked`), và giá hiệu lực theo đêm (`effectivePrice`, `priceReason`: `base | weekend | holiday | override`).
+  - Quy tắc giá theo mùa: ưu tiên `overridePrice` > ngày lễ cố định VN (`+30%`: `01-01`, `04-30`, `05-01`, `09-02`, `12-24`, `12-25`, `12-31`) > đêm cuối tuần Thứ 6 & Thứ 7 (`+20%`) > giá gốc, nhân theo `guests.rooms` và hiển thị rõ dòng **"Phụ thu cuối tuần / ngày lễ"** kèm bảng chi tiết từng đêm (`SeasonalPricingSummary`).
+  - Khi gửi `POST /api/v1/reservations`, server khóa giao dịch hàng `SELECT ... FOR UPDATE` (PostgreSQL) hoặc mutex theo `propertyId` (`memory`), tính tổng phòng đang giữ bởi đơn `confirmed` và `pending_payment` chưa hết hạn; nếu thiếu phòng hoặc trùng ngày khóa trả `409 CONFLICT`. Hủy đơn, thanh toán thất bại, hết hạn hoặc hoàn tất lưu trú sẽ giải phóng phòng ngay lập tức.
+  - Component `AvailabilityCalendar` trên `/stays/[id]` và `PropertyModal` cho phép xem giá từng đêm, cảnh báo xung đột phòng trống và bấm chọn ngày nhận phòng trực tiếp.
+
+### FR-12: Hoàn tất Lưu trú & Đánh giá Xác thực (Verified Reviews)
+- **Mục đích:** Chỉ cho phép khách hàng thực sự đã lưu trú gửi đánh giá, ngăn chặn đánh giá ảo và giữ điểm số trung bình trung thực.
+- **Hành vi chuẩn:**
+  - Bổ sung trạng thái đơn `completed` và endpoint `POST /api/v1/reservations/:bookingId/complete` (khả dụng ở chế độ Sandbox để kiểm thử tức thì và dành cho Host/Admin ở Phase 3B); đơn đã `completed` không thể hủy (`409 CONFLICT`).
+  - Endpoint `POST /api/v1/properties/:id/reviews` chỉ chấp nhận khi người gửi là chủ đơn hợp lệ (`403 FORBIDDEN` nếu sai), đơn đã `completed` hoặc `confirmed` quá `12:00` ngày `checkOut` (`409 CONFLICT` nếu chưa lưu trú xong), và đơn chưa từng gửi đánh giá (`reviews.booking_id UNIQUE`, `409 CONFLICT` nếu gửi trùng).
+  - Server chèn review với `isVerified = true` và tính lại `properties.rating` + `properties.review_count` trong cùng transaction DB; UI hiển thị badge **"Đã xác thực lưu trú"** trên `/stays/[id]` & `PropertyModal`, cùng biểu mẫu đánh giá 1–5 sao ngay trên `/bookings/[bookingId]`.
+
+### FR-13: Phân quyền RBAC & Cổng Chủ nhà / Quản trị (`/host`)
+- **Mục đích:** Cung cấp công cụ tự vận hành cho Chủ nhà (`host`) và Quản trị viên (`admin`) ngay trên cùng nền tảng mà vẫn cách ly chặt chẽ quyền truy cập theo chủ sở hữu.
+- **Hành vi chuẩn:**
+  - Người dùng mang 1 trong 3 vai trò `guest | host | admin`; mỗi chỗ nghỉ gắn `ownerUserId`. API `/api/v1/host/*` trả `401 UNAUTHORIZED` nếu chưa đăng nhập và `403 FORBIDDEN` nếu là `guest` hoặc `host` cố thao tác trên chỗ nghỉ không thuộc sở hữu.
+  - Giao diện `/host` cung cấp 4 phân hệ: **Tổng quan & Doanh thu** (KPI + biểu đồ doanh thu theo tháng + hiệu suất từng chỗ nghỉ), **Chỗ nghỉ** (tạo/sửa/xóa — chặn xóa `409` nếu còn đơn hoạt động), **Lịch phòng & Giá đặc biệt** (khóa ngày / ghi đè giá cập nhật tức thì vào `property_availability`), và **Đơn đặt phòng khách** (hỗ trợ đánh dấu hoàn tất lưu trú kể cả ngoài chế độ Sandbox).
+
+### FR-14: Đa ngôn ngữ (`VI`/`EN`) & Đa tiền tệ (`VNĐ`/`USD`)
+- **Mục đích:** Hỗ trợ du khách quốc tế và nội địa chuyển đổi ngôn ngữ/đơn vị tiền tệ tức thì mà không làm gián đoạn đường dẫn chia sẻ.
+- **Hành vi chuẩn:**
+  - `Navbar` cung cấp nút chuyển trực tiếp `VNĐ ↔ USD` và `VI ↔ EN`, lưu bền vững trong `localStorage` qua `LocaleContext` (`useSyncExternalStore`) không gây lệch SSR Hydration.
+  - Giá hiển thị tự động quy đổi từ đơn vị chuẩn `VND` sang `USD` theo tỷ giá tham khảo `25.000 VNĐ/USD` (ví dụ `6.500.000 ₫` → `$260` ở `en-US`).
+
 ---
 
 ## 4. Yêu cầu phi chức năng (Non-Functional Requirements)
@@ -162,7 +191,7 @@ Chi tiết phân kỳ triển khai xem tại [PLAN.md](./PLAN.md). Tóm tắt tr
 3. ~~**Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie), `AuthContext` + `AuthModal`, merge Wishlist `localStorage ↔ user_favorites` và **"Đơn đặt phòng của bạn"**.
 4. ~~**Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine):**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — `evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, áp mã `LUXESTAY250` / `SUMMERVIBE` trên `BookingCheckoutModal` & xác thực chuẩn phía server.
 5. ~~**Epic 5 — Tích hợp Thanh toán & Thông báo:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`, Sandbox Production-flow)** — `pending_payment` → `/payments/[transactionId]` → Webhook ký `HMAC-SHA256` + Idempotency + nhật ký email vé điện tử `notification_logs`.
-6. **Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà (Phase 3):** Kiểm soát phòng trống theo ngày chống đặt trùng, cho phép khách đã lưu trú gửi đánh giá, đa ngôn ngữ (`vi`/`en`) và cổng quản trị cho chủ nhà/vận hành.
+6. ~~**Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà:**~~ **Đã hoàn thành ở Phase 3A & 3B (`v0.5.0` → `v0.6.0`)** — Availability Engine + khóa chống đặt trùng `SELECT ... FOR UPDATE`, giá cuối tuần/lễ, Verified Reviews, RBAC Host/Admin Portal `/host`, `LocaleContext` (`vi`/`en`, `VND`/`USD`) và Playwright Chromium E2E.
 
 ---
 

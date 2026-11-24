@@ -8,7 +8,9 @@ import type {
 } from "@luxestay/contracts";
 import {
   canAccessReservation,
+  canManageProperty,
   evaluateReservationCancellation,
+  evaluateReservationCompletion,
   processServerReservationIntent,
 } from "@luxestay/domain";
 import type { ApiCatalogRepository } from "../catalog/repository.js";
@@ -40,14 +42,20 @@ export interface ReservationService {
     input: { contact?: string; reason?: string },
     context?: { authUser?: AuthUser | null }
   ): Promise<ReservationOperationResult>;
+  completeReservation(
+    bookingId: string,
+    input: { contact?: string },
+    context?: { authUser?: AuthUser | null }
+  ): Promise<ReservationOperationResult>;
   listReservationNotifications(
     bookingId: string,
     credentials: { contact?: string; authUser?: AuthUser | null }
   ): Promise<ReservationNotificationsResult>;
 }
 
-function mapStatusToErrorCode(status: 400 | 404 | 422): ErrorCode {
+function mapStatusToErrorCode(status: 400 | 404 | 409 | 422): ErrorCode {
   if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
   if (status === 422) return "UNPROCESSABLE_ENTITY";
   return "VALIDATION_ERROR";
 }
@@ -58,7 +66,10 @@ export function createReservationService(deps: {
   paymentRepository: ApiPaymentRepository;
   paymentService: PaymentService;
   notificationService: NotificationService;
+  sandboxEnabled?: boolean;
 }): ReservationService {
+  const sandboxEnabled = deps.sandboxEnabled ?? true;
+
   async function attachLatestPayment(booking: BookingDetails): Promise<BookingDetails> {
     if (!booking.bookingId) return booking;
     const latestPayment = await deps.paymentRepository.findLatestByBookingId(booking.bookingId);
@@ -72,27 +83,66 @@ export function createReservationService(deps: {
   return {
     async createReservation(intent, context) {
       const snapshot = await deps.catalogRepository.getSnapshot();
+      const propertyId = intent.propertyId?.trim() ?? "";
       const bookingId = `LX-${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
       const authUser = context?.authUser ?? null;
 
-      const result = processServerReservationIntent(intent, snapshot.properties, {
-        bookingId,
-        createdAt: new Date().toISOString(),
-        vouchers: snapshot.promotions.vouchers,
-        userId: authUser?.id,
-        isAuthenticated: Boolean(authUser),
-      });
-
-      if (!result.ok) {
-        return {
-          ok: false,
-          code: mapStatusToErrorCode(result.status),
-          message: result.error,
-          status: result.status,
-        };
+      // Fast path when propertyId is missing or non-existent (no lock needed)
+      if (!propertyId || !snapshot.properties.some((p) => p.id === propertyId)) {
+        const result = processServerReservationIntent(intent, snapshot.properties, {
+          bookingId,
+          createdAt: new Date().toISOString(),
+          vouchers: snapshot.promotions.vouchers,
+          userId: authUser?.id,
+          isAuthenticated: Boolean(authUser),
+        });
+        if (!result.ok) {
+          return {
+            ok: false,
+            code: result.code ?? mapStatusToErrorCode(result.status),
+            message: result.error,
+            status: result.status,
+          };
+        }
       }
 
-      const saved = await deps.reservationRepository.save(result.booking);
+      const lockedResult = await deps.reservationRepository.createWithPropertyLock(
+        propertyId,
+        ({ existingReservations, dailyOverrides }) => {
+          const now = new Date();
+          const result = processServerReservationIntent(intent, snapshot.properties, {
+            bookingId,
+            createdAt: now.toISOString(),
+            now,
+            vouchers: snapshot.promotions.vouchers,
+            userId: authUser?.id,
+            isAuthenticated: Boolean(authUser),
+            dailyOverrides,
+            existingReservations,
+            enforceAvailability: true,
+          });
+
+          if (!result.ok) {
+            return {
+              ok: false,
+              code: result.code ?? mapStatusToErrorCode(result.status),
+              message: result.error,
+              status: result.status,
+            };
+          }
+
+          return {
+            ok: true,
+            booking: result.booking,
+          };
+        }
+      );
+
+      if (!lockedResult.ok) {
+        return lockedResult;
+      }
+
+      const saved = lockedResult.booking;
 
       if (saved.paymentMethod === "hotel") {
         await deps.notificationService.sendBookingNotification(saved, "booking_confirmed");
@@ -168,6 +218,48 @@ export function createReservationService(deps: {
 
       const updated = await deps.reservationRepository.update(evaluated.booking);
       await deps.notificationService.sendBookingNotification(updated, "booking_cancelled");
+      return { ok: true, booking: await attachLatestPayment(updated) };
+    },
+
+    async completeReservation(bookingId, input, context) {
+      const normalizedId = bookingId.trim().toUpperCase();
+      const existing = await deps.reservationRepository.findById(normalizedId);
+      if (!existing) {
+        return {
+          ok: false,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+          status: 404,
+        };
+      }
+
+      const actor = context?.authUser ?? null;
+      const isPropertyManager = canManageProperty(actor, existing.property);
+
+      if (!sandboxEnabled && !isPropertyManager) {
+        return {
+          ok: false,
+          code: "FORBIDDEN",
+          message:
+            "Chức năng hoàn tất lưu trú thủ công chỉ khả dụng cho Chủ nhà/Quản trị viên hoặc chế độ Sandbox.",
+          status: 403,
+        };
+      }
+
+      const evaluated = evaluateReservationCompletion(existing, input, {
+        authenticatedUserId: actor?.id,
+        bypassOwnershipCheck: isPropertyManager,
+      });
+      if (!evaluated.ok) {
+        return {
+          ok: false,
+          code: evaluated.code,
+          message: evaluated.error,
+          status: evaluated.status,
+        };
+      }
+
+      const updated = await deps.reservationRepository.update(evaluated.booking);
       return { ok: true, booking: await attachLatestPayment(updated) };
     },
 

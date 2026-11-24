@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { Property } from "@luxestay/contracts";
 import { useBookingSession, useFavorites } from "@/features/booking/BookingContext";
-import { formatVND } from "@luxestay/domain";
+import { useLocale } from "@/features/locale/LocaleContext";
 import { projectPropertyAmenities } from "@luxestay/domain";
 import { Badge } from "@/shared/ui/Badge";
 import { AmenityIcon } from "@/features/property/AmenityIcon";
@@ -27,6 +27,7 @@ export interface PropertyCardProps {
 export function PropertyCard({ property }: PropertyCardProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const { setSelectedProperty, setCheckoutProperty } = useBookingSession();
+  const { formatPrice, t } = useLocale();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const isFav = isFavorite(property.id);
 
@@ -187,7 +188,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
           <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
             {property.freeCancellation && (
               <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                <Check className="w-3 h-3 text-emerald-600" /> Hủy miễn phí
+                <Check className="w-3 h-3 text-emerald-600" /> {t("catalog.freeCancel")}
               </span>
             )}
             {property.breakfastIncluded && (
@@ -220,14 +221,16 @@ export function PropertyCard({ property }: PropertyCardProps) {
         <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between">
           <div>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-lg font-black text-slate-900">
-                {formatVND(property.pricePerNight)}
+              <span className="text-lg font-black text-slate-900" data-testid="property-card-price">
+                {formatPrice(property.pricePerNight)}
               </span>
-              <span className="text-xs text-slate-500 font-normal">/đêm</span>
+              <span className="text-xs text-slate-500 font-normal">
+                {t("catalog.perNight")}
+              </span>
             </div>
             {property.originalPrice && (
               <span className="text-xs text-slate-400 line-through">
-                {formatVND(property.originalPrice)}
+                {formatPrice(property.originalPrice)}
               </span>
             )}
           </div>
@@ -240,7 +243,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
             }}
             className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors hover:scale-105"
           >
-            Đặt ngay
+            {t("catalog.bookNow")}
           </button>
         </div>
       </div>

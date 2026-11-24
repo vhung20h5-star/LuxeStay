@@ -21,6 +21,7 @@ function mapUserRow(row: typeof usersTable.$inferSelect): StoredAuthUser {
     fullName: row.fullName,
     ...(row.avatar ? { avatar: row.avatar } : {}),
     provider: row.provider,
+    role: row.role ?? "guest",
     ...(row.passwordHash ? { passwordHash: row.passwordHash } : {}),
     createdAt: row.createdAt.toISOString(),
   };
@@ -40,11 +41,13 @@ export function createPostgresAuthRepository(db: LuxeStayDb): ApiAuthRepository 
         fullName: user.fullName,
         avatar: user.avatar ?? null,
         provider: user.provider,
+        role: user.role ?? "guest",
         passwordHash: user.passwordHash ?? null,
         createdAt: new Date(user.createdAt),
       });
       return {
         ...user,
+        role: user.role ?? "guest",
         email,
         ...(phone ? { phone } : {}),
       };

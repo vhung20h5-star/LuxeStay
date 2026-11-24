@@ -1,8 +1,8 @@
 # Engineering, Maintenance & Feature Expansion Plan — LuxeStay (`travel-service`)
 
-- **Phiên bản kế hoạch:** 2.2 (Phase 2 Completed — Baseline v0.4.0)
+- **Phiên bản kế hoạch:** 2.4 (Phase 3 Completed — Baseline v0.6.0)
 - **Ngày cập nhật:** 2026-11-24
-- **Trạng thái:** Active Roadmap
+- **Trạng thái:** All Planned Phases (0–3) Completed ✅
 - **Tài liệu liên quan:** [PRD.md](./PRD.md) | [ARCHITECTURE.md](./ARCHITECTURE.md) | [ADR Index](./adr/README.md) | [GLOSSARY.md](../GLOSSARY.md)
 
 ---
@@ -22,12 +22,14 @@
 | **M7 — Server API & Split Contexts** | `abedd20`, `eb4674e` | Tính giá chuẩn phía server, tách 3 domain contexts (`useFavorites`, `useCatalog`, `useBookingSession`), nâng Next.js `16.4.6` | [ADR-0002](./adr/0002-booking-session-and-authoritative-server-pricing.md), [ADR-0006](./adr/0006-app-ports-persistence-and-split-domain-contexts.md) |
 | **M8 — Monorepo v0.2.0 & Phase 0 Hardening** | `bbcc2d6` (`v0.2.0`) | Chuyển đổi sang TypeScript Monorepo (`npm workspaces` + `Turborepo`): `@luxestay/contracts` (Zod), `@luxestay/domain`, `@luxestay/api` (Hono `:4000`), `@luxestay/web` (feature-based `:3000`), `NEXT_PUBLIC_DATA_MODE=api|mock` không fallback ngầm, Error Boundaries, `.nvmrc`, `apps/web/AGENTS.md` + `apps/api/AGENTS.md`, ESLint boundary toàn repo, GitHub Actions CI | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) |
 | **M9 — Phase 1: PostgreSQL/Drizzle, Booking Lifecycle & Shareable Routing** | `bc04ca3` (`v0.3.0`) | PostgreSQL 16 + Drizzle ORM (`docker-compose.yml` `:5434->5432`, 12 bảng, migration `0000`, idempotent seed, dual driver `memory|database`), tra cứu & hủy đơn (`/bookings`, `/bookings/[bookingId]`), trang chi tiết `/stays/[id]` SSR + SEO/OpenGraph & đồng bộ URL query | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) |
-| **M10 — Phase 2: Commercialization (Auth, Wishlist Sync, Voucher Engine & Payment Sandbox)** | `v0.4.0` | Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie + `OAuthProviderSeam`, `AuthContext` tách riêng), đồng bộ Wishlist `user_favorites` + lịch sử `Đơn đặt phòng của tôi` (`/api/v1/reservations/my`); Dynamic Voucher Engine (`evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, ô áp mã trên Checkout); Payment Gateway Sandbox (`pending_payment → confirmed/payment_failed/expired`, `/payments/[transactionId]`, Webhook `HMAC-SHA256` + Idempotency + `notification_logs` email vé điện tử); Migration `0001` (19 bảng PostgreSQL 16), 75/75 tests + 13/13 live PostgreSQL E2E | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md), [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md) |
+| **M10 — Phase 2: Commercialization (Auth, Wishlist Sync, Voucher Engine & Payment Sandbox)** | `5fd6940` (`v0.4.0`) | Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie + `OAuthProviderSeam`, `AuthContext` tách riêng), đồng bộ Wishlist `user_favorites` + lịch sử `Đơn đặt phòng của tôi` (`/api/v1/reservations/my`); Dynamic Voucher Engine (`evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, ô áp mã trên Checkout); Payment Gateway Sandbox (`pending_payment → confirmed/payment_failed/expired`, `/payments/[transactionId]`, Webhook `HMAC-SHA256` + Idempotency + `notification_logs` email vé điện tử); Migration `0001` (19 bảng PostgreSQL 16), 75/75 tests + 13/13 live PostgreSQL E2E | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md), [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md) |
+| **M11 — Phase 3A: Availability Engine, Anti-Double-Booking, Seasonal Pricing & Verified Reviews** | `v0.5.0` | Quản lý tồn kho theo từng đêm (`properties.inventory_count` + `property_availability`), khóa giao dịch `SELECT ... FOR UPDATE` trên PostgreSQL / per-property async mutex trên `memory` chống đặt trùng (`409 CONFLICT`), giá theo mùa (`override > lễ VN +30% > cuối tuần T6–T7 +20% > giá gốc`) + `seasonalSurcharge` & `nightlyBreakdown`; trạng thái `completed` (`POST /api/v1/reservations/:bookingId/complete` sandbox), Đánh giá xác thực (`POST /api/v1/properties/:id/reviews`, `reviews.booking_id UNIQUE`, tự tính lại `rating` & `review_count` trong DB transaction); Migration `0002` (20 bảng PostgreSQL 16), UI `AvailabilityCalendar`, `SeasonalPricingSummary`, badge xác thực & form đánh giá, 84/84 tests + 7/7 live Postgres concurrency E2E | [ADR-0011](./adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md) |
+| **M12 — Phase 3B: RBAC Host/Admin Portal, Multi-Language/Currency & Playwright E2E** | `v0.6.0` | Phân quyền RBAC (`guest \| host \| admin`) với `users.role` + `properties.owner_user_id` (Migration `0003`, seed tài khoản demo Host/Admin), toàn bộ API `/api/v1/host/*` (CRUD chỗ nghỉ có chặn xóa `409` khi có đơn hoạt động, ghi đè lịch/giá `property_availability`, danh sách đơn khách, hoàn tất lưu trú kể cả khi tắt sandbox, báo cáo doanh thu `computeHostAnalytics`); giao diện `/host` 4 tab; `LocaleContext` (`vi`/`en`, `VND`/`USD` qua `useSyncExternalStore` không đổi URL) + bộ chọn tương tác trên `Navbar`; bộ kiểm thử **Playwright Chromium E2E** (`e2e/`, `npm run test:e2e`, CI job), 90/90 unit/integration tests + 3/3 Playwright E2E + live Postgres 16 RBAC E2E | [ADR-0012](./adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md) |
 
 ### 1.2. Hiện trạng kiểm chứng kỹ thuật
-- **Automated Tests (4 tầng):** `75/75` đạt (`contracts`: 5, `domain`: 41, `api`: 10, `web`: 19) qua `npm run test`.
+- **Automated Tests (4 tầng + Playwright E2E):** `90/90` unit/integration tests đạt (`contracts`: 7, `domain`: 49, `api`: 13, `web`: 21) qua `npm run test` + **`3/3` Playwright Chromium E2E** qua `npm run test:e2e`.
 - **Lint & Typecheck:** `npm run lint` (**ESLint 9 + Import Boundaries trên cả 4 workspaces, 0 errors, 0 warnings**) và `npm run typecheck` (6/6 tasks pass).
-- **Production Build & Live PostgreSQL 16 E2E:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`, `/payments/[transactionId]`); kiểm chứng sống 13/13 kiểm tra trên PostgreSQL 16 Docker (`19` bảng chuẩn hóa, migration `0001`, giữ phiên cookie/wishlist/đơn qua khởi động lại tiến trình API, xác thực HMAC-SHA256 webhook + chống xử lý trùng idempotency + email vé điện tử).
+- **Production Build & Live PostgreSQL 16 E2E:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`, `/host`, `/payments/[transactionId]`); kiểm chứng sống trên PostgreSQL 16 Docker (`20` bảng, migrations `0000`–`0003`, 3-way concurrent double-booking `[201, 409, 409]`, đánh giá xác thực atomic, và RBAC Host/Admin CRUD + `property_availability`).
 
 ---
 
@@ -71,11 +73,23 @@
 
 ---
 
-### Phase 3 — Availability Engine, Verified Reviews & Host Portal (Tiếp theo — Mở rộng Nền tảng)
-- [ ] **P3.1 — Quản lý Lịch trống & Giá theo mùa:** Bảng `property_availability`, khóa giao dịch DB chống double-booking và phụ thu cuối tuần/lễ trong `deriveBookingQuote`.
-- [ ] **P3.2 — Đánh giá xác thực (Verified Reviews):** Chỉ khách có đơn hoàn tất mới gửi review; tự tính lại `rating` & `reviewCount`.
-- [ ] **P3.3 — Cổng Chủ nhà & Quản trị (Host/Admin Portal):** CRUD chỗ nghỉ, tiện ích, lịch phòng và báo cáo doanh thu.
-- [ ] **P3.4 — Đa ngôn ngữ (`vi`/`en`), Đa tiền tệ & Kiểm thử E2E (Playwright).**
+### Phase 3A — Availability Engine, Seasonal Pricing & Verified Reviews (ĐÃ HOÀN THÀNH ✅ — `v0.5.0`)
+- [x] **P3.1 — Quản lý Lịch trống, Chống đặt trùng & Giá theo mùa ([ADR-0011](./adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md)):**
+  - Bổ sung `properties.inventory_count` (`1` cho villa/homestay/glamping, `5` cho hotel, `6` cho resort) và bảng `property_availability` (Migration `0002`, 20 bảng PostgreSQL 16).
+  - Khóa giao dịch `SELECT ... FOR UPDATE` trên PostgreSQL (và per-property async mutex trên `memory`) trong `POST /api/v1/reservations` ngăn tuyệt đối double-booking (`409 CONFLICT`), tự động giải phóng phòng khi đơn hủy/hết hạn/thất bại thanh toán/hoàn tất.
+  - Module thuần `packages/domain/src/availability.ts` + tích hợp `deriveBookingQuote`: thứ tự ưu tiên giá `overridePrice > ngày lễ cố định VN (+30%) > cuối tuần T6–T7 (+20%) > giá chuẩn`, nhân theo `guests.rooms`, hiển thị `seasonalSurcharge` & `nightlyBreakdown` qua `AvailabilityCalendar` và `SeasonalPricingSummary`.
+- [x] **P3.2 — Đánh giá xác thực (Verified Reviews) ([ADR-0011](./adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md)):**
+  - Bổ sung trạng thái đơn `completed` + `POST /api/v1/reservations/:bookingId/complete` (chế độ Sandbox / Host & Admin ở 3B).
+  - Triển khai `POST /api/v1/properties/:id/reviews` kiểm tra chủ đơn + điều kiện đã hoàn tất lưu trú (hoặc đã qua 12:00 ngày `checkOut`), chống đánh giá trùng bằng `reviews.booking_id UNIQUE` (`409 CONFLICT`), cập nhật atomic `properties.rating` & `properties.review_count` trong DB transaction và hiển thị badge **"Đã xác thực lưu trú"** + form gửi đánh giá trên `/bookings/[bookingId]`.
+
+### Phase 3B — Host/Admin Portal, Multi-language & Playwright E2E (ĐÃ HOÀN THÀNH ✅ — `v0.6.0`)
+- [x] **P3.3 — Cổng Chủ nhà & Quản trị (Host/Admin Portal) ([ADR-0012](./adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md)):**
+  - Phân quyền RBAC (`guest | host | admin`) qua `users.role` & `properties.owner_user_id` (Migration `0003`, seed tài khoản demo `host@luxestay.vn` & `admin@luxestay.vn`).
+  - Triển khai đầy đủ API `/api/v1/host/*` (CRUD chỗ nghỉ có bảo vệ `409` khi còn đơn hoạt động, ghi đè lịch/giá `property_availability`, danh sách đơn khách, báo cáo doanh thu `computeHostAnalytics`) và mở quyền Host/Admin hoàn tất lưu trú kể cả khi tắt sandbox.
+  - Xây dựng giao diện `/host` 4 tab (Analytics + biểu đồ tháng, Chỗ nghỉ CRUD, Lịch phòng & Giá đặc biệt kèm `AvailabilityCalendar`, Đơn đặt phòng khách) với cổng kiểm soát RBAC và đăng nhập thử nhanh.
+- [x] **P3.4 — Đa ngôn ngữ (`vi`/`en`), Đa tiền tệ (`VND`/`USD`) & Kiểm thử E2E (Playwright) ([ADR-0012](./adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md)):**
+  - Module thuần `packages/domain/src/locale.ts` (`translate`, `formatMoney`, tỷ giá `25.000 VNĐ/USD`) + `LocaleContext` tách riêng (`useSyncExternalStore` với `localStorage`, không đổi URL, không lỗi SSR hydration) gắn bộ chuyển đổi trực tiếp `VNĐ/USD` & `VI/EN` trên `Navbar`.
+  - Bộ kiểm thử **Playwright Chromium E2E** (`playwright.config.ts`, `e2e/luxestay.spec.ts`, `npm run test:e2e`) và tích hợp tự động vào `.github/workflows/ci.yml`.
 
 ---
 
@@ -115,5 +129,5 @@ npm run build
 | **Lệch hợp đồng FE ↔ BE khi nâng cấp API** | Cao | Response từ `apps/api` bị `CONTRACT_MISMATCH` trên `apps/web` | Mọi thay đổi API bắt buộc đi qua `@luxestay/contracts` trước; CI chạy đồng thời test cả 4 workspaces |
 | **Quên cấu hình CORS / URL khi deploy FE & BE tách rời** | Trung bình | Trình duyệt chặn `POST /api/v1/reservations` hoặc SSR báo `NETWORK_ERROR` | Validate env bằng Zod khi khởi động (`apps/api/src/config/env.ts`, `apps/web/src/shared/config/env.ts`); dùng `.env.example` làm chuẩn cấu hình deploy |
 | **Phình to `BookingContext.tsx` khi thêm miền mới** | Trung bình | Nhiều state không liên quan dồn chung 1 provider | Tạo Context/Feature riêng (ví dụ `features/auth/AuthContext.tsx`) thay vì nhồi vào `BookingContext` |
-| **Double-booking khi nối Database ở Phase 1–3** | Cao | 2 khách cùng đặt 1 chỗ nghỉ trùng ngày | Áp dụng DB transaction + ràng buộc khoảng ngày ở **P3.1** |
+| **Double-booking khi nối Database ở Phase 1–3** | Đã kiểm soát (P3.1 ✅) | 2 khách cùng đặt 1 chỗ nghỉ trùng ngày | Đã khóa giao dịch hàng `SELECT ... FOR UPDATE` trong `createWithPropertyLock` (PostgreSQL) & per-property mutex (`memory`), kiểm chứng 3-way concurrent race `[201, 409, 409]` |
 | **Quên build `packages/*` khi phát triển riêng 1 app** | Thấp | `apps/api` hoặc `apps/web` đọc `dist/` cũ của `packages/*` | Luôn chạy qua root script `npm run dev` / `npm run dev:web` / `npm run dev:api` (Turborepo tự chạy `^build` và watch) |

@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import type {
   AmenityCatalogItem,
   CatalogSnapshot,
@@ -56,6 +56,10 @@ export function mapPropertyRowToDomain(
     rating: rev.rating,
     date: rev.date,
     comment: rev.comment,
+    ...(rev.bookingId ? { bookingId: rev.bookingId } : {}),
+    ...(rev.userId ? { userId: rev.userId } : {}),
+    ...(rev.isVerified ? { isVerified: true } : {}),
+    ...(rev.createdAt ? { createdAt: rev.createdAt.toISOString() } : {}),
   }));
 
   return {
@@ -79,6 +83,8 @@ export function mapPropertyRowToDomain(
     bedrooms: row.bedrooms,
     beds: row.beds,
     bathrooms: row.bathrooms,
+    inventoryCount: row.inventoryCount,
+    ...(row.ownerUserId ? { ownerUserId: row.ownerUserId } : {}),
     resortAmenities: amenityRows.map(mapPropertyAmenityRow),
     isSuperhost: row.isSuperhost,
     isFeatured: row.isFeatured,
@@ -146,7 +152,14 @@ export function createPostgresCatalogRepository(db: LuxeStayDb): ApiCatalogRepos
           .select()
           .from(propertyAmenitiesTable)
           .orderBy(asc(propertyAmenitiesTable.sortOrder)),
-        db.select().from(reviewsTable).orderBy(asc(reviewsTable.sortOrder)),
+        db
+          .select()
+          .from(reviewsTable)
+          .orderBy(
+            desc(reviewsTable.isVerified),
+            desc(reviewsTable.createdAt),
+            asc(reviewsTable.sortOrder)
+          ),
       ]);
 
       const amenitiesByProperty = new Map<string, PropertyAmenityRow[]>();
@@ -256,10 +269,149 @@ export function createPostgresCatalogRepository(db: LuxeStayDb): ApiCatalogRepos
           .select()
           .from(reviewsTable)
           .where(eq(reviewsTable.propertyId, normalized))
-          .orderBy(asc(reviewsTable.sortOrder)),
+          .orderBy(
+            desc(reviewsTable.isVerified),
+            desc(reviewsTable.createdAt),
+            asc(reviewsTable.sortOrder)
+          ),
       ]);
 
       return mapPropertyRowToDomain(propRow, amenityRows, reviewRows);
+    },
+
+    async createProperty(property: Property): Promise<Property> {
+      await db.transaction(async (tx) => {
+        await tx.insert(propertiesTable).values({
+          id: property.id,
+          title: property.title,
+          subtitle: property.subtitle,
+          propertyType: property.propertyType,
+          category: property.category,
+          city: property.location.city,
+          province: property.location.province,
+          address: property.location.address,
+          distanceToCenter: property.location.distanceToCenter,
+          images: property.images,
+          pricePerNight: property.pricePerNight,
+          originalPrice: property.originalPrice ?? null,
+          rating: property.rating,
+          reviewCount: property.reviewCount,
+          maxGuests: property.maxGuests,
+          bedrooms: property.bedrooms,
+          beds: property.beds,
+          bathrooms: property.bathrooms,
+          inventoryCount: property.inventoryCount,
+          ownerUserId: property.ownerUserId ?? null,
+          isSuperhost: Boolean(property.isSuperhost),
+          isFeatured: Boolean(property.isFeatured),
+          isFlashDeal: Boolean(property.isFlashDeal),
+          freeCancellation: Boolean(property.freeCancellation),
+          breakfastIncluded: Boolean(property.breakfastIncluded),
+          description: property.description,
+          hostName: property.host.name,
+          hostAvatar: property.host.avatar,
+          hostJoinedDate: property.host.joinedDate,
+          hostResponseRate: property.host.responseRate,
+          hostIsSuperhost: property.host.isSuperhost,
+          sortOrder: -1,
+        });
+
+        if (property.resortAmenities.length > 0) {
+          await tx
+            .insert(propertyAmenitiesTable)
+            .values(
+              property.resortAmenities.map((override, idx) => ({
+                propertyId: property.id,
+                amenityId: override.amenityId,
+                sortOrder: idx,
+                featured: override.featured ?? null,
+                name: override.name ?? null,
+                shortLabel: override.shortLabel ?? null,
+                description: override.description ?? null,
+                image: override.image ?? null,
+                hours: override.hours ?? null,
+                location: override.location ?? null,
+                pricingType: override.pricingType ?? null,
+                price: override.price ?? null,
+                priceUnit: override.priceUnit ?? null,
+                notes: override.notes ?? null,
+              }))
+            )
+            .onConflictDoNothing();
+        }
+      });
+
+      const created = await this.getPropertyById(property.id);
+      return created ?? property;
+    },
+
+    async updateProperty(
+      propertyId: string,
+      updater: (existing: Property) => Property
+    ): Promise<Property | null> {
+      const existing = await this.getPropertyById(propertyId);
+      if (!existing) return null;
+
+      const updated = updater(existing);
+      await db.transaction(async (tx) => {
+        await tx
+          .update(propertiesTable)
+          .set({
+            title: updated.title,
+            subtitle: updated.subtitle,
+            propertyType: updated.propertyType,
+            category: updated.category,
+            pricePerNight: updated.pricePerNight,
+            originalPrice: updated.originalPrice ?? null,
+            inventoryCount: updated.inventoryCount,
+            maxGuests: updated.maxGuests,
+            bedrooms: updated.bedrooms,
+            beds: updated.beds,
+            bathrooms: updated.bathrooms,
+            freeCancellation: Boolean(updated.freeCancellation),
+            breakfastIncluded: Boolean(updated.breakfastIncluded),
+            description: updated.description,
+          })
+          .where(eq(propertiesTable.id, existing.id));
+
+        await tx
+          .delete(propertyAmenitiesTable)
+          .where(eq(propertyAmenitiesTable.propertyId, existing.id));
+
+        if (updated.resortAmenities.length > 0) {
+          await tx
+            .insert(propertyAmenitiesTable)
+            .values(
+              updated.resortAmenities.map((override, idx) => ({
+                propertyId: existing.id,
+                amenityId: override.amenityId,
+                sortOrder: idx,
+                featured: override.featured ?? null,
+                name: override.name ?? null,
+                shortLabel: override.shortLabel ?? null,
+                description: override.description ?? null,
+                image: override.image ?? null,
+                hours: override.hours ?? null,
+                location: override.location ?? null,
+                pricingType: override.pricingType ?? null,
+                price: override.price ?? null,
+                priceUnit: override.priceUnit ?? null,
+                notes: override.notes ?? null,
+              }))
+            )
+            .onConflictDoNothing();
+        }
+      });
+
+      return this.getPropertyById(existing.id);
+    },
+
+    async deleteProperty(propertyId: string): Promise<boolean> {
+      const deleted = await db
+        .delete(propertiesTable)
+        .where(eq(propertiesTable.id, propertyId.trim()))
+        .returning({ id: propertiesTable.id });
+      return deleted.length > 0;
     },
   };
 }

@@ -1,0 +1,158 @@
+import type { CurrencyCode, LocaleCode } from "@luxestay/contracts";
+
+export const DEFAULT_USD_EXCHANGE_RATE = 25_000;
+
+export function convertVndToCurrency(
+  amountVnd: number,
+  currency: CurrencyCode,
+  usdRate: number = DEFAULT_USD_EXCHANGE_RATE
+): number {
+  const safeAmount = Number.isFinite(amountVnd) ? amountVnd : 0;
+  if (currency === "VND") {
+    return Math.round(safeAmount);
+  }
+  const safeRate = usdRate > 0 ? usdRate : DEFAULT_USD_EXCHANGE_RATE;
+  return Math.round((safeAmount / safeRate) * 100) / 100;
+}
+
+export function formatMoney(
+  amountVnd: number,
+  currency: CurrencyCode = "VND",
+  locale: LocaleCode = "vi",
+  usdRate: number = DEFAULT_USD_EXCHANGE_RATE
+): string {
+  if (currency === "USD") {
+    const usd = convertVndToCurrency(amountVnd, "USD", usdRate);
+    const isWhole = Math.abs(usd - Math.round(usd)) < 0.005;
+    return new Intl.NumberFormat(locale === "en" ? "en-US" : "vi-VN", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: isWhole ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(usd);
+  }
+
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    maximumFractionDigits: 0,
+  }).format(Math.round(Number.isFinite(amountVnd) ? amountVnd : 0));
+}
+
+export const TRANSLATIONS = {
+  vi: {
+    "nav.explore": "Khám phá",
+    "nav.destinations": "Điểm đến",
+    "nav.deals": "Ưu đãi Hot",
+    "nav.lookupBooking": "Tra cứu đơn",
+    "nav.hostPortal": "Cổng Chủ nhà",
+    "nav.favorites": "Yêu thích",
+    "nav.login": "Đăng nhập",
+    "nav.logout": "Đăng xuất",
+    "nav.myBookings": "Đơn đặt phòng của tôi",
+    "nav.role.guest": "Thành viên",
+    "nav.role.host": "Chủ nhà",
+    "nav.role.admin": "Quản trị viên",
+    "hero.badge": "Bộ sưu tập nghỉ dưỡng tuyển chọn 2026",
+    "hero.titleLine1": "Chạm vào bình yên,",
+    "hero.titleLine2": "đặt kỳ nghỉ chuẩn gu Việt",
+    "hero.subtitle":
+      "Khám phá homestay săn mây Đà Lạt, biệt thự biển Phú Quốc và resort 5 sao với giá minh bạch, tiện ích chi tiết và chống đặt trùng theo thời gian thực.",
+    "search.destination": "Điểm đến",
+    "search.destinationPlaceholder": "Đà Lạt, Phú Quốc, Sa Pa...",
+    "search.checkIn": "Nhận phòng",
+    "search.checkOut": "Trả phòng",
+    "search.guests": "Khách & Phòng",
+    "search.button": "Tìm phòng",
+    "catalog.resultsCount": "Tìm thấy {count} chỗ nghỉ phù hợp",
+    "catalog.filterButton": "Bộ lọc nâng cao",
+    "catalog.resetFilters": "Xóa tất cả bộ lọc",
+    "catalog.perNight": "/đêm",
+    "catalog.bookNow": "Đặt phòng ngay",
+    "catalog.freeCancel": "Hủy miễn phí",
+    "catalog.verifiedReview": "Đã xác thực lưu trú",
+    "host.title": "Cổng Chủ nhà & Quản trị LuxeStay",
+    "host.subtitle": "Quản lý chỗ nghỉ, lịch phòng trống, giá đặc biệt, đơn khách và báo cáo doanh thu.",
+    "host.tab.analytics": "Tổng quan & Doanh thu",
+    "host.tab.properties": "Chỗ nghỉ ({count})",
+    "host.tab.availability": "Lịch phòng & Giá đặc biệt",
+    "host.tab.bookings": "Đơn đặt phòng ({count})",
+    "host.addProperty": "Thêm chỗ nghỉ mới",
+    "host.accessDeniedTitle": "Khu vực dành riêng cho Chủ nhà & Quản trị viên",
+    "host.accessDeniedDesc":
+      "Vui lòng đăng nhập bằng tài khoản Host hoặc Admin để quản lý chỗ nghỉ, lịch trống và doanh thu.",
+    "host.totalRevenue": "Tổng doanh thu hiệu lực",
+    "host.confirmedBookings": "Đơn xác nhận & hoàn tất",
+    "host.avgOrderValue": "Giá trị trung bình / đơn",
+    "host.managedProperties": "Chỗ nghỉ đang vận hành",
+    "footer.tagline":
+      "Nền tảng đặt phòng khách sạn, villa và homestay nghỉ dưỡng cao cấp tại Việt Nam với tiện ích minh bạch và xác nhận tức thì.",
+    "footer.copyright": "© 2026 LuxeStay Vietnam. Bảo lưu mọi quyền.",
+  },
+  en: {
+    "nav.explore": "Explore",
+    "nav.destinations": "Destinations",
+    "nav.deals": "Hot Deals",
+    "nav.lookupBooking": "My Bookings",
+    "nav.hostPortal": "Host Portal",
+    "nav.favorites": "Saved",
+    "nav.login": "Sign In",
+    "nav.logout": "Sign Out",
+    "nav.myBookings": "My Reservations",
+    "nav.role.guest": "Member",
+    "nav.role.host": "Host",
+    "nav.role.admin": "Admin",
+    "hero.badge": "Curated Vietnam Stays Collection 2026",
+    "hero.titleLine1": "Escape to serenity,",
+    "hero.titleLine2": "book your signature stay",
+    "hero.subtitle":
+      "Discover Dalat cloud-hunting villas, Phu Quoc beachfront resorts, and boutique retreats with transparent seasonal pricing and real-time anti-double-booking.",
+    "search.destination": "Destination",
+    "search.destinationPlaceholder": "Dalat, Phu Quoc, Sapa...",
+    "search.checkIn": "Check-in",
+    "search.checkOut": "Check-out",
+    "search.guests": "Guests & Rooms",
+    "search.button": "Search",
+    "catalog.resultsCount": "Found {count} matching stays",
+    "catalog.filterButton": "Filters",
+    "catalog.resetFilters": "Reset all filters",
+    "catalog.perNight": "/night",
+    "catalog.bookNow": "Book Now",
+    "catalog.freeCancel": "Free cancellation",
+    "catalog.verifiedReview": "Verified Stay",
+    "host.title": "LuxeStay Host & Admin Portal",
+    "host.subtitle": "Manage listings, daily availability overrides, guest reservations, and revenue analytics.",
+    "host.tab.analytics": "Revenue & Analytics",
+    "host.tab.properties": "Listings ({count})",
+    "host.tab.availability": "Availability & Pricing",
+    "host.tab.bookings": "Guest Bookings ({count})",
+    "host.addProperty": "Add New Listing",
+    "host.accessDeniedTitle": "Host & Admin Access Required",
+    "host.accessDeniedDesc":
+      "Please sign in with a Host or Admin account to manage properties, availability overrides, and revenue analytics.",
+    "host.totalRevenue": "Effective Revenue",
+    "host.confirmedBookings": "Confirmed & Completed",
+    "host.avgOrderValue": "Average Order Value",
+    "host.managedProperties": "Active Listings",
+    "footer.tagline":
+      "Vietnam's curated luxury hotel, villa, and boutique homestay booking platform with transparent amenities and instant confirmation.",
+    "footer.copyright": "© 2026 LuxeStay Vietnam. All rights reserved.",
+  },
+} as const;
+
+export type TranslationKey = keyof typeof TRANSLATIONS.vi;
+
+export function translate(
+  locale: LocaleCode,
+  key: TranslationKey,
+  params?: Record<string, string | number>
+): string {
+  const dict = TRANSLATIONS[locale] ?? TRANSLATIONS.vi;
+  let text: string = dict[key] ?? TRANSLATIONS.vi[key] ?? key;
+  if (params) {
+    for (const [paramKey, val] of Object.entries(params)) {
+      text = text.replaceAll(`{${paramKey}}`, String(val));
+    }
+  }
+  return text;
+}

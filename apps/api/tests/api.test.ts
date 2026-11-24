@@ -6,13 +6,18 @@ import {
   AuthSessionDataSchema,
   BookingDetailsSchema,
   CatalogSnapshotSchema,
+  CreateReviewResultSchema,
   createApiSuccessSchema,
   FavoritesListDataSchema,
   HealthDataSchema,
+  HostAnalyticsDataSchema,
+  HostPropertiesListDataSchema,
+  HostReservationsListDataSchema,
   NotificationLogSchema,
   OtpRequestResultSchema,
   PaymentGatewaySessionSchema,
   PaymentWebhookResultSchema,
+  PropertyAvailabilityDataSchema,
   PropertySchema,
   VoucherValidationResultSchema,
 } from "@luxestay/contracts";
@@ -21,6 +26,7 @@ import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
 import { resolveDatabaseConfig } from "../dist/db/client.js";
 import { mapPropertyRowToDomain } from "../dist/modules/catalog/postgresRepository.js";
+import { createSeedCatalogRepository } from "../dist/modules/catalog/repository.js";
 import {
   signWebhookPayload,
   WEBHOOK_SIGNATURE_HEADER,
@@ -121,12 +127,18 @@ test("POST /api/v1/reservations recalculates authoritative server pricing, handl
 
   if (parsed.success) {
     const booking = parsed.data.data;
+    // 2026-12-10 (Thu base), 2026-12-11 (Fri +20%), 2026-12-12 (Sat +20%)
+    const expectedSeasonal = Math.round(stay02.pricePerNight * 0.2) * 2;
     assert.match(booking.bookingId ?? "", /^LX-[A-F0-9]{6}$/);
     assert.equal(booking.status, "confirmed");
     assert.equal(booking.guests.adults, stay02.maxGuests);
     assert.equal(booking.selectedAmenities.length, 2);
+    assert.equal(booking.pricing.seasonalSurcharge, expectedSeasonal);
     assert.equal(booking.pricing.discount, 0);
-    assert.equal(booking.pricing.total, stay02.pricePerNight * 3 + 150000 + 650000);
+    assert.equal(
+      booking.pricing.total,
+      stay02.pricePerNight * 3 + expectedSeasonal + 150000 + 650000
+    );
 
     const stored = await repositories.reservations.findById(booking.bookingId!);
     assert.ok(stored);
@@ -195,18 +207,10 @@ test("POST /api/v1/reservations returns structured ApiError on invalid JSON, bad
 test("GET /api/v1/reservations/:bookingId and PATCH .../cancel verify contact ownership, enforce freeCancellation, and persist cancelled state", async () => {
   const freeCancelProp = PROPERTIES.find((p) => p.freeCancellation)!;
   const nonFreeProp = { ...freeCancelProp, id: "stay-strict", freeCancellation: false };
-  const customCatalog = {
-    async getSnapshot() {
-      return {
-        ...SEED_CATALOG_SNAPSHOT,
-        properties: [...SEED_CATALOG_SNAPSHOT.properties, nonFreeProp],
-      };
-    },
-    async getPropertyById(id: string) {
-      if (id === nonFreeProp.id) return nonFreeProp;
-      return SEED_CATALOG_SNAPSHOT.properties.find((p) => p.id === id) ?? null;
-    },
-  };
+  const customCatalog = createSeedCatalogRepository({
+    ...SEED_CATALOG_SNAPSHOT,
+    properties: [...SEED_CATALOG_SNAPSHOT.properties, nonFreeProp],
+  });
   const { app } = createApiApp({ catalogRepository: customCatalog });
 
   const createRes = await app.request(API_ENDPOINTS.reservations, {
@@ -510,12 +514,13 @@ test("Dynamic Voucher Engine validates codes via /api/v1/vouchers/validate and r
   });
   assert.equal(badBookingRes.status, 400);
 
-  // Reservation with LUXESTAY250 -> discount 250k applied authoritatively
+  // Reservation with LUXESTAY250 on weekday dates -> discount 250k applied authoritatively
   const goodBookingRes = await app.request(API_ENDPOINTS.reservations, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       propertyId: stay01.id,
+      checkInSeed: "2026-12-08",
       nights: 2,
       guests: { adults: 2, children: 0, rooms: 1 },
       selectedAmenityIds: [],
@@ -530,6 +535,7 @@ test("Dynamic Voucher Engine validates codes via /api/v1/vouchers/validate and r
   ).data;
   assert.equal(booked.pricing.appliedPromoCode, "LUXESTAY250");
   assert.equal(booked.pricing.discount, 250000);
+  assert.equal(booked.pricing.seasonalSurcharge, 0);
   assert.equal(booked.pricing.total, stay01.pricePerNight * 2 + 150000 - 250000);
 });
 
@@ -703,6 +709,8 @@ test("loadApiEnv validates STORAGE_DRIVER and PostgreSQL mappers produce contrac
       bedrooms: sampleProp.bedrooms,
       beds: sampleProp.beds,
       bathrooms: sampleProp.bathrooms,
+      inventoryCount: sampleProp.inventoryCount,
+      ownerUserId: sampleProp.ownerUserId ?? null,
       isSuperhost: Boolean(sampleProp.isSuperhost),
       isFeatured: Boolean(sampleProp.isFeatured),
       isFlashDeal: Boolean(sampleProp.isFlashDeal),
@@ -740,6 +748,10 @@ test("loadApiEnv validates STORAGE_DRIVER and PostgreSQL mappers produce contrac
       rating: r.rating,
       date: r.date,
       comment: r.comment,
+      bookingId: null,
+      userId: null,
+      isVerified: false,
+      createdAt: new Date("2026-11-01T00:00:00.000Z"),
       sortOrder: idx,
     }))
   );
@@ -759,6 +771,8 @@ test("loadApiEnv validates STORAGE_DRIVER and PostgreSQL mappers produce contrac
       rooms: 1,
       basePrice: mappedProp.pricePerNight,
       nightsTotal: mappedProp.pricePerNight * 2,
+      seasonalSurcharge: 0,
+      nightlyBreakdown: null,
       cleaningFee: 150000,
       serviceFee: 0,
       amenitiesFee: 0,
@@ -772,6 +786,7 @@ test("loadApiEnv validates STORAGE_DRIVER and PostgreSQL mappers produce contrac
       paymentMethod: "momo",
       paymentExpiresAt: new Date("2026-11-24T00:15:00.000Z"),
       createdAt: new Date("2026-11-24T00:00:00.000Z"),
+      completedAt: null,
       cancelledAt: new Date("2026-11-24T05:00:00.000Z"),
       cancellationReason: "Đổi kế hoạch",
     },
@@ -783,4 +798,467 @@ test("loadApiEnv validates STORAGE_DRIVER and PostgreSQL mappers produce contrac
   assert.equal(mappedBooking.userId, "USR-TEST01");
   assert.equal(mappedBooking.pricing.appliedPromoCode, "LUXESTAY250");
   assert.equal(mappedBooking.cancellationReason, "Đổi kế hoạch");
+});
+
+test("Phase 3A Availability Engine: calendar endpoint, seasonal/holiday pricing, concurrent anti-double-booking, and hold release on cancel", async () => {
+  const { app, repositories } = createApiApp();
+  const stay01 = PROPERTIES.find((p) => p.id === "stay-01")!;
+  assert.equal(stay01.inventoryCount, 1);
+
+  // Seed a host override on 2026-12-26 (blocked) and 2026-12-27 (custom price)
+  await repositories.availability.upsertOverride({
+    propertyId: "stay-01",
+    date: "2026-12-26",
+    isBlocked: true,
+    note: "Bảo trì hồ bơi",
+  });
+  await repositories.availability.upsertOverride({
+    propertyId: "stay-01",
+    date: "2026-12-27",
+    isBlocked: false,
+    overridePrice: 2_100_000,
+  });
+
+  // 1. GET /availability returns weekend (+20%), holiday (+30% on 12-25), blocked & override days
+  const calRes = await app.request(
+    `${API_ENDPOINTS.propertyAvailability("stay-01")}?from=2026-12-24&to=2026-12-28`
+  );
+  assert.equal(calRes.status, 200);
+  const calData = createApiSuccessSchema(PropertyAvailabilityDataSchema).parse(
+    await calRes.json()
+  ).data;
+  assert.equal(calData.days.length, 5);
+  assert.equal(calData.days[0]?.priceReason, "holiday"); // 12-24
+  assert.equal(calData.days[1]?.priceReason, "holiday"); // 12-25
+  assert.equal(calData.days[1]?.effectivePrice, Math.round(stay01.pricePerNight * 1.3));
+  assert.equal(calData.days[2]?.isBlocked, true); // 12-26
+  assert.equal(calData.days[2]?.isAvailable, false);
+  assert.equal(calData.days[3]?.priceReason, "override"); // 12-27
+  assert.equal(calData.days[3]?.effectivePrice, 2_100_000);
+
+  // 2. Booking overlapping blocked date 2026-12-26 returns 409 CONFLICT
+  const blockedBookingRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-25",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Blocked", phone: "0912345678", email: "blocked@luxestay.vn" },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(blockedBookingRes.status, 409);
+
+  // 3. Concurrent double-booking race on 1-unit stay-01 (2026-12-18 Fri + 2026-12-19 Sat)
+  const makeRequest = (email: string) =>
+    app.request(API_ENDPOINTS.reservations, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        propertyId: "stay-01",
+        checkInSeed: "2026-12-18",
+        nights: 2,
+        guests: { adults: 2, children: 0, rooms: 1 },
+        selectedAmenityIds: [],
+        guestInfo: { fullName: "Race Guest", phone: "0912345678", email },
+        paymentMethod: "hotel",
+      }),
+    });
+
+  const [r1, r2] = await Promise.all([
+    makeRequest("race1@luxestay.vn"),
+    makeRequest("race2@luxestay.vn"),
+  ]);
+  const statuses = [r1.status, r2.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [201, 409]);
+
+  const winnerRes = r1.status === 201 ? r1 : r2;
+  const winnerBooking = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await winnerRes.json()
+  ).data;
+  assert.equal(
+    winnerBooking.pricing.seasonalSurcharge,
+    Math.round(stay01.pricePerNight * 0.2) * 2
+  );
+
+  // 4. Calendar now reflects 0 remaining units on 2026-12-18 and 2026-12-19
+  const occupiedCalRes = await app.request(
+    `${API_ENDPOINTS.propertyAvailability("stay-01")}?from=2026-12-18&to=2026-12-20`
+  );
+  const occupiedCal = createApiSuccessSchema(PropertyAvailabilityDataSchema).parse(
+    await occupiedCalRes.json()
+  ).data;
+  assert.equal(occupiedCal.days[0]?.remainingUnits, 0);
+  assert.equal(occupiedCal.days[1]?.remainingUnits, 0);
+  assert.equal(occupiedCal.days[2]?.remainingUnits, 1);
+
+  // 5. Cancelling the winning reservation immediately releases inventory -> re-booking succeeds (201)
+  const cancelRes = await app.request(API_ENDPOINTS.cancelReservation(winnerBooking.bookingId!), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact: winnerBooking.guestInfo.email, reason: "Đổi ngày" }),
+  });
+  assert.equal(cancelRes.status, 200);
+
+  const rebookRes = await makeRequest("rebook@luxestay.vn");
+  assert.equal(rebookRes.status, 201);
+});
+
+test("Phase 3A Verified Reviews: completion workflow, eligibility guards, atomic rating update, and duplicate prevention", async () => {
+  const { app } = createApiApp({ nodeEnv: "test" });
+  const initialPropRes = await app.request(API_ENDPOINTS.propertyById("stay-01"));
+  const initialProp = createApiSuccessSchema(PropertySchema).parse(
+    await initialPropRes.json()
+  ).data;
+  const initialCount = initialProp.reviewCount;
+
+  // Create confirmed hotel booking for future dates
+  const createRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2027-02-10",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Đánh Giá", phone: "0912345678", email: "reviewer@luxestay.vn" },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const booking = createApiSuccessSchema(BookingDetailsSchema).parse(await createRes.json()).data;
+
+  // 1. Reviewing before stay completion -> 409 CONFLICT
+  const earlyReviewRes = await app.request(API_ENDPOINTS.propertyReviews("stay-01"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bookingId: booking.bookingId,
+      contact: "reviewer@luxestay.vn",
+      rating: 5,
+      comment: "Chưa ở xong nhưng thử gửi đánh giá sớm xem hệ thống có chặn không.",
+    }),
+  });
+  assert.equal(earlyReviewRes.status, 409);
+
+  // 2. Wrong contact trying to complete -> 403 FORBIDDEN
+  const wrongCompleteRes = await app.request(
+    API_ENDPOINTS.completeReservation(booking.bookingId!),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact: "intruder@example.com" }),
+    }
+  );
+  assert.equal(wrongCompleteRes.status, 403);
+
+  // 3. Owner completes stay via sandbox endpoint -> 200 completed
+  const completeRes = await app.request(API_ENDPOINTS.completeReservation(booking.bookingId!), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact: "reviewer@luxestay.vn" }),
+  });
+  assert.equal(completeRes.status, 200);
+  const completedBooking = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await completeRes.json()
+  ).data;
+  assert.equal(completedBooking.status, "completed");
+  assert.ok(completedBooking.completedAt);
+
+  // 4. Cannot cancel a completed booking -> 409 CONFLICT
+  const cancelCompleted = await app.request(API_ENDPOINTS.cancelReservation(booking.bookingId!), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact: "reviewer@luxestay.vn" }),
+  });
+  assert.equal(cancelCompleted.status, 409);
+
+  // 5. Wrong contact cannot submit review -> 403 FORBIDDEN
+  const forbiddenReview = await app.request(API_ENDPOINTS.propertyReviews("stay-01"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bookingId: booking.bookingId,
+      contact: "stranger@example.com",
+      rating: 5,
+      comment: "Giả mạo chủ đơn để gửi đánh giá xem có bị từ chối không.",
+    }),
+  });
+  assert.equal(forbiddenReview.status, 403);
+
+  // 6. Owner submits verified review -> 201 Created, rating & reviewCount updated
+  const okReviewRes = await app.request(API_ENDPOINTS.propertyReviews("stay-01"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bookingId: booking.bookingId,
+      contact: "reviewer@luxestay.vn",
+      rating: 5,
+      comment: "Không gian gỗ tuyệt đẹp, ngắm biển mây buổi sáng cực kỳ thư giãn và chủ nhà rất chu đáo!",
+    }),
+  });
+  assert.equal(okReviewRes.status, 201);
+  const reviewResult = createApiSuccessSchema(CreateReviewResultSchema).parse(
+    await okReviewRes.json()
+  ).data;
+  assert.equal(reviewResult.review.isVerified, true);
+  assert.equal(reviewResult.review.bookingId, booking.bookingId);
+  assert.equal(reviewResult.propertyReviewCount, initialCount + 1);
+
+  // 7. Property detail endpoint reflects new verified review at top & incremented reviewCount
+  const updatedPropRes = await app.request(API_ENDPOINTS.propertyById("stay-01"));
+  const updatedProp = createApiSuccessSchema(PropertySchema).parse(
+    await updatedPropRes.json()
+  ).data;
+  assert.equal(updatedProp.reviewCount, initialCount + 1);
+  assert.equal(updatedProp.reviews[0]?.id, reviewResult.review.id);
+  assert.equal(updatedProp.reviews[0]?.isVerified, true);
+
+  // 8. Duplicate review for same bookingId -> 409 CONFLICT
+  const dupReviewRes = await app.request(API_ENDPOINTS.propertyReviews("stay-01"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bookingId: booking.bookingId,
+      contact: "reviewer@luxestay.vn",
+      rating: 4,
+      comment: "Thử gửi đánh giá lần hai cho cùng một mã đơn đặt phòng.",
+    }),
+  });
+  assert.equal(dupReviewRes.status, 409);
+});
+
+test("Phase 3B RBAC & Host/Admin Portal: guards, property CRUD, availability overrides, stay completion, and analytics", async () => {
+  // Explicitly disable paymentSandboxEnabled to prove Host/Admin can still complete stays in production mode
+  const { app } = createApiApp({ nodeEnv: "test", paymentSandboxEnabled: false });
+
+  // 1. Unauthenticated access -> 401 UNAUTHORIZED
+  const unauthRes = await app.request(API_ENDPOINTS.hostProperties);
+  assert.equal(unauthRes.status, 401);
+
+  // 2. Guest user -> 403 FORBIDDEN on /api/v1/host/*
+  const guestReg = await app.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Khách Thường",
+      email: "normalguest@luxestay.vn",
+      password: "password123",
+    }),
+  });
+  assert.equal(guestReg.status, 201);
+  const guestCookie = extractCookieHeader(guestReg);
+  const guestHostRes = await app.request(API_ENDPOINTS.hostProperties, {
+    headers: { Cookie: guestCookie },
+  });
+  assert.equal(guestHostRes.status, 403);
+
+  // 3. Built-in Demo Host login -> role === "host", owns 6 properties (stay-01..stay-06)
+  const hostLogin = await app.request(API_ENDPOINTS.authLogin, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "host@luxestay.vn", password: "host1234" }),
+  });
+  assert.equal(hostLogin.status, 200);
+  const hostSession = createApiSuccessSchema(AuthSessionDataSchema).parse(
+    await hostLogin.json()
+  ).data;
+  assert.equal(hostSession.user?.role, "host");
+  const hostCookie = extractCookieHeader(hostLogin);
+
+  const hostListRes = await app.request(API_ENDPOINTS.hostProperties, {
+    headers: { Cookie: hostCookie },
+  });
+  assert.equal(hostListRes.status, 200);
+  const hostProps = createApiSuccessSchema(HostPropertiesListDataSchema).parse(
+    await hostListRes.json()
+  ).data.properties;
+  assert.equal(hostProps.length, 6);
+
+  // 4. Host cannot edit or override availability for unowned property stay-07 -> 403 FORBIDDEN
+  const forbiddenPatch = await app.request(API_ENDPOINTS.hostPropertyById("stay-07"), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: hostCookie },
+    body: JSON.stringify({ pricePerNight: 1_900_000 }),
+  });
+  assert.equal(forbiddenPatch.status, 403);
+
+  const forbiddenAvail = await app.request(API_ENDPOINTS.hostPropertyAvailability("stay-07"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: hostCookie },
+    body: JSON.stringify({
+      dates: [{ date: "2027-06-01", isBlocked: true }],
+    }),
+  });
+  assert.equal(forbiddenAvail.status, 403);
+
+  // 5. Host creates a new property -> 201, updates price -> 200, overrides availability -> 200
+  const createPropRes = await app.request(API_ENDPOINTS.hostProperties, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hostCookie },
+    body: JSON.stringify({
+      title: "Forest Mist Cabin Đà Lạt",
+      subtitle: "Nhà gỗ giữa rừng thông có sân vườn BBQ",
+      propertyType: "homestay",
+      category: "pine-forest",
+      location: {
+        city: "Đà Lạt",
+        province: "Lâm Đồng",
+        address: "Đường Trịnh Hoài Đức, Phường 11",
+        distanceToCenter: "Cách trung tâm 4 km",
+      },
+      images: [
+        "https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=1200&q=80",
+      ],
+      pricePerNight: 1_400_000,
+      inventoryCount: 2,
+      maxGuests: 4,
+      bedrooms: 2,
+      beds: 2,
+      bathrooms: 2,
+      freeCancellation: true,
+      breakfastIncluded: true,
+      description:
+        "Không gian gỗ ấm áp nhìn thẳng ra rừng thông xanh mát, đầy đủ bếp và sân BBQ ngoài trời.",
+      amenityIds: ["high-speed-wifi", "garden-bbq"],
+    }),
+  });
+  assert.equal(createPropRes.status, 201);
+  const createdProp = createApiSuccessSchema(PropertySchema).parse(
+    await createPropRes.json()
+  ).data;
+  assert.equal(createdProp.ownerUserId, hostSession.user?.id);
+
+  const patchPropRes = await app.request(API_ENDPOINTS.hostPropertyById(createdProp.id), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: hostCookie },
+    body: JSON.stringify({ pricePerNight: 1_550_000, inventoryCount: 3 }),
+  });
+  assert.equal(patchPropRes.status, 200);
+  const patchedProp = createApiSuccessSchema(PropertySchema).parse(
+    await patchPropRes.json()
+  ).data;
+  assert.equal(patchedProp.pricePerNight, 1_550_000);
+  assert.equal(patchedProp.inventoryCount, 3);
+
+  const availRes = await app.request(API_ENDPOINTS.hostPropertyAvailability(createdProp.id), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: hostCookie },
+    body: JSON.stringify({
+      dates: [
+        { date: "2027-07-10", isBlocked: true, note: "Bảo trì" },
+        { date: "2027-07-11", isBlocked: false, overridePrice: 2_300_000 },
+      ],
+    }),
+  });
+  assert.equal(availRes.status, 200);
+  const availData = createApiSuccessSchema(PropertyAvailabilityDataSchema).parse(
+    await availRes.json()
+  ).data;
+  assert.equal(availData.days[0]?.isBlocked, true);
+  assert.equal(availData.days[1]?.effectivePrice, 2_300_000);
+
+  // 6. Guest books createdProp -> Host cannot delete property while active booking exists (409)
+  const guestBookRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: guestCookie },
+    body: JSON.stringify({
+      propertyId: createdProp.id,
+      checkInSeed: "2027-07-12",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Thường", phone: "0912345678", email: "normalguest@luxestay.vn" },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(guestBookRes.status, 201);
+  const guestBooking = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await guestBookRes.json()
+  ).data;
+
+  const blockedDelete = await app.request(API_ENDPOINTS.hostPropertyById(createdProp.id), {
+    method: "DELETE",
+    headers: { Cookie: hostCookie },
+  });
+  assert.equal(blockedDelete.status, 409);
+
+  // 7. Host views reservations, completes stay even with sandbox disabled, and reads analytics
+  const hostResList = await app.request(API_ENDPOINTS.hostReservations, {
+    headers: { Cookie: hostCookie },
+  });
+  assert.equal(hostResList.status, 200);
+  const hostBookings = createApiSuccessSchema(HostReservationsListDataSchema).parse(
+    await hostResList.json()
+  ).data.bookings;
+  assert.equal(hostBookings.length, 1);
+
+  const guestCannotComplete = await app.request(
+    API_ENDPOINTS.completeReservation(guestBooking.bookingId!),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: guestCookie },
+      body: JSON.stringify({}),
+    }
+  );
+  assert.equal(guestCannotComplete.status, 403);
+
+  const hostComplete = await app.request(
+    API_ENDPOINTS.completeReservation(guestBooking.bookingId!),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: hostCookie },
+      body: JSON.stringify({}),
+    }
+  );
+  assert.equal(hostComplete.status, 200);
+  const completedBooking = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await hostComplete.json()
+  ).data;
+  assert.equal(completedBooking.status, "completed");
+
+  const analyticsRes = await app.request(API_ENDPOINTS.hostAnalytics, {
+    headers: { Cookie: hostCookie },
+  });
+  assert.equal(analyticsRes.status, 200);
+  const analytics = createApiSuccessSchema(HostAnalyticsDataSchema).parse(
+    await analyticsRes.json()
+  ).data;
+  assert.equal(analytics.completedBookings, 1);
+  assert.equal(analytics.completedRevenue, guestBooking.pricing.total);
+  assert.equal(analytics.totalRevenue, guestBooking.pricing.total);
+
+  // Now that booking is completed (no longer holding inventory), Host can delete createdProp -> 200
+  const okDelete = await app.request(API_ENDPOINTS.hostPropertyById(createdProp.id), {
+    method: "DELETE",
+    headers: { Cookie: hostCookie },
+  });
+  assert.equal(okDelete.status, 200);
+
+  // 8. Admin login sees ALL 12 properties and can manage stay-07
+  const adminLogin = await app.request(API_ENDPOINTS.authLogin, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "admin@luxestay.vn", password: "admin1234" }),
+  });
+  assert.equal(adminLogin.status, 200);
+  const adminCookie = extractCookieHeader(adminLogin);
+  const adminPropsRes = await app.request(API_ENDPOINTS.hostProperties, {
+    headers: { Cookie: adminCookie },
+  });
+  const adminProps = createApiSuccessSchema(HostPropertiesListDataSchema).parse(
+    await adminPropsRes.json()
+  ).data.properties;
+  assert.equal(adminProps.length, 12);
+
+  const adminPatchStay07 = await app.request(API_ENDPOINTS.hostPropertyById("stay-07"), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: adminCookie },
+    body: JSON.stringify({ breakfastIncluded: true }),
+  });
+  assert.equal(adminPatchStay07.status, 200);
 });

@@ -94,6 +94,10 @@ export const PropertyReviewSchema = z.object({
   rating: z.number().min(0).max(5),
   date: z.string().min(1),
   comment: z.string().min(1),
+  bookingId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
+  isVerified: z.boolean().optional(),
+  createdAt: z.string().min(1).optional(),
 });
 
 export type PropertyReview = z.infer<typeof PropertyReviewSchema>;
@@ -115,6 +119,8 @@ export const PropertySchema = z.object({
   originalPrice: z.number().nonnegative().optional(),
   rating: z.number().min(0).max(5),
   reviewCount: z.number().int().nonnegative(),
+  inventoryCount: z.number().int().positive().default(1),
+  ownerUserId: z.string().min(1).optional(),
   maxGuests: z.number().int().positive(),
   bedrooms: z.number().int().nonnegative(),
   beds: z.number().int().nonnegative(),

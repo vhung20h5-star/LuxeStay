@@ -1,10 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { Sparkles, Heart, ShieldCheck, Headphones, Award, Send, Check } from "lucide-react";
+import { useLocale } from "@/features/locale/LocaleContext";
 import { Button } from "@/shared/ui/Button";
 
 export function Footer() {
+  const { locale, currency, t } = useLocale();
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
 
@@ -73,7 +76,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-slate-400 text-sm max-w-sm leading-relaxed">
-              Nền tảng đặt phòng khách sạn, homestay & villa nghỉ dưỡng hàng đầu Việt Nam. Mang đến kỳ nghỉ trong mơ với mức giá tốt nhất và trải nghiệm tuyệt hảo.
+              {t("footer.tagline")}
             </p>
             <div className="pt-2">
               <form onSubmit={handleSubscribe} className="flex gap-2 max-w-sm">
@@ -127,7 +130,7 @@ export function Footer() {
             <h5 className="text-white font-semibold text-sm mb-3">Về LuxeStay</h5>
             <ul className="space-y-2 text-xs text-slate-400">
               <li><a href="#" className="hover:text-emerald-400 transition-colors">Câu chuyện thương hiệu</a></li>
-              <li><a href="#" className="hover:text-emerald-400 transition-colors">Dành cho chủ nhà (Host)</a></li>
+              <li><Link href="/host" className="hover:text-emerald-400 transition-colors">{t("nav.hostPortal")}</Link></li>
               <li><a href="#" className="hover:text-emerald-400 transition-colors">Chính sách bảo mật</a></li>
               <li><a href="#" className="hover:text-emerald-400 transition-colors">Điều khoản dịch vụ</a></li>
               <li><a href="#" className="hover:text-emerald-400 transition-colors">Quy chế hoạt động sàn</a></li>
@@ -138,11 +141,11 @@ export function Footer() {
 
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>© 2026 LuxeStay Inc. Bảo lưu mọi quyền. Thiết kế tinh tế cho trải nghiệm du lịch đỉnh cao.</p>
+          <p>{t("footer.copyright")}</p>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>Tiếng Việt (VN)</span>
+            <span>{locale === "en" ? "English (EN)" : "Tiếng Việt (VN)"}</span>
             <span>•</span>
-            <span>VNĐ (đ)</span>
+            <span>{currency === "USD" ? "USD ($)" : "VNĐ (đ)"}</span>
             <span>•</span>
             <span className="flex items-center gap-1 text-slate-400">
               Made with <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 inline" /> for Vietnam Travel

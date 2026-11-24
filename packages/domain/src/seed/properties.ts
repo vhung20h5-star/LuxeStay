@@ -1,6 +1,6 @@
 import type { Property } from "@luxestay/contracts";
 
-export const PROPERTIES: Property[] = [
+const RAW_PROPERTIES: Omit<Property, "inventoryCount">[] = [
   {
     id: "stay-01",
     title: "Mây Lang Thang Wooden Villa & Cloud View",
@@ -1093,4 +1093,19 @@ export const PROPERTIES: Property[] = [
     ],
   },
 ];
+
+export const PROPERTIES: Property[] = RAW_PROPERTIES.map((property) => ({
+  ...property,
+  inventoryCount:
+    property.propertyType === "resort"
+      ? 6
+      : property.propertyType === "hotel"
+        ? 5
+        : 1,
+  ...(new Set(["stay-01", "stay-02", "stay-03", "stay-04", "stay-05", "stay-06"]).has(
+    property.id
+  )
+    ? { ownerUserId: "USR-HOST-01" }
+    : {}),
+}));
 

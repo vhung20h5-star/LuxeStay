@@ -1,11 +1,13 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
   primaryKey,
   real,
   text,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import type {
   AmenityCategoryId,
@@ -117,6 +119,8 @@ export const propertiesTable = pgTable("properties", {
   bedrooms: integer("bedrooms").notNull(),
   beds: integer("beds").notNull(),
   bathrooms: integer("bathrooms").notNull(),
+  inventoryCount: integer("inventory_count").notNull().default(1),
+  ownerUserId: text("owner_user_id"),
   isSuperhost: boolean("is_superhost").notNull().default(false),
   isFeatured: boolean("is_featured").notNull().default(false),
   isFlashDeal: boolean("is_flash_deal").notNull().default(false),
@@ -156,15 +160,42 @@ export const propertyAmenitiesTable = pgTable(
   (table) => [primaryKey({ columns: [table.propertyId, table.amenityId] })]
 );
 
-export const reviewsTable = pgTable("reviews", {
-  id: text("id").primaryKey(),
-  propertyId: text("property_id")
-    .notNull()
-    .references(() => propertiesTable.id, { onDelete: "cascade" }),
-  authorName: text("author_name").notNull(),
-  authorAvatar: text("author_avatar").notNull(),
-  rating: real("rating").notNull(),
-  date: text("date").notNull(),
-  comment: text("comment").notNull(),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
+export const propertyAvailabilityTable = pgTable(
+  "property_availability",
+  {
+    propertyId: text("property_id")
+      .notNull()
+      .references(() => propertiesTable.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    isBlocked: boolean("is_blocked").notNull().default(false),
+    overridePrice: integer("override_price"),
+    inventoryOverride: integer("inventory_override"),
+    note: text("note"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.propertyId, table.date] }),
+    index("property_availability_date_idx").on(table.propertyId, table.date),
+  ]
+);
+
+export const reviewsTable = pgTable(
+  "reviews",
+  {
+    id: text("id").primaryKey(),
+    propertyId: text("property_id")
+      .notNull()
+      .references(() => propertiesTable.id, { onDelete: "cascade" }),
+    authorName: text("author_name").notNull(),
+    authorAvatar: text("author_avatar").notNull(),
+    rating: real("rating").notNull(),
+    date: text("date").notNull(),
+    comment: text("comment").notNull(),
+    bookingId: text("booking_id").unique(),
+    userId: text("user_id"),
+    isVerified: boolean("is_verified").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (table) => [index("reviews_property_id_idx").on(table.propertyId)]
+);

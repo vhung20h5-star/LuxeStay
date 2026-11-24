@@ -16,6 +16,11 @@ import {
 } from "@/shared/ports/catalogPort";
 import { HttpApiError } from "@/shared/ports/errors";
 import {
+  createHttpPropertyExperiencePort,
+  createMockPropertyExperiencePort,
+} from "@/shared/ports/experiencePort";
+import { createHttpHostPort, createMockHostPort } from "@/shared/ports/hostPort";
+import {
   createHttpPaymentGatewayPort,
   createMockPaymentGatewayPort,
 } from "@/shared/ports/paymentPort";
@@ -749,6 +754,7 @@ test("AuthPort supports HttpOnly cookie credentials, register/login/OTP, and rem
     email: "member@luxestay.vn",
     fullName: "Nguyễn Thành Viên",
     provider: "password" as const,
+    role: "guest" as const,
     createdAt: "2026-11-24T10:00:00.000Z",
   };
   const httpAuth = createHttpAuthPort({
@@ -871,4 +877,214 @@ test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulat
   const sim = await httpPayment.simulateOutcome("TXN-DEMO01", { outcome: "succeeded" });
   assert.equal(sim.bookingStatus, "confirmed");
   assert.equal(sim.deduplicated, false);
+});
+
+test("Phase 3A PropertyExperiencePort and ReservationManagerPort.complete work in mock and strict HTTP contract modes", async () => {
+  const stay01 = PROPERTIES.find((p) => p.id === "stay-01")!;
+  const created = processServerReservationIntent(
+    {
+      propertyId: "stay-01",
+      checkInSeed: "2027-03-10",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách 3A", phone: "0912345678", email: "guest3a@luxestay.vn" },
+      paymentMethod: "hotel",
+    },
+    PROPERTIES,
+    { bookingId: "LX-3A0001", fallbackBaseDate: baseDate }
+  );
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  // 1. Mock experience port builds availability calendar & enforces review eligibility
+  const storedBookings = [created.booking];
+  const mockExp = createMockPropertyExperiencePort({
+    properties: PROPERTIES,
+    getBookings: () => storedBookings,
+  });
+
+  const cal = await mockExp.getAvailability("stay-01", { from: "2027-03-10", to: "2027-03-13" });
+  assert.equal(cal.days.length, 4);
+  assert.equal(cal.days[0]?.remainingUnits, 0); // occupied by confirmed LX-3A0001
+  assert.equal(cal.days[1]?.remainingUnits, 0);
+  assert.equal(cal.days[2]?.remainingUnits, 1);
+
+  // Uncompleted future stay cannot be reviewed
+  await assert.rejects(
+    mockExp.submitReview("stay-01", {
+      bookingId: "LX-3A0001",
+      contact: "guest3a@luxestay.vn",
+      rating: 5,
+      comment: "Thử gửi đánh giá trước khi hoàn tất lưu trú.",
+    }),
+    (err: unknown) => err instanceof HttpApiError && err.status === 409
+  );
+
+  // Mark booking completed via in-memory manager & submit verified review
+  const ports = createInMemoryAppPorts({
+    properties: PROPERTIES,
+    bookingId: "LX-3A0002",
+  });
+  const quote = deriveBookingQuote(
+    startCheckoutSession(createIdleBookingSession(), stay01, undefined, baseDate),
+    baseDate
+  )!;
+  await ports.reservations.submit({
+    quote,
+    guestInfo: { fullName: "Khách 3A", phone: "0912345678", email: "guest3a@luxestay.vn" },
+    paymentMethod: "hotel",
+  });
+  const completed = await ports.reservationManager.complete("LX-3A0002", {
+    contact: "guest3a@luxestay.vn",
+  });
+  assert.equal(completed.status, "completed");
+  assert.ok(completed.completedAt);
+
+  // 2. HTTP experience & reservation complete adapters enforce contract envelopes
+  const httpExp = createHttpPropertyExperiencePort({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (input, init) => {
+      assert.equal(init?.credentials, "include");
+      const url = String(input);
+      if (url.startsWith("http://localhost:4000/api/v1/properties/stay-01/availability")) {
+        return new Response(JSON.stringify(buildApiSuccess(cal)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "http://localhost:4000/api/v1/properties/stay-01/reviews") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess({
+              review: {
+                id: "rev-http-01",
+                authorName: "Khách 3A",
+                authorAvatar: "https://example.com/a.jpg",
+                rating: 5,
+                date: "Tháng 11, 2026",
+                comment: "Trải nghiệm cực kỳ hài lòng và đúng mô tả!",
+                bookingId: "LX-3A0002",
+                isVerified: true,
+                createdAt: "2026-11-24T12:00:00.000Z",
+              },
+              propertyRating: 4.96,
+              propertyReviewCount: stay01.reviewCount + 1,
+            })
+          ),
+          { status: 201, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected experience request: ${url}`);
+    },
+  });
+
+  const httpCal = await httpExp.getAvailability("stay-01", { from: "2027-03-10", to: "2027-03-13" });
+  assert.equal(httpCal.propertyId, "stay-01");
+  assert.equal(httpCal.days.length, 4);
+
+  const reviewRes = await httpExp.submitReview("stay-01", {
+    bookingId: "LX-3A0002",
+    contact: "guest3a@luxestay.vn",
+    rating: 5,
+    comment: "Trải nghiệm cực kỳ hài lòng và đúng mô tả!",
+  });
+  assert.equal(reviewRes.review.isVerified, true);
+  assert.equal(reviewRes.propertyReviewCount, stay01.reviewCount + 1);
+
+  const httpManager = createHttpReservationManagerAdapter({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (input, init) => {
+      assert.equal(String(input), "http://localhost:4000/api/v1/reservations/LX-3A0002/complete");
+      assert.equal(init?.method, "POST");
+      assert.equal(init?.credentials, "include");
+      return new Response(JSON.stringify(buildApiSuccess(completed)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+  const httpCompleted = await httpManager.complete("LX-3A0002", { contact: "guest3a@luxestay.vn" });
+  assert.equal(httpCompleted.status, "completed");
+});
+
+test("Phase 3B HostPort supports CRUD, availability overrides, and analytics in mock and strict HTTP contract modes", async () => {
+  // 1. Mock HostPort CRUD + analytics
+  const mockHost = createMockHostPort({ properties: PROPERTIES.slice(0, 2) });
+  const initialList = await mockHost.listProperties();
+  assert.equal(initialList.length, 2);
+
+  const created = await mockHost.createProperty({
+    title: "Mock Forest Villa",
+    subtitle: "Villa nghỉ dưỡng cao cấp tại Đà Lạt",
+    propertyType: "villa",
+    category: "pine-forest",
+    location: {
+      city: "Đà Lạt",
+      province: "Lâm Đồng",
+      address: "Đường Đống Đa, Phường 3",
+      distanceToCenter: "Cách trung tâm 2 km",
+    },
+    images: ["https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=1200&q=80"],
+    pricePerNight: 2_000_000,
+    inventoryCount: 1,
+    maxGuests: 4,
+    bedrooms: 2,
+    beds: 2,
+    bathrooms: 2,
+    freeCancellation: true,
+    breakfastIncluded: false,
+    description: "Không gian biệt thự riêng tư có sân vườn rộng và lò sưởi ấm áp giữa rừng thông.",
+    amenityIds: ["high-speed-wifi"],
+  });
+  assert.equal((await mockHost.listProperties()).length, 3);
+
+  const updated = await mockHost.updateProperty(created.id, { pricePerNight: 2_400_000 });
+  assert.equal(updated.pricePerNight, 2_400_000);
+
+  const avail = await mockHost.upsertAvailability(created.id, {
+    dates: [{ date: "2027-08-10", isBlocked: true, note: "Bảo trì" }],
+  });
+  assert.equal(avail.days[0]?.isBlocked, true);
+
+  const deleted = await mockHost.deleteProperty(created.id);
+  assert.equal(deleted.deleted, true);
+
+  const stats = await mockHost.getAnalytics();
+  assert.equal(stats.totalProperties, 2);
+
+  // 2. HTTP HostPort verifies credentials include, contract parsing, and RBAC error propagation
+  const httpHost = createHttpHostPort({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (input, init) => {
+      assert.equal(init?.credentials, "include");
+      const url = String(input);
+      if (url === "http://localhost:4000/api/v1/host/properties") {
+        return new Response(
+          JSON.stringify(buildApiSuccess({ properties: PROPERTIES.slice(0, 1) })),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url === "http://localhost:4000/api/v1/host/analytics") {
+        return new Response(JSON.stringify(buildApiSuccess(stats)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "http://localhost:4000/api/v1/host/properties/stay-07") {
+        return new Response(
+          JSON.stringify(buildApiError("FORBIDDEN", "Không thuộc quyền quản lý")),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected host request: ${url}`);
+    },
+  });
+
+  assert.equal((await httpHost.listProperties()).length, 1);
+  assert.equal((await httpHost.getAnalytics()).totalProperties, 2);
+  await assert.rejects(
+    httpHost.deleteProperty("stay-07"),
+    (err: unknown) => err instanceof HttpApiError && err.status === 403 && err.code === "FORBIDDEN"
+  );
 });

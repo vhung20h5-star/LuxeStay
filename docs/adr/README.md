@@ -18,6 +18,8 @@ Thư mục này lưu trữ toàn bộ **Architecture Decision Records (ADR)** c�
 | [0008](./0008-postgresql-drizzle-database-layer.md) | Chọn PostgreSQL 16 + Drizzle ORM cho Tầng Cơ sở Dữ liệu Phase 1 (`apps/api/src/db`) | **Accepted** | 2026-11-24 | Phase 1 (`P1.1`), [DB README](../../apps/api/src/db/README.md) |
 | [0009](./0009-custom-session-auth-and-wishlist-sync.md) | Custom Session Auth (`scrypt` + OTP) & Đồng bộ Wishlist trên `@luxestay/api` | **Accepted** | 2026-11-24 | Phase 2 (`P2.1`), [PLAN](../PLAN.md) |
 | [0010](./0010-payment-sandbox-webhook-and-notifications.md) | Cổng thanh toán Sandbox chuẩn HMAC-SHA256 Webhook, Idempotency & Notification Log | **Accepted** | 2026-11-24 | Phase 2 (`P2.3`), [PLAN](../PLAN.md) |
+| [0011](./0011-availability-engine-seasonal-pricing-and-verified-reviews.md) | Availability Engine theo Ngày, Khóa Chống Double-Booking, Giá Mùa vụ & Đánh giá Xác thực (`P3.1` & `P3.2`) | **Accepted** | 2026-11-24 | Phase 3A (`P3.1`, `P3.2`), [PLAN](../PLAN.md) |
+| [0012](./0012-rbac-host-portal-i18n-and-playwright-e2e.md) | RBAC Host/Admin Portal (`/host`), `LocaleContext` (`vi`/`en`, `VND`/`USD`) & Playwright E2E (`P3.3` & `P3.4`) | **Accepted** | 2026-11-24 | Phase 3B (`P3.3`, `P3.4`), [PLAN](../PLAN.md) |
 
 ---
 

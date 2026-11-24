@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  Building2,
   Compass,
   Heart,
   Globe,
@@ -16,8 +17,10 @@ import {
   ShieldCheck,
   Ticket,
 } from "lucide-react";
+import { isHostOrAdmin } from "@luxestay/domain";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useFavorites } from "@/features/booking/BookingContext";
+import { useLocale } from "@/features/locale/LocaleContext";
 import { Button } from "@/shared/ui/Button";
 
 function getInitials(name: string): string {
@@ -32,9 +35,12 @@ export function Navbar() {
   const router = useRouter();
   const { user, setAuthModalOpen, logout } = useAuth();
   const { favorites, setFavoritesDrawerOpen } = useFavorites();
+  const { locale, currency, setLocale, setCurrency, t } = useLocale();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const isStaff = Boolean(user && isHostOrAdmin(user.role));
 
   useEffect(() => {
     const handleScroll = () => {
@@ -75,7 +81,7 @@ export function Navbar() {
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-3">
           {/* Logo */}
           <Link
             href="/"
@@ -84,7 +90,7 @@ export function Navbar() {
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }
             }}
-            className="flex items-center gap-2.5 cursor-pointer group select-none"
+            className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
           >
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform">
               <Sparkles className="w-5 h-5 animate-pulse" />
@@ -94,61 +100,92 @@ export function Navbar() {
                 Luxe<span className="text-emerald-600">Stay</span>
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 -mt-1">
-                Khách sạn &amp; Homestay
+                Hotels &amp; Homestays
               </span>
             </div>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 lg:gap-2">
+          <nav className="hidden md:flex items-center gap-1 lg:gap-1.5">
             <button
               onClick={() => scrollToSection("properties-section")}
-              className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
+              className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
             >
-              Khám phá chỗ nghỉ
+              {t("nav.explore")}
             </button>
             <button
               onClick={() => scrollToSection("destinations-section")}
-              className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
+              className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
             >
-              Điểm đến hot
+              {t("nav.destinations")}
             </button>
             <button
               onClick={() => scrollToSection("deals-section")}
-              className="px-3.5 py-2 text-sm font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-50/80 rounded-xl transition-colors flex items-center gap-1.5 font-semibold"
+              className="px-3 py-2 text-sm font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-50/80 rounded-xl transition-colors flex items-center gap-1.5 font-semibold"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
-              Flash Deals
+              {t("nav.deals")}
             </button>
             <Link
               href="/bookings"
-              className={`px-3.5 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
                 pathname.startsWith("/bookings")
                   ? "text-emerald-700 bg-emerald-50 font-semibold"
                   : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
               }`}
             >
               <Ticket className="w-4 h-4 text-emerald-600" />
-              {user ? "Đơn của tôi" : "Tra cứu đơn"}
+              {user ? t("nav.myBookings") : t("nav.lookupBooking")}
+            </Link>
+            <Link
+              href="/host"
+              className={`px-3 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
+                pathname.startsWith("/host")
+                  ? "text-indigo-700 bg-indigo-50 font-semibold"
+                  : isStaff
+                    ? "text-indigo-700 hover:bg-indigo-50 font-semibold"
+                    : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
+              }`}
+            >
+              <Building2 className="w-4 h-4 text-indigo-600" />
+              {t("nav.hostPortal")}
             </Link>
           </nav>
 
           {/* Right Action Icons & Controls */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Currency & Language */}
-            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200/70 rounded-full transition-colors cursor-pointer">
-              <Globe className="w-3.5 h-3.5 text-emerald-600" />
-              <span>VNĐ • Tiếng Việt</span>
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Interactive Currency & Language Switcher */}
+            <div className="hidden lg:flex items-center gap-1 p-1 text-xs font-bold text-slate-600 bg-slate-100 rounded-full border border-slate-200/70">
+              <button
+                type="button"
+                onClick={() => setCurrency(currency === "VND" ? "USD" : "VND")}
+                data-testid="currency-toggle"
+                aria-label="Chuyển đổi tiền tệ"
+                className="px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors"
+              >
+                {currency === "VND" ? "VNĐ" : "USD"}
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={() => setLocale(locale === "vi" ? "en" : "vi")}
+                data-testid="locale-toggle"
+                aria-label="Chuyển đổi ngôn ngữ"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors"
+              >
+                <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{locale === "vi" ? "VI" : "EN"}</span>
+              </button>
             </div>
 
             {/* Wishlist Button with Badge */}
             <button
               onClick={() => setFavoritesDrawerOpen(true)}
               className="relative p-2.5 text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 rounded-full transition-all duration-200"
-              aria-label="Danh sách yêu thích"
+              aria-label={t("nav.favorites")}
             >
               <Heart
                 className={`w-5 h-5 ${favorites.length > 0 ? "fill-rose-500 text-rose-500" : ""}`}
@@ -168,24 +205,31 @@ export function Navbar() {
             {user ? (
               <div className="hidden sm:flex items-center gap-2 pl-2 pr-2 py-1 rounded-full border border-emerald-200 bg-emerald-50/60">
                 <Link
-                  href="/bookings"
+                  href={isStaff ? "/host" : "/bookings"}
                   className="flex items-center gap-2 pr-1 text-left group"
                   title={`${user.fullName} (${user.email})`}
                 >
                   <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[11px]">
                     {getInitials(user.fullName)}
                   </div>
-                  <span className="text-xs font-bold text-slate-800 max-w-28 truncate group-hover:text-emerald-700">
-                    {user.fullName}
-                  </span>
+                  <div className="leading-tight">
+                    <span className="block text-xs font-bold text-slate-800 max-w-24 truncate group-hover:text-emerald-700">
+                      {user.fullName}
+                    </span>
+                    {isStaff && (
+                      <span className="block text-[9px] font-extrabold uppercase text-indigo-700">
+                        {user.role}
+                      </span>
+                    )}
+                  </div>
                 </Link>
                 <button
                   type="button"
                   onClick={handleLogout}
                   disabled={isLoggingOut}
                   className="p-1.5 rounded-full text-slate-500 hover:text-rose-600 hover:bg-white transition-colors"
-                  title="Đăng xuất"
-                  aria-label="Đăng xuất"
+                  title={t("nav.logout")}
+                  aria-label={t("nav.logout")}
                 >
                   <LogOut className="w-3.5 h-3.5" />
                 </button>
@@ -199,7 +243,7 @@ export function Navbar() {
                   <User className="w-4 h-4" />
                 </div>
                 <span className="text-xs font-semibold text-slate-700 group-hover:text-emerald-700">
-                  Đăng nhập
+                  {t("nav.login")}
                 </span>
               </button>
             )}
@@ -229,7 +273,9 @@ export function Navbar() {
               <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-900 truncate">{user.fullName}</div>
-                  <div className="text-[11px] text-slate-500 truncate">{user.email}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {user.email} • {user.role}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -237,38 +283,58 @@ export function Navbar() {
                   disabled={isLoggingOut}
                   className="text-xs font-bold text-rose-600 hover:text-rose-700 px-2 py-1"
                 >
-                  Đăng xuất
+                  {t("nav.logout")}
                 </button>
               </div>
             )}
+
+            {/* Mobile Locale & Currency Switcher */}
+            <div className="flex items-center gap-2 px-2 py-1">
+              <button
+                type="button"
+                onClick={() => setCurrency(currency === "VND" ? "USD" : "VND")}
+                className="flex-1 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700"
+              >
+                {currency === "VND" ? "Tiền tệ: VNĐ" : "Currency: USD"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLocale(locale === "vi" ? "en" : "vi")}
+                className="flex-1 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700"
+              >
+                {locale === "vi" ? "Ngôn ngữ: Tiếng Việt" : "Language: English"}
+              </button>
+            </div>
+
             <button
               onClick={() => scrollToSection("properties-section")}
               className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"
             >
-              <span>Khám phá chỗ nghỉ</span>
+              <span>{t("nav.explore")}</span>
               <Compass className="w-4 h-4 text-emerald-600" />
             </button>
             <button
               onClick={() => scrollToSection("destinations-section")}
               className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"
             >
-              <span>Điểm đến thịnh hành</span>
+              <span>{t("nav.destinations")}</span>
               <Globe className="w-4 h-4 text-emerald-600" />
-            </button>
-            <button
-              onClick={() => scrollToSection("deals-section")}
-              className="w-full text-left px-4 py-2.5 rounded-xl text-amber-700 bg-amber-50/60 font-semibold text-sm flex items-center justify-between"
-            >
-              <span>Ưu đãi Flash Sale</span>
-              <Sparkles className="w-4 h-4 text-amber-600" />
             </button>
             <Link
               href="/bookings"
               onClick={() => setMobileMenuOpen(false)}
               className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"
             >
-              <span>{user ? "Đơn đặt phòng của tôi" : "Tra cứu & Quản lý đơn"}</span>
+              <span>{user ? t("nav.myBookings") : t("nav.lookupBooking")}</span>
               <Ticket className="w-4 h-4 text-emerald-600" />
+            </Link>
+            <Link
+              href="/host"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full text-left px-4 py-2.5 rounded-xl text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/70 font-semibold text-sm flex items-center justify-between"
+            >
+              <span>{t("nav.hostPortal")}</span>
+              <Building2 className="w-4 h-4 text-indigo-600" />
             </Link>
             <button
               onClick={() => scrollToSection("testimonials-section")}
@@ -287,7 +353,7 @@ export function Navbar() {
                 className="flex-1"
               >
                 <Heart className="w-4 h-4 text-rose-500 mr-2" />
-                Yêu thích ({favorites.length})
+                {t("nav.favorites")} ({favorites.length})
               </Button>
               {!user && (
                 <Button
@@ -298,7 +364,7 @@ export function Navbar() {
                   variant="primary"
                   className="flex-1"
                 >
-                  Đăng nhập
+                  {t("nav.login")}
                 </Button>
               )}
             </div>

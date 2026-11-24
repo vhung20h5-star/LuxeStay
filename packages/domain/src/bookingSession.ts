@@ -5,9 +5,11 @@ import {
   type BookingQuote,
   type BookingSessionState,
   type CheckoutGuestInput,
+  type NightlyPriceBreakdown,
   type PaymentOutcome,
   type PromotionVoucher,
   type Property,
+  type PropertyAvailabilityOverride,
   type ReservationStatus,
   type ReservationSubmitter,
   type ResolvedPropertyAmenity,
@@ -16,6 +18,11 @@ import {
   type ServerReservationIntent,
 } from "@luxestay/contracts";
 import { projectPropertyAmenities } from "./amenities.js";
+import {
+  enumerateStayDates,
+  evaluatePropertyAvailability,
+  type ReservationOccupancyLike,
+} from "./availability.js";
 import { evaluatePromotionVoucher, normalizeVoucherCode } from "./vouchers.js";
 
 export const CLEANING_FEE = 150000;
@@ -209,8 +216,12 @@ function buildSelectedBookingAmenities(
 }
 
 function calculateBookingPricing(
-  pricePerNight: number,
-  nights: number,
+  stayPricing: {
+    basePrice: number;
+    nightsTotal: number;
+    seasonalSurcharge: number;
+    nightlyBreakdown: readonly NightlyPriceBreakdown[];
+  },
   selectedAmenities: SelectedBookingAmenity[],
   promo?: {
     promoCode?: string;
@@ -219,8 +230,7 @@ function calculateBookingPricing(
     isAuthenticated?: boolean;
   }
 ): BookingQuote["pricing"] {
-  const safeNights = clampNights(nights);
-  const nightsTotal = pricePerNight * safeNights;
+  const { basePrice, nightsTotal, seasonalSurcharge, nightlyBreakdown } = stayPricing;
   const amenitiesFee = selectedAmenities.reduce(
     (sum, item) => sum + (item.pricingType === "paid" ? item.price : 0),
     0
@@ -250,8 +260,12 @@ function calculateBookingPricing(
   const total = Math.max(0, subtotal - discount);
 
   return {
-    basePrice: pricePerNight,
+    basePrice,
     nightsTotal,
+    seasonalSurcharge,
+    nightlyBreakdown: Object.freeze(
+      nightlyBreakdown.map((item) => Object.freeze({ ...item }))
+    ),
     cleaningFee: CLEANING_FEE,
     serviceFee: 0,
     amenitiesFee,
@@ -442,6 +456,34 @@ export function removeSessionAmenity(
   };
 }
 
+export function updateSessionCheckIn(
+  current: BookingSessionState,
+  checkInSeed: string
+): BookingSessionState {
+  const trimmed = checkInSeed.trim();
+  return {
+    ...current,
+    checkInSeed: trimmed,
+  };
+}
+
+export function updateSessionRooms(
+  current: BookingSessionState,
+  rooms: number
+): BookingSessionState {
+  const maxRooms = Math.max(1, current.property?.inventoryCount ?? 10);
+  const safeRooms = Number.isFinite(rooms)
+    ? Math.min(maxRooms, Math.max(1, Math.floor(rooms)))
+    : 1;
+  return {
+    ...current,
+    guests: {
+      ...current.guests,
+      rooms: safeRooms,
+    },
+  };
+}
+
 export function setSessionPromoCode(
   current: BookingSessionState,
   promoCode: string | undefined | null
@@ -457,6 +499,7 @@ export interface DeriveBookingQuoteOptions {
   vouchers?: readonly PromotionVoucher[];
   now?: Date;
   isAuthenticated?: boolean;
+  dailyOverrides?: readonly PropertyAvailabilityOverride[];
 }
 
 export function deriveBookingQuote(
@@ -469,18 +512,39 @@ export function deriveBookingQuote(
   const property = session.property;
   const nights = clampNights(session.nights);
   const adults = clampAdults(session.guests.adults, property.maxGuests);
+  const rooms = Math.max(1, Math.floor(session.guests.rooms));
   const { checkIn, checkOut } = computeStayDates(nights, session.checkInSeed, fallbackBaseDate);
+  const stayDates = enumerateStayDates(checkIn, nights);
+  const evalNow = options?.now ?? fallbackBaseDate;
+  const availability = evaluatePropertyAvailability(
+    property,
+    stayDates,
+    rooms,
+    options?.dailyOverrides,
+    [],
+    evalNow
+  );
+
   const resolvedAmenities = [...projectPropertyAmenities(property).all];
   const selectedAmenities = buildSelectedBookingAmenities(
     resolvedAmenities,
     session.selectedAmenityIds
   );
-  const pricing = calculateBookingPricing(property.pricePerNight, nights, selectedAmenities, {
-    promoCode: session.promoCode,
-    vouchers: options?.vouchers,
-    now: options?.now ?? fallbackBaseDate,
-    isAuthenticated: options?.isAuthenticated,
-  });
+  const pricing = calculateBookingPricing(
+    {
+      basePrice: property.pricePerNight,
+      nightsTotal: availability.nightsTotal,
+      seasonalSurcharge: availability.seasonalSurcharge,
+      nightlyBreakdown: availability.nightlyBreakdown,
+    },
+    selectedAmenities,
+    {
+      promoCode: session.promoCode,
+      vouchers: options?.vouchers,
+      now: evalNow,
+      isAuthenticated: options?.isAuthenticated,
+    }
+  );
 
   return {
     property,
@@ -490,7 +554,7 @@ export function deriveBookingQuote(
     guests: {
       adults,
       children: Math.max(0, Math.floor(session.guests.children)),
-      rooms: Math.max(1, Math.floor(session.guests.rooms)),
+      rooms,
     },
     resolvedAmenities,
     selectedAmenityIds: selectedAmenities.map((item) => item.id),
@@ -556,10 +620,13 @@ export function processServerReservationIntent(
     isAuthenticated?: boolean;
     now?: Date;
     paymentExpiresInMinutes?: number;
+    dailyOverrides?: readonly PropertyAvailabilityOverride[];
+    existingReservations?: readonly ReservationOccupancyLike[];
+    enforceAvailability?: boolean;
   }
 ):
   | { ok: true; booking: BookingDetails }
-  | { ok: false; error: string; status: 400 | 404 | 422 } {
+  | { ok: false; error: string; status: 400 | 404 | 409 | 422; code?: "CONFLICT" } {
   if (!intent || typeof intent.propertyId !== "string" || !intent.propertyId.trim()) {
     return {
       ok: false,
@@ -626,11 +693,38 @@ export function processServerReservationIntent(
     confirmedBooking: null,
   };
 
+  if (options?.enforceAvailability) {
+    const { checkIn } = computeStayDates(serverSession.nights, validCheckInSeed, fallbackBaseDate);
+    const stayDates = enumerateStayDates(checkIn, serverSession.nights);
+    const availability = evaluatePropertyAvailability(
+      property,
+      stayDates,
+      serverSession.guests.rooms,
+      options.dailyOverrides ?? [],
+      options.existingReservations ?? [],
+      evalNow
+    );
+    if (!availability.available) {
+      return {
+        ok: false,
+        error:
+          availability.errorMessage ??
+          "Chỗ nghỉ không còn đủ phòng trống cho các ngày đã chọn.",
+        status: 409,
+        code: "CONFLICT",
+      };
+    }
+  }
+
   // If client explicitly supplied a promoCode, validate strictly before building quote
   if (requestedPromoCode) {
     const baseQuote = deriveBookingQuote(
       { ...serverSession, promoCode: undefined },
-      fallbackBaseDate
+      fallbackBaseDate,
+      {
+        dailyOverrides: options?.dailyOverrides,
+        now: evalNow,
+      }
     );
     if (!baseQuote) {
       return {
@@ -665,6 +759,7 @@ export function processServerReservationIntent(
     vouchers: options?.vouchers,
     now: evalNow,
     isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
+    dailyOverrides: options?.dailyOverrides,
   });
   if (!serverQuote) {
     return {
@@ -791,6 +886,15 @@ export function evaluateReservationCancellation(
     };
   }
 
+  if (booking.status === "completed") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: "Đơn đặt phòng đã hoàn tất lưu trú, không thể hủy.",
+    };
+  }
+
   if (booking.status === "payment_failed" || booking.status === "expired") {
     return {
       ok: false,
@@ -830,6 +934,69 @@ export function evaluateReservationCancellation(
   return {
     ok: true,
     booking: cancelledBooking,
+  };
+}
+
+export function evaluateReservationCompletion(
+  booking: BookingDetails,
+  input: { contact?: string } = {},
+  options?: {
+    completedAt?: string;
+    authenticatedUserId?: string;
+    bypassOwnershipCheck?: boolean;
+  }
+):
+  | { ok: true; booking: BookingDetails }
+  | { ok: false; status: 403 | 409; code: "FORBIDDEN" | "CONFLICT"; error: string } {
+  if (
+    !options?.bypassOwnershipCheck &&
+    !canAccessReservation(booking, {
+      contact: input.contact,
+      authenticatedUserId: options?.authenticatedUserId,
+    })
+  ) {
+    return {
+      ok: false,
+      status: 403,
+      code: "FORBIDDEN",
+      error: "Bạn không có quyền xác nhận hoàn tất lưu trú cho đơn đặt phòng này.",
+    };
+  }
+
+  if (booking.status === "completed") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: "Đơn đặt phòng này đã được hoàn tất lưu trú trước đó.",
+    };
+  }
+
+  if (booking.status !== "confirmed") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: `Chỉ có thể đánh dấu hoàn tất lưu trú cho đơn đã xác nhận (hiện tại: "${booking.status}").`,
+    };
+  }
+
+  const completedAt = options?.completedAt ?? new Date().toISOString();
+  const completedBooking: BookingDetails = Object.freeze({
+    ...booking,
+    guests: Object.freeze({ ...booking.guests }),
+    pricing: Object.freeze({ ...booking.pricing }),
+    selectedAmenities: Object.freeze(
+      booking.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ ...booking.guestInfo }),
+    status: "completed",
+    completedAt,
+  });
+
+  return {
+    ok: true,
+    booking: completedBooking,
   };
 }
 
@@ -893,6 +1060,7 @@ export async function submitBookingSession(
     fallbackBaseDate?: Date;
     vouchers?: readonly PromotionVoucher[];
     isAuthenticated?: boolean;
+    dailyOverrides?: readonly PropertyAvailabilityOverride[];
   }
 ): Promise<
   | { ok: true; booking: BookingDetails; nextSession: BookingSessionState }
@@ -916,6 +1084,7 @@ export async function submitBookingSession(
     {
       vouchers: options?.vouchers,
       isAuthenticated: options?.isAuthenticated,
+      dailyOverrides: options?.dailyOverrides,
     }
   );
   if (!quote) {

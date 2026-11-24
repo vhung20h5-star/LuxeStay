@@ -7,17 +7,23 @@ import {
   type BookingDetails,
   type NotificationLog,
   type PromotionVoucher,
+  type Property,
   type ReservationSubmissionRequest,
   type ReservationSubmitter,
   type ServerReservationIntent,
 } from "@luxestay/contracts";
 import {
   evaluateReservationCancellation,
+  evaluateReservationCompletion,
   matchesReservationContact,
 } from "@luxestay/domain";
 import { z } from "zod";
 import type { DataMode } from "../config/env";
 import { HttpApiError, isAbortError } from "./errors";
+import {
+  createHttpPropertyExperiencePort,
+  createMockPropertyExperiencePort,
+} from "./experiencePort";
 import {
   createHttpPaymentGatewayPort,
   createMockPaymentGatewayPort,
@@ -27,6 +33,7 @@ import type {
   FavoritesRepository,
   InMemoryReservationAdapter,
   PaymentGatewayPort,
+  PropertyExperiencePort,
   ReservationManagerPort,
   StorageEventLike,
   StorageEventTargetLike,
@@ -522,6 +529,31 @@ export function createBrowserReservationManagerAdapter(options?: {
       return evaluated.booking;
     },
 
+    async complete(bookingId, input, callOptions) {
+      if (callOptions?.signal?.aborted) throw createAbortError();
+      const normalizedId = bookingId.trim().toUpperCase();
+      const stored = readMockBookings(options?.storage);
+      const found = stored.get(normalizedId);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+        });
+      }
+      const evaluated = evaluateReservationCompletion(found, input ?? {});
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.error,
+        });
+      }
+      stored.set(normalizedId, evaluated.booking);
+      writeMockBookings(stored, options?.storage);
+      return evaluated.booking;
+    },
+
     async listMine(callOptions) {
       if (callOptions?.signal?.aborted) throw createAbortError();
       const stored = readMockBookings(options?.storage);
@@ -608,6 +640,28 @@ export function createInMemoryReservationManager(
         });
       }
       const evaluated = evaluateReservationCancellation(found, input);
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.error,
+        });
+      }
+      store.set(normalized, evaluated.booking);
+      return evaluated.booking;
+    },
+    async complete(bookingId, input, options) {
+      if (options?.signal?.aborted) throw createAbortError();
+      const normalized = bookingId.trim().toUpperCase();
+      const found = store.get(normalized);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalized}.`,
+        });
+      }
+      const evaluated = evaluateReservationCompletion(found, input ?? {});
       if (!evaluated.ok) {
         throw new HttpApiError({
           status: evaluated.status,
@@ -834,6 +888,41 @@ export function createHttpReservationManagerAdapter(options?: {
       return parseBookingApiResponse(response, "Không thể hủy đặt phòng từ máy chủ.");
     },
 
+    async complete(bookingId, input, callOptions) {
+      const signal = callOptions?.signal;
+      if (signal?.aborted) throw createAbortError();
+      const fetchFn = resolveFetch();
+
+      const url = `${baseUrl}${API_ENDPOINTS.completeReservation(bookingId)}`;
+      const trimmedContact = input?.contact?.trim() || undefined;
+      let response: Response;
+      try {
+        response = await fetchFn(url, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(trimmedContact ? { contact: trimmedContact } : {}),
+          signal,
+        });
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        throw new HttpApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Không thể kết nối máy chủ để xác nhận hoàn tất lưu trú.",
+          details: err instanceof Error ? err.message : undefined,
+        });
+      }
+
+      return parseBookingApiResponse(
+        response,
+        "Không thể xác nhận hoàn tất lưu trú từ máy chủ."
+      );
+    },
+
     async listMine(callOptions) {
       const signal = callOptions?.signal;
       if (signal?.aborted) throw createAbortError();
@@ -921,6 +1010,7 @@ export function createWebAppPorts(options: {
   mode: DataMode;
   apiBaseUrl: string;
   validPropertyIds?: ReadonlySet<string>;
+  properties?: readonly Property[];
   vouchers?: readonly PromotionVoucher[];
   mockReservationDelayMs?: number;
   storage?: StorageLike;
@@ -960,12 +1050,23 @@ export function createWebAppPorts(options: {
         : createMockPaymentGatewayPort({
             vouchers: options.vouchers,
           }),
+    propertyExperience:
+      options.mode === "api"
+        ? createHttpPropertyExperiencePort({
+            baseUrl: options.apiBaseUrl,
+            fetchImpl: options.fetchImpl,
+          })
+        : createMockPropertyExperiencePort({
+            properties: options.properties,
+            getBookings: () => [...readMockBookings(options.storage).values()],
+          }),
   };
 }
 
 export function createInMemoryAppPorts(options?: {
   initialFavoriteIds?: readonly string[];
   validPropertyIds?: ReadonlySet<string>;
+  properties?: readonly Property[];
   vouchers?: readonly PromotionVoucher[];
   bookingId?: string;
   createdAt?: string;
@@ -974,6 +1075,7 @@ export function createInMemoryAppPorts(options?: {
   reservations: InMemoryReservationAdapter;
   reservationManager: ReservationManagerPort;
   paymentGateway: PaymentGatewayPort;
+  propertyExperience: PropertyExperiencePort;
 } {
   const manager = createInMemoryReservationManager();
   const baseReservations = createInMemoryReservationAdapter({
@@ -1000,5 +1102,9 @@ export function createInMemoryAppPorts(options?: {
     reservations,
     reservationManager: manager,
     paymentGateway: createMockPaymentGatewayPort({ vouchers: options?.vouchers }),
+    propertyExperience: createMockPropertyExperiencePort({
+      properties: options?.properties,
+      getBookings: () => reservations.getSubmittedBookings(),
+    }),
   };
 }

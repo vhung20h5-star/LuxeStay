@@ -83,6 +83,7 @@ export function createAuthService(deps: {
         ...(input.phone ? { phone: input.phone } : {}),
         fullName: input.fullName.trim(),
         provider: "password",
+        role: "guest",
         passwordHash: hashPassword(input.password),
         createdAt: nowIso,
       };
@@ -213,6 +214,7 @@ export function createAuthService(deps: {
           ...(channel === "sms" ? { phone: normalized } : {}),
           fullName: fallbackName,
           provider: "otp",
+          role: "guest",
           createdAt: nowIso,
         });
       } else if (input.fullName?.trim() && input.fullName.trim() !== user.fullName) {

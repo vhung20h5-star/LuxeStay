@@ -1,6 +1,6 @@
 # LuxeStay Domain Glossary
 
-Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.4.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
+Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.6.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
 
 ---
 
@@ -94,3 +94,24 @@ Module thuần tại `packages/domain/src/vouchers.ts` thay thế mức giảm g
 
 ### Payment Gateway Sandbox & Webhook Idempotency
 Quy trình thanh toán trực tuyến chuẩn thực tế ([ADR-0010](./docs/adr/0010-payment-sandbox-webhook-and-notifications.md)): đơn thanh toán qua `vnpay`/`momo`/`card` khởi tạo ở trạng thái `pending_payment` kèm `PaymentTransaction` (`TXN-XXXXXX`), chuyển sang `/payments/[transactionId]`, và chỉ chuyển sang `confirmed` / `payment_failed` / `expired` thông qua webhook `POST /api/v1/payments/webhook/:provider` được ký `HMAC-SHA256` (`x-luxestay-signature`) với kiểm tra chống xử lý trùng (`payment_webhook_events`) và ghi email vé điện tử vào `notification_logs`.
+
+### Availability Engine & Anti-Double-Booking Lock
+Hệ thống quản lý quỹ phòng theo từng đêm ([ADR-0011](./docs/adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md)): mỗi chỗ nghỉ có `inventoryCount` (`1` cho villa/homestay/glamping, `5` cho hotel, `6` cho resort) kèm bảng ghi đè `property_availability` (`isBlocked`, `overridePrice`, `inventoryOverride`). Khi tạo đơn `POST /api/v1/reservations`, hệ thống khóa giao dịch hàng `SELECT ... FOR UPDATE` trên PostgreSQL (hoặc per-property async mutex ở `memory`), chỉ giữ phòng cho đơn `confirmed` và `pending_payment` chưa hết hạn, trả `409 CONFLICT` nếu trùng lịch/tạm khóa, và tự giải phóng ngay khi đơn hủy/hết hạn/thất bại/hoàn tất.
+
+### Seasonal Pricing Hierarchy (Phân tầng giá theo mùa)
+Quy tắc tính giá từng đêm thuần trong `packages/domain/src/availability.ts` theo thứ tự ưu tiên từ cao xuống thấp: `(1) overridePrice` từ `property_availability` → `(2) Ngày lễ cố định VN +30%` (`01-01`, `04-30`, `05-01`, `09-02`, `12-24`, `12-25`, `12-31`) → `(3) Đêm cuối tuần Thứ 6 & Thứ 7 +20%` → `(4) pricePerNight` gốc. Kết quả nhân theo `guests.rooms` và hiển thị rõ `seasonalSurcharge` & `nightlyBreakdown`.
+
+### Verified Review & Stay Completion (Đánh giá xác thực lưu trú)
+Cơ chế kiểm soát chất lượng đánh giá ([ADR-0011](./docs/adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md)): chỉ chủ đơn đặt phòng có trạng thái `completed` (hoặc `confirmed` đã qua `12:00` ngày `checkOut`) và chưa từng đánh giá cho `bookingId` đó (`reviews.booking_id UNIQUE`) mới được gửi đánh giá qua `POST /api/v1/properties/:id/reviews`. Hệ thống cập nhật atomic `properties.rating` và `properties.review_count` trong cùng transaction, hiển thị badge **"Đã xác thực lưu trú"**, và cung cấp endpoint `POST /api/v1/reservations/:bookingId/complete` (Sandbox) để kiểm thử luồng tức thì.
+
+### Property Experience Port (`PropertyExperiencePort`)
+Seam tại `apps/web/src/shared/ports/experiencePort.ts` cung cấp `getAvailability(propertyId, range)` và `submitReview(propertyId, input)` đồng nhất giữa chế độ `api` (`HttpPropertyExperiencePort`) và `mock` (`MockPropertyExperiencePort`).
+
+### RBAC (`guest | host | admin`) & Host Portal (`/host`)
+Mô hình phân quyền dựa trên vai trò ([ADR-0012](./docs/adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md)): lưu `users.role` và `properties.owner_user_id`. Chủ nhà (`host`) chỉ quản lý chỗ nghỉ, lịch phòng (`property_availability`), đơn khách và báo cáo doanh thu (`computeHostAnalytics`) thuộc quyền sở hữu của mình; Quản trị viên (`admin`) có toàn quyền trên hệ thống. Giao tiếp FE ↔ BE đi qua `HostPort` (`apps/web/src/shared/ports/hostPort.ts`) tới `/api/v1/host/*`.
+
+### Locale Context (`vi`/`en`, `VND`/`USD`)
+Context độc lập tại `apps/web/src/features/locale/LocaleContext.tsx` dùng `useSyncExternalStore` với `localStorage` và module thuần `packages/domain/src/locale.ts` (`translate`, `formatMoney`, tỷ giá chuẩn `25.000 VNĐ/USD`), cho phép chuyển đổi ngôn ngữ và tiền tệ trực tiếp trên `Navbar` mà không đổi URL và không gây lệch SSR Hydration.
+
+### Playwright E2E Suite (`e2e/`)
+Bộ kiểm thử đầu-cuối trên trình duyệt Chromium thật (`playwright.config.ts`, `e2e/luxestay.spec.ts`, `npm run test:e2e`) khởi chạy đồng thời `@luxestay/api` và `@luxestay/web` bản production để xác thực luồng khám phá/đa ngôn ngữ, đặt phòng + đánh giá xác thực, và RBAC Cổng Chủ nhà `/host`.

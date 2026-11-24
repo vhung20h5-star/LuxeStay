@@ -34,6 +34,7 @@ import {
   removeSessionAmenity,
   toggleSessionAmenity,
   updateSessionAdults,
+  updateSessionCheckIn,
   updateSessionNights,
 } from "@luxestay/domain";
 import {
@@ -42,7 +43,9 @@ import {
   useFavorites,
 } from "@/features/booking/BookingContext";
 import { AmenityIcon } from "@/features/property/AmenityIcon";
+import { AvailabilityCalendar } from "@/features/property/AvailabilityCalendar";
 import { PropertyAmenitiesModal } from "@/features/property/PropertyAmenitiesModal";
+import { SeasonalPricingSummary } from "@/features/property/SeasonalPricingSummary";
 import { Badge } from "@/shared/ui/Badge";
 import { Button } from "@/shared/ui/Button";
 
@@ -101,6 +104,7 @@ export function StayDetailView({ property }: { property: Property }) {
       nights: quote.nights,
       adults: quote.guests.adults,
       selectedAmenityIds: quote.selectedAmenityIds,
+      checkInSeed: draftSession.checkInSeed || quote.checkIn,
     });
   };
 
@@ -254,6 +258,17 @@ export function StayDetailView({ property }: { property: Property }) {
               <p className="text-sm text-slate-600 leading-relaxed">{property.description}</p>
             </section>
 
+            {/* Interactive Availability & Seasonal Pricing Calendar */}
+            <AvailabilityCalendar
+              propertyId={property.id}
+              selectedCheckIn={quote.checkIn}
+              nights={quote.nights}
+              rooms={quote.guests.rooms}
+              onSelectCheckIn={(isoDate) =>
+                setDraftSession((prev) => updateSessionCheckIn(prev, isoDate))
+              }
+            />
+
             {/* Resort Amenities */}
             <section className="bg-white p-6 rounded-3xl border border-slate-200/80 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -385,8 +400,16 @@ export function StayDetailView({ property }: { property: Property }) {
                           className="rounded-full object-cover"
                         />
                         <div>
-                          <div className="text-xs font-bold text-slate-900">
-                            {review.authorName}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-900">
+                              {review.authorName}
+                            </span>
+                            {review.isVerified && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                <Check className="w-2.5 h-2.5" />
+                                Đã xác thực lưu trú
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-400">{review.date}</div>
                         </div>
@@ -548,12 +571,11 @@ export function StayDetailView({ property }: { property: Property }) {
 
               {/* Price Breakdown */}
               <div className="space-y-2 text-xs pt-2 border-t border-slate-100">
-                <div className="flex justify-between text-slate-600">
-                  <span>
-                    {formatVND(property.pricePerNight)} × {quote.nights} đêm
-                  </span>
-                  <span>{formatVND(quote.pricing.nightsTotal)}</span>
-                </div>
+                <SeasonalPricingSummary
+                  pricing={quote.pricing}
+                  nights={quote.nights}
+                  rooms={quote.guests.rooms}
+                />
                 <div className="flex justify-between text-slate-600">
                   <span>Phí dịch vụ &amp; dọn dẹp</span>
                   <span>{formatVND(quote.pricing.cleaningFee)}</span>

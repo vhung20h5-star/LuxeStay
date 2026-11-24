@@ -138,13 +138,19 @@ test("preserves selections on reopen and checkout handoff for same property, res
   assert.equal(session.step, "checking-out");
   const quote = deriveBookingQuote(session, baseDate);
   assert.ok(quote);
-  assert.equal(quote.pricing.nightsTotal, stay02.pricePerNight * 4);
+  // 2026-11-21 (Sat +20%), 22 (Sun), 23 (Mon), 24 (Tue) -> 1 weekend night surcharge
+  const expectedSatSurcharge = Math.round(stay02.pricePerNight * 0.2);
+  const expectedFourNights = stay02.pricePerNight * 4 + expectedSatSurcharge;
+  assert.equal(quote.pricing.seasonalSurcharge, expectedSatSurcharge);
+  assert.equal(quote.pricing.nightsTotal, expectedFourNights);
+  assert.equal(quote.pricing.nightlyBreakdown?.length, 4);
+  assert.equal(quote.pricing.nightlyBreakdown?.[0]?.reason, "weekend");
   assert.equal(quote.pricing.amenitiesFee, 650000);
   assert.equal(quote.pricing.cleaningFee, 150000);
   assert.equal(quote.pricing.discount, 0);
   assert.equal(
     quote.pricing.total,
-    stay02.pricePerNight * 4 + 150000 + 650000
+    expectedFourNights + 150000 + 650000
   );
 
   // Applying a valid voucher dynamically reduces total and records appliedPromoCode
@@ -158,7 +164,7 @@ test("preserves selections on reopen and checkout handoff for same property, res
   assert.equal(withVoucher.pricing.discount, 250000);
   assert.equal(
     withVoucher.pricing.total,
-    stay02.pricePerNight * 4 + 150000 + 650000 - 250000
+    expectedFourNights + 150000 + 650000 - 250000
   );
 
   session = removeSessionAmenity(session, "herbal-spa");
@@ -439,17 +445,22 @@ test("processServerReservationIntent recalculates authoritative server pricing a
   );
   assert.equal(res.ok, true);
   if (res.ok) {
+    // 2026-12-10 (Thu base), 2026-12-11 (Fri +20%), 2026-12-12 (Sat +20%)
+    const weekendPerNight = Math.round(stay02.pricePerNight * 0.2);
+    const expectedSeasonal = weekendPerNight * 2;
+    const expectedNightsTotal = stay02.pricePerNight * 3 + expectedSeasonal;
     assert.equal(res.booking.bookingId, "LX-SERVER1");
     assert.equal(res.booking.status, "pending_payment");
     assert.ok(res.booking.paymentExpiresAt);
     assert.equal(res.booking.guests.adults, stay02.maxGuests);
     assert.equal(res.booking.selectedAmenities.length, 2);
-    assert.equal(res.booking.pricing.nightsTotal, stay02.pricePerNight * 3);
+    assert.equal(res.booking.pricing.seasonalSurcharge, expectedSeasonal);
+    assert.equal(res.booking.pricing.nightsTotal, expectedNightsTotal);
     assert.equal(res.booking.pricing.amenitiesFee, 650000);
     assert.equal(res.booking.pricing.discount, 0);
     assert.equal(
       res.booking.pricing.total,
-      stay02.pricePerNight * 3 + 150000 + 650000
+      expectedNightsTotal + 150000 + 650000
     );
   }
 });
@@ -635,8 +646,11 @@ test("evaluatePromotionVoucher validates fixed/percent/cap/minOrder/expiry/membe
   );
   assert.equal(goodIntent.ok, true);
   if (goodIntent.ok) {
-    const subtotal = stay02.pricePerNight * 2 + 150000;
+    // 2026-11-21 (Sat +20%), 2026-11-22 (Sun base)
+    const satSurcharge = Math.round(stay02.pricePerNight * 0.2);
+    const subtotal = stay02.pricePerNight * 2 + satSurcharge + 150000;
     const expectedDiscount = Math.min(500000, Math.round(subtotal * 0.1));
+    assert.equal(goodIntent.booking.pricing.seasonalSurcharge, satSurcharge);
     assert.equal(goodIntent.booking.pricing.appliedPromoCode, "SUMMERVIBE");
     assert.equal(goodIntent.booking.pricing.discount, expectedDiscount);
     assert.equal(goodIntent.booking.pricing.total, subtotal - expectedDiscount);

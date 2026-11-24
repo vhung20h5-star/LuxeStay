@@ -15,6 +15,20 @@
       "when": 1795422000000,
       "tag": "0001_phase2_commercialization",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795436400000,
+      "tag": "0002_phase3a_availability_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795443600000,
+      "tag": "0003_phase3b_rbac_host_portal",
+      "breakpoints": true
     }
   ]
 }

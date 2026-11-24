@@ -242,16 +242,36 @@ export function createMockAuthPort(): AuthPort {
         phone: input.phone?.trim() || undefined,
         fullName: input.fullName.trim(),
         provider: "password",
+        role: "guest",
         createdAt: new Date().toISOString(),
       };
       return currentUser;
     },
     async login(input) {
+      const normalizedEmail = input.email.trim().toLowerCase();
+      const role =
+        normalizedEmail === "admin@luxestay.vn"
+          ? "admin"
+          : normalizedEmail === "host@luxestay.vn"
+            ? "host"
+            : "guest";
+      const id =
+        role === "admin"
+          ? "USR-ADMIN-01"
+          : role === "host"
+            ? "USR-HOST-01"
+            : "USR-MOCK01";
       currentUser = {
-        id: "USR-MOCK01",
-        email: input.email.trim().toLowerCase(),
-        fullName: input.email.split("@")[0] || "Thành viên LuxeStay",
+        id,
+        email: normalizedEmail,
+        fullName:
+          role === "admin"
+            ? "Quản trị viên LuxeStay"
+            : role === "host"
+              ? "Minh Quân Host"
+              : normalizedEmail.split("@")[0] || "Thành viên LuxeStay",
         provider: "password",
+        role,
         createdAt: new Date().toISOString(),
       };
       return currentUser;
@@ -280,6 +300,7 @@ export function createMockAuthPort(): AuthPort {
         phone: input.identifier.includes("@") ? undefined : input.identifier.trim(),
         fullName: input.fullName?.trim() || "Thành viên OTP",
         provider: "otp",
+        role: "guest",
         createdAt: new Date().toISOString(),
       };
       return currentUser;

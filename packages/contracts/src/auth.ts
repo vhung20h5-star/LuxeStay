@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AuthProviderSchema } from "./common.js";
+import { AuthProviderSchema, UserRoleSchema } from "./common.js";
 import { EMAIL_REGEX, VN_PHONE_REGEX } from "./booking.js";
 
 export const AuthUserSchema = z.object({
@@ -9,6 +9,7 @@ export const AuthUserSchema = z.object({
   fullName: z.string().min(1),
   avatar: z.string().min(1).optional(),
   provider: AuthProviderSchema,
+  role: UserRoleSchema.default("guest"),
   createdAt: z.string().min(1),
 });
 

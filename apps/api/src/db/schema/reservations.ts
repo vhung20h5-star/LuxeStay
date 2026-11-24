@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -8,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   AmenityCategoryId,
+  NightlyPriceBreakdown,
   PaymentMethod,
   ReservationStatus,
 } from "@luxestay/contracts";
@@ -31,6 +33,8 @@ export const reservationsTable = pgTable(
     rooms: integer("rooms").notNull().default(1),
     basePrice: integer("base_price").notNull(),
     nightsTotal: integer("nights_total").notNull(),
+    seasonalSurcharge: integer("seasonal_surcharge").notNull().default(0),
+    nightlyBreakdown: jsonb("nightly_breakdown").$type<NightlyPriceBreakdown[]>(),
     cleaningFee: integer("cleaning_fee").notNull(),
     serviceFee: integer("service_fee").notNull().default(0),
     amenitiesFee: integer("amenities_fee").notNull().default(0),
@@ -44,11 +48,13 @@ export const reservationsTable = pgTable(
     paymentMethod: text("payment_method").$type<PaymentMethod>().notNull(),
     paymentExpiresAt: timestamp("payment_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancellationReason: text("cancellation_reason"),
   },
   (table) => [
     index("reservations_property_id_idx").on(table.propertyId),
+    index("reservations_property_status_idx").on(table.propertyId, table.status),
     index("reservations_guest_email_idx").on(table.guestEmail),
     index("reservations_user_id_idx").on(table.userId),
   ]

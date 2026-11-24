@@ -6,7 +6,7 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-import type { AuthProvider } from "@luxestay/contracts";
+import type { AuthProvider, UserRole } from "@luxestay/contracts";
 import { propertiesTable } from "./catalog.js";
 
 export const usersTable = pgTable(
@@ -18,6 +18,7 @@ export const usersTable = pgTable(
     fullName: text("full_name").notNull(),
     avatar: text("avatar"),
     provider: text("provider").$type<AuthProvider>().notNull().default("password"),
+    role: text("role").$type<UserRole>().notNull().default("guest"),
     passwordHash: text("password_hash"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },

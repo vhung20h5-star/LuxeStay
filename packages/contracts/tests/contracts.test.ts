@@ -3,19 +3,25 @@ import assert from "node:assert/strict";
 import {
   API_ENDPOINTS,
   ApiErrorResponseSchema,
+  AuthUserSchema,
   buildApiError,
   buildApiSuccess,
   CancelReservationInputSchema,
   createApiSuccessSchema,
+  CreateHostPropertyInputSchema,
+  CreateReviewInputSchema,
   GuestInfoSchema,
   HealthDataSchema,
+  HostAnalyticsDataSchema,
   LoginInputSchema,
   OtpRequestInputSchema,
   OtpVerifyInputSchema,
   PaymentWebhookPayloadSchema,
+  PropertyAvailabilityDataSchema,
   RegisterInputSchema,
   ReservationLookupInputSchema,
   ServerReservationIntentSchema,
+  UpsertHostAvailabilityInputSchema,
 } from "../dist/index.js";
 
 test("ApiSuccess and ApiError builders produce contract-compliant envelopes", () => {
@@ -168,4 +174,114 @@ test("Phase 2 auth, voucher, and payment webhook contracts validate payloads and
   assert.equal(API_ENDPOINTS.favorites, "/api/v1/favorites");
   assert.equal(API_ENDPOINTS.paymentWebhook("VNPAY"), "/api/v1/payments/webhook/vnpay");
   assert.equal(API_ENDPOINTS.paymentSimulate("txn-01"), "/api/v1/payments/TXN-01/simulate");
+});
+
+test("Phase 3A availability and verified review contracts validate payloads and endpoints", () => {
+  const availability = PropertyAvailabilityDataSchema.safeParse({
+    propertyId: "stay-01",
+    inventoryCount: 1,
+    from: "2026-12-01",
+    to: "2026-12-02",
+    days: [
+      {
+        date: "2026-12-01",
+        totalUnits: 1,
+        bookedUnits: 0,
+        remainingUnits: 1,
+        isBlocked: false,
+        isAvailable: true,
+        basePrice: 1250000,
+        effectivePrice: 1250000,
+        priceReason: "base",
+      },
+    ],
+  });
+  assert.equal(availability.success, true);
+
+  const reviewOk = CreateReviewInputSchema.safeParse({
+    bookingId: " lx-ab1234 ",
+    rating: 5,
+    comment: "  Phòng rất đẹp, view rừng thông tuyệt vời và chủ nhà hỗ trợ chu đáo! ",
+  });
+  assert.equal(reviewOk.success, true);
+  if (reviewOk.success) {
+    assert.equal(reviewOk.data.bookingId, "LX-AB1234");
+  }
+
+  assert.equal(
+    CreateReviewInputSchema.safeParse({ bookingId: "LX-1", rating: 5, comment: "Quá ngắn" }).success,
+    false
+  );
+  assert.equal(
+    CreateReviewInputSchema.safeParse({ bookingId: "LX-1", rating: 6, comment: "Đánh giá đủ dài hơn mười ký tự" }).success,
+    false
+  );
+
+  assert.equal(API_ENDPOINTS.propertyAvailability("stay-01"), "/api/v1/properties/stay-01/availability");
+  assert.equal(API_ENDPOINTS.propertyReviews("stay-01"), "/api/v1/properties/stay-01/reviews");
+  assert.equal(API_ENDPOINTS.completeReservation("lx-ab1234"), "/api/v1/reservations/LX-AB1234/complete");
+});
+
+test("Phase 3B RBAC, Host CRUD, availability overrides, and analytics contracts validate payloads", () => {
+  const defaultGuest = AuthUserSchema.parse({
+    id: "USR-1",
+    email: "guest@luxestay.vn",
+    fullName: "Guest User",
+    provider: "password",
+    createdAt: "2026-11-24T00:00:00.000Z",
+  });
+  assert.equal(defaultGuest.role, "guest");
+
+  const hostProp = CreateHostPropertyInputSchema.safeParse({
+    title: "Pine Hill Boutique Villa Đà Lạt",
+    subtitle: "Biệt thự rừng thông view đồi đón bình minh",
+    propertyType: "villa",
+    category: "pine-forest",
+    location: {
+      city: "Đà Lạt",
+      province: "Lâm Đồng",
+      address: "Đường Đống Đa, Phường 3",
+      distanceToCenter: "Cách trung tâm 2.5 km",
+    },
+    images: ["https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=1200&q=80"],
+    pricePerNight: 2_200_000,
+    inventoryCount: 1,
+    maxGuests: 6,
+    bedrooms: 3,
+    beds: 3,
+    bathrooms: 3,
+    description: "Biệt thự thiết kế gỗ thông tự nhiên với sân BBQ riêng và lò sưởi ấm cúng cho gia đình.",
+    amenityIds: ["high-speed-wifi", "garden-bbq"],
+  });
+  assert.equal(hostProp.success, true);
+
+  const availUpsert = UpsertHostAvailabilityInputSchema.safeParse({
+    dates: [
+      { date: "2027-01-15", isBlocked: true, note: "Bảo trì" },
+      { date: "2027-01-16", isBlocked: false, overridePrice: 2_800_000 },
+    ],
+  });
+  assert.equal(availUpsert.success, true);
+
+  assert.equal(
+    HostAnalyticsDataSchema.safeParse({
+      totalRevenue: 5_000_000,
+      confirmedRevenue: 2_000_000,
+      completedRevenue: 3_000_000,
+      totalBookings: 2,
+      confirmedBookings: 1,
+      completedBookings: 1,
+      pendingBookings: 0,
+      cancelledBookings: 0,
+      averageOrderValue: 2_500_000,
+      totalProperties: 6,
+      propertyBreakdown: [],
+      monthlyRevenue: [{ month: "2026-12", revenue: 5_000_000, bookingsCount: 2 }],
+    }).success,
+    true
+  );
+
+  assert.equal(API_ENDPOINTS.hostProperties, "/api/v1/host/properties");
+  assert.equal(API_ENDPOINTS.hostPropertyAvailability("stay-01"), "/api/v1/host/properties/stay-01/availability");
+  assert.equal(API_ENDPOINTS.hostAnalytics, "/api/v1/host/analytics");
 });

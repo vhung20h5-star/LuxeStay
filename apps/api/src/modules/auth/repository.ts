@@ -1,5 +1,6 @@
 import type { AuthProvider, AuthUser } from "@luxestay/contracts";
 import { normalizeContactPhone } from "@luxestay/domain";
+import { buildDemoStaffUsers } from "./demoAccounts.js";
 
 export interface StoredAuthUser extends AuthUser {
   passwordHash?: string;
@@ -51,12 +52,16 @@ export function toPublicAuthUser(user: StoredAuthUser): AuthUser {
     fullName: user.fullName,
     ...(user.avatar ? { avatar: user.avatar } : {}),
     provider: user.provider,
+    role: user.role ?? "guest",
     createdAt: user.createdAt,
   });
 }
 
 export function createInMemoryAuthRepository(): ApiAuthRepository {
   const usersById = new Map<string, StoredAuthUser>();
+  for (const staff of buildDemoStaffUsers()) {
+    usersById.set(staff.id, staff);
+  }
   const sessionsByHash = new Map<string, StoredUserSession>();
   const challenges: StoredOtpChallenge[] = [];
 

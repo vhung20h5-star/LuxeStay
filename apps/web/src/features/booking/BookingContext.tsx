@@ -64,12 +64,17 @@ import {
   toggleQueryPropertyType,
   toggleSessionAmenity,
   updateSessionAdults,
+  updateSessionCheckIn,
   updateSessionNights,
 } from "@luxestay/domain";
 import { useAuth } from "@/features/auth/AuthContext";
 import type { DataMode } from "@/shared/config/env";
 import { createWebAppPorts } from "@/shared/ports/persistencePort";
-import type { AppPorts, PaymentGatewayPort } from "@/shared/ports/types";
+import type {
+  AppPorts,
+  PaymentGatewayPort,
+  PropertyExperiencePort,
+} from "@/shared/ports/types";
 
 export interface FavoritesContextValue {
   favorites: readonly string[];
@@ -124,8 +129,14 @@ export interface BookingSessionContextValue {
   proceedToCheckout: () => void;
   startCheckoutWithDraft: (
     property: Property,
-    draft: { nights: number; adults: number; selectedAmenityIds: readonly string[] }
+    draft: {
+      nights: number;
+      adults: number;
+      selectedAmenityIds: readonly string[];
+      checkInSeed?: string;
+    }
   ) => void;
+  setDraftCheckIn: (checkInSeed: string) => void;
   setDraftNights: (nights: number) => void;
   setDraftAdults: (adults: number) => void;
   toggleBookingAmenity: (amenityId: string) => void;
@@ -145,6 +156,11 @@ export interface BookingSessionContextValue {
     input: { contact?: string; reason?: string },
     signal?: AbortSignal
   ) => Promise<BookingDetails>;
+  completeReservation: (
+    bookingId: string,
+    contact?: string,
+    signal?: AbortSignal
+  ) => Promise<BookingDetails>;
   listMyReservations: (signal?: AbortSignal) => Promise<readonly BookingDetails[]>;
   listReservationNotifications: (
     bookingId: string,
@@ -152,6 +168,7 @@ export interface BookingSessionContextValue {
     signal?: AbortSignal
   ) => Promise<readonly NotificationLog[]>;
   paymentGateway: PaymentGatewayPort;
+  propertyExperience: PropertyExperiencePort;
 }
 
 export type BookingContextType = FavoritesContextValue &
@@ -201,16 +218,18 @@ export function BookingProvider({
         mode: dataMode,
         apiBaseUrl,
         validPropertyIds,
+        properties,
         vouchers: promotions.vouchers,
         mockReservationDelayMs: 1200,
       }),
-    [apiBaseUrl, dataMode, promotions.vouchers, validPropertyIds]
+    [apiBaseUrl, dataMode, promotions.vouchers, properties, validPropertyIds]
   );
 
   const favoritesRepository = ports?.favorites ?? defaultPorts.favorites;
   const reservationSubmitter = ports?.reservations ?? defaultPorts.reservations;
   const reservationManager = ports?.reservationManager ?? defaultPorts.reservationManager;
   const paymentGateway = ports?.paymentGateway ?? defaultPorts.paymentGateway;
+  const propertyExperience = ports?.propertyExperience ?? defaultPorts.propertyExperience;
 
   // 1. Favorites Domain State
   const subscribeFavorites = useCallback(
@@ -516,10 +535,18 @@ export function BookingProvider({
   const startCheckoutWithDraft = useCallback(
     (
       property: Property,
-      draft: { nights: number; adults: number; selectedAmenityIds: readonly string[] }
+      draft: {
+        nights: number;
+        adults: number;
+        selectedAmenityIds: readonly string[];
+        checkInSeed?: string;
+      }
     ) => {
       setBookingSession((prev) => {
         let next = startCheckoutSession(prev, property, searchCriteria);
+        if (draft.checkInSeed) {
+          next = updateSessionCheckIn(next, draft.checkInSeed);
+        }
         next = updateSessionNights(next, draft.nights);
         next = updateSessionAdults(next, draft.adults);
         next = { ...next, selectedAmenityIds: [] };
@@ -531,6 +558,10 @@ export function BookingProvider({
     },
     [searchCriteria]
   );
+
+  const setDraftCheckIn = useCallback((checkInSeed: string) => {
+    setBookingSession((prev) => updateSessionCheckIn(prev, checkInSeed));
+  }, []);
 
   const setDraftNights = useCallback((nights: number) => {
     setBookingSession((prev) => updateSessionNights(prev, nights));
@@ -593,6 +624,13 @@ export function BookingProvider({
     [reservationManager]
   );
 
+  const completeReservation = useCallback(
+    (bookingId: string, contact?: string, signal?: AbortSignal) => {
+      return reservationManager.complete(bookingId, { contact }, { signal });
+    },
+    [reservationManager]
+  );
+
   const listMyReservations = useCallback(
     (signal?: AbortSignal) => {
       return reservationManager.listMine({ signal });
@@ -619,6 +657,7 @@ export function BookingProvider({
       setBookingSuccess,
       proceedToCheckout,
       startCheckoutWithDraft,
+      setDraftCheckIn,
       setDraftNights,
       setDraftAdults,
       toggleBookingAmenity,
@@ -627,9 +666,11 @@ export function BookingProvider({
       submitCheckout,
       lookupReservation,
       cancelReservation,
+      completeReservation,
       listMyReservations,
       listReservationNotifications,
       paymentGateway,
+      propertyExperience,
     }),
     [
       bookingSession,
@@ -642,6 +683,7 @@ export function BookingProvider({
       setBookingSuccess,
       proceedToCheckout,
       startCheckoutWithDraft,
+      setDraftCheckIn,
       setDraftNights,
       setDraftAdults,
       toggleBookingAmenity,
@@ -650,9 +692,11 @@ export function BookingProvider({
       submitCheckout,
       lookupReservation,
       cancelReservation,
+      completeReservation,
       listMyReservations,
       listReservationNotifications,
       paymentGateway,
+      propertyExperience,
     ]
   );
 

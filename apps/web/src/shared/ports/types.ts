@@ -2,6 +2,8 @@ import type {
   AuthUser,
   BookingDetails,
   CatalogSnapshot,
+  CreateReviewInput,
+  CreateReviewResult,
   LoginInput,
   NotificationLog,
   OtpRequestInput,
@@ -11,6 +13,7 @@ import type {
   PaymentSimulateInput,
   PaymentWebhookResult,
   Property,
+  PropertyAvailabilityData,
   RegisterInput,
   ReservationSubmitter,
   ValidateVoucherInput,
@@ -55,12 +58,30 @@ export interface ReservationManagerPort {
     input: { contact?: string; reason?: string },
     options?: { signal?: AbortSignal }
   ): Promise<BookingDetails>;
+  complete(
+    bookingId: string,
+    input?: { contact?: string },
+    options?: { signal?: AbortSignal }
+  ): Promise<BookingDetails>;
   listMine(options?: { signal?: AbortSignal }): Promise<readonly BookingDetails[]>;
   listNotifications(
     bookingId: string,
     contact?: string,
     options?: { signal?: AbortSignal }
   ): Promise<readonly NotificationLog[]>;
+}
+
+export interface PropertyExperiencePort {
+  getAvailability(
+    propertyId: string,
+    range?: { from?: string; to?: string },
+    options?: { signal?: AbortSignal }
+  ): Promise<PropertyAvailabilityData>;
+  submitReview(
+    propertyId: string,
+    input: CreateReviewInput,
+    options?: { signal?: AbortSignal }
+  ): Promise<CreateReviewResult>;
 }
 
 export interface AuthPort {
@@ -103,4 +124,5 @@ export interface AppPorts {
   reservations: ReservationSubmitter;
   reservationManager: ReservationManagerPort;
   paymentGateway: PaymentGatewayPort;
+  propertyExperience: PropertyExperiencePort;
 }

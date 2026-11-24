@@ -10,6 +10,12 @@ import {
 import { createAuthRoutes } from "./modules/auth/routes.js";
 import { createAuthService } from "./modules/auth/service.js";
 import {
+  createInMemoryAvailabilityRepository,
+  type ApiAvailabilityRepository,
+} from "./modules/availability/repository.js";
+import { createAvailabilityRoutes } from "./modules/availability/routes.js";
+import { createAvailabilityService } from "./modules/availability/service.js";
+import {
   createSeedCatalogRepository,
   type ApiCatalogRepository,
 } from "./modules/catalog/repository.js";
@@ -22,6 +28,8 @@ import {
 import { createFavoritesRoutes } from "./modules/favorites/routes.js";
 import { createFavoritesService } from "./modules/favorites/service.js";
 import { createHealthRoutes } from "./modules/health/routes.js";
+import { createHostRoutes } from "./modules/host/routes.js";
+import { createHostService } from "./modules/host/service.js";
 import {
   createInMemoryNotificationRepository,
   type ApiNotificationRepository,
@@ -39,6 +47,12 @@ import {
 } from "./modules/reservations/repository.js";
 import { createReservationRoutes } from "./modules/reservations/routes.js";
 import { createReservationService } from "./modules/reservations/service.js";
+import {
+  createInMemoryReviewRepository,
+  type ApiReviewRepository,
+} from "./modules/reviews/repository.js";
+import { createReviewRoutes } from "./modules/reviews/routes.js";
+import { createReviewService } from "./modules/reviews/service.js";
 import type { ApiEnvBindings } from "./types.js";
 
 export interface CreateApiAppOptions {
@@ -49,7 +63,9 @@ export interface CreateApiAppOptions {
   paymentSandboxEnabled?: boolean;
   notificationWebhookUrl?: string;
   catalogRepository?: ApiCatalogRepository;
+  availabilityRepository?: ApiAvailabilityRepository;
   reservationRepository?: ApiReservationRepository;
+  reviewRepository?: ApiReviewRepository;
   authRepository?: ApiAuthRepository;
   favoritesRepository?: ApiFavoritesRepository;
   paymentRepository?: ApiPaymentRepository;
@@ -65,8 +81,13 @@ export function createApiApp(options?: CreateApiAppOptions) {
   const paymentSandboxEnabled = options?.paymentSandboxEnabled ?? nodeEnv !== "production";
 
   const catalogRepository = options?.catalogRepository ?? createSeedCatalogRepository();
+  const availabilityRepository =
+    options?.availabilityRepository ?? createInMemoryAvailabilityRepository();
   const reservationRepository =
-    options?.reservationRepository ?? createInMemoryReservationRepository();
+    options?.reservationRepository ??
+    createInMemoryReservationRepository({ availabilityRepository });
+  const reviewRepository =
+    options?.reviewRepository ?? createInMemoryReviewRepository({ catalogRepository });
   const authRepository = options?.authRepository ?? createInMemoryAuthRepository();
   const favoritesRepository =
     options?.favoritesRepository ?? createInMemoryFavoritesRepository();
@@ -75,6 +96,16 @@ export function createApiApp(options?: CreateApiAppOptions) {
     options?.notificationRepository ?? createInMemoryNotificationRepository();
 
   const catalogService = createCatalogService(catalogRepository);
+  const availabilityService = createAvailabilityService({
+    catalogRepository,
+    availabilityRepository,
+    reservationRepository,
+  });
+  const reviewService = createReviewService({
+    catalogRepository,
+    reservationRepository,
+    reviewRepository,
+  });
   const authService = createAuthService({
     authRepository,
     sessionTtlDays,
@@ -101,6 +132,13 @@ export function createApiApp(options?: CreateApiAppOptions) {
     paymentRepository,
     paymentService,
     notificationService,
+    sandboxEnabled: paymentSandboxEnabled,
+  });
+  const hostService = createHostService({
+    catalogRepository,
+    availabilityRepository,
+    availabilityService,
+    reservationRepository,
   });
 
   const app = new Hono<ApiEnvBindings>();
@@ -131,6 +169,9 @@ export function createApiApp(options?: CreateApiAppOptions) {
 
   app.route("/", createHealthRoutes());
   app.route("/", createCatalogRoutes(catalogService));
+  app.route("/", createAvailabilityRoutes(availabilityService));
+  app.route("/", createReviewRoutes(reviewService));
+  app.route("/", createHostRoutes(hostService));
   app.route(
     "/",
     createAuthRoutes(authService, {
@@ -150,7 +191,9 @@ export function createApiApp(options?: CreateApiAppOptions) {
     webhookSecret: paymentWebhookSecret,
     repositories: {
       catalog: catalogRepository,
+      availability: availabilityRepository,
       reservations: reservationRepository,
+      reviews: reviewRepository,
       auth: authRepository,
       favorites: favoritesRepository,
       payments: paymentRepository,

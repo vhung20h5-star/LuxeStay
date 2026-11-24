@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  Award,
   CheckCircle2,
   Clock,
   CreditCard,
@@ -17,6 +18,7 @@ import {
   PhoneCall,
   ShieldAlert,
   Sparkles,
+  Star,
   XCircle,
 } from "lucide-react";
 import type { BookingDetails, NotificationLog, ReservationStatus } from "@luxestay/contracts";
@@ -24,9 +26,11 @@ import {
   describeSelectedAmenity,
   formatAmenitiesFeeSummary,
   formatVND,
+  hasCheckoutDatePassed,
 } from "@luxestay/domain";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useBookingSession } from "@/features/booking/BookingContext";
+import { SeasonalPricingSummary } from "@/features/property/SeasonalPricingSummary";
 import { HttpApiError, isAbortError } from "@/shared/ports/errors";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
@@ -51,6 +55,12 @@ const STATUS_HEADER: Record<
     badge: "Đã xác nhận",
     gradient: "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700",
     badgeClass: "bg-white/20 text-emerald-50",
+    icon: "check",
+  },
+  completed: {
+    badge: "Hoàn tất lưu trú",
+    gradient: "bg-gradient-to-r from-indigo-600 via-emerald-600 to-teal-700",
+    badgeClass: "bg-white/20 text-white",
     icon: "check",
   },
   pending_payment: {
@@ -85,8 +95,13 @@ export function BookingDetailView({
 }: BookingDetailViewProps) {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { lookupReservation, cancelReservation, listReservationNotifications } =
-    useBookingSession();
+  const {
+    lookupReservation,
+    cancelReservation,
+    completeReservation,
+    listReservationNotifications,
+    propertyExperience,
+  } = useBookingSession();
 
   const [contactInput, setContactInput] = useState(initialContact);
   const [verifiedContact, setVerifiedContact] = useState(initialContact.trim());
@@ -101,6 +116,18 @@ export function BookingDetailView({
   const [cancelReason, setCancelReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Stay completion (sandbox) & Verified Review state
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<{
+    rating: number;
+    reviewCount: number;
+  } | null>(null);
 
   const lastLoadedKeyRef = useRef<string | null>(null);
 
@@ -214,6 +241,61 @@ export function BookingDetailView({
       );
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleCompleteStay = async () => {
+    if (!booking) return;
+    setCompleteError(null);
+    setIsCompleting(true);
+    try {
+      const updated = await completeReservation(
+        booking.bookingId ?? bookingId,
+        verifiedContact || undefined
+      );
+      setBooking(updated);
+    } catch (err) {
+      setCompleteError(
+        err instanceof HttpApiError
+          ? err.message
+          : "Không thể hoàn tất lưu trú lúc này. Vui lòng thử lại!"
+      );
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!booking) return;
+    const trimmedComment = reviewComment.trim();
+    if (trimmedComment.length < 10) {
+      setReviewError("Nội dung đánh giá cần tối thiểu 10 ký tự để hữu ích cho du khách khác.");
+      return;
+    }
+
+    setReviewError(null);
+    setIsSubmittingReview(true);
+    try {
+      const res = await propertyExperience.submitReview(booking.property.id, {
+        bookingId: booking.bookingId ?? bookingId,
+        contact: verifiedContact || undefined,
+        rating: reviewRating,
+        comment: trimmedComment,
+      });
+      setReviewSuccess({
+        rating: res.propertyRating,
+        reviewCount: res.propertyReviewCount,
+      });
+      setReviewComment("");
+    } catch (err) {
+      setReviewError(
+        err instanceof HttpApiError
+          ? err.message
+          : "Không thể gửi đánh giá xác thực lúc này. Vui lòng thử lại!"
+      );
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -365,6 +447,19 @@ export function BookingDetailView({
               </div>
             )}
 
+            {booking.status === "completed" && (
+              <div className="mt-4 p-3.5 rounded-2xl bg-white/15 text-xs text-white space-y-0.5">
+                <div className="font-bold">
+                  Cảm ơn bạn đã lưu trú cùng LuxeStay!
+                </div>
+                {booking.completedAt && (
+                  <div className="text-emerald-100">
+                    Hoàn tất vào {new Date(booking.completedAt).toLocaleString("vi-VN")}
+                  </div>
+                )}
+              </div>
+            )}
+
             {isCancelled && (
               <div className="mt-4 p-3.5 rounded-2xl bg-white/10 text-xs text-slate-200 space-y-1">
                 <div className="font-semibold">
@@ -513,12 +608,11 @@ export function BookingDetailView({
 
             {/* Pricing Breakdown */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600">
-                <span>
-                  {formatVND(booking.pricing.basePrice)} × {booking.nights} đêm
-                </span>
-                <span>{formatVND(booking.pricing.nightsTotal)}</span>
-              </div>
+              <SeasonalPricingSummary
+                pricing={booking.pricing}
+                nights={booking.nights}
+                rooms={booking.guests.rooms}
+              />
               <div className="flex justify-between text-slate-600">
                 <span>Phí dịch vụ &amp; dọn dẹp</span>
                 <span>{formatVND(booking.pricing.cleaningFee)}</span>
@@ -609,6 +703,142 @@ export function BookingDetailView({
                     <strong>{booking.guestInfo.phone}</strong> trước giờ check-in.
                   </p>
                 </div>
+              </div>
+            )}
+
+            {/* Sandbox Stay Completion Action (for QA / Demo testing verified reviews) */}
+            {booking.status === "confirmed" && (
+              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs print:hidden">
+                <div className="flex items-start gap-2.5 text-indigo-950">
+                  <Award className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">
+                      Đã hoàn tất kỳ nghỉ? (Chế độ Sandbox)
+                    </span>
+                    <p className="text-[11px] text-indigo-800 mt-0.5">
+                      Xác nhận trả phòng sớm trong Sandbox để mở khóa quyền gửi đánh giá xác thực.
+                    </p>
+                    {completeError && (
+                      <p className="text-[11px] font-semibold text-rose-700 mt-1">
+                        {completeError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  isLoading={isCompleting}
+                  onClick={handleCompleteStay}
+                  className="shrink-0 border-indigo-300 text-indigo-800 hover:bg-indigo-100 font-bold"
+                >
+                  Hoàn tất lưu trú
+                </Button>
+              </div>
+            )}
+
+            {/* Verified Review Form (when completed or confirmed past check-out) */}
+            {(booking.status === "completed" ||
+              (booking.status === "confirmed" && hasCheckoutDatePassed(booking.checkOut))) && (
+              <div className="p-5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-4 print:hidden">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Đánh giá xác thực lưu trú
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 mt-1">
+                      Chia sẻ trải nghiệm tại {booking.property.title}
+                    </h3>
+                  </div>
+                </div>
+
+                {reviewSuccess ? (
+                  <div className="p-4 rounded-xl bg-white border border-emerald-200 space-y-2 text-xs">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Cảm ơn bạn! Đánh giá xác thực đã được đăng thành công.</span>
+                    </div>
+                    <p className="text-slate-600">
+                      Điểm trung bình mới của chỗ nghỉ:{" "}
+                      <strong className="text-slate-900">
+                        {reviewSuccess.rating} / 5 ({reviewSuccess.reviewCount} đánh giá)
+                      </strong>
+                      .
+                    </p>
+                    <Link
+                      href={`/stays/${booking.property.id}`}
+                      className="inline-flex items-center gap-1 font-bold text-emerald-700 hover:underline pt-1"
+                    >
+                      Xem đánh giá của bạn trên trang chỗ nghỉ
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmitReview} className="space-y-3.5">
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                        Mức độ hài lòng của bạn
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setReviewRating(star)}
+                            aria-label={`Đánh giá ${star} sao`}
+                            className="p-1.5 rounded-xl bg-white border border-slate-200 hover:border-amber-400 transition-colors"
+                          >
+                            <Star
+                              className={`w-5 h-5 ${
+                                star <= reviewRating
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-slate-300"
+                              }`}
+                            />
+                          </button>
+                        ))}
+                        <span className="ml-2 text-xs font-bold text-amber-700">
+                          {reviewRating} / 5 sao
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-700">
+                        Nhận xét chi tiết (tối thiểu 10 ký tự)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="Không gian, tiện ích, độ sạch sẽ và sự hỗ trợ của chủ nhà như thế nào?"
+                        className="w-full rounded-xl bg-white border border-slate-200 p-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                        required
+                      />
+                    </div>
+
+                    {reviewError && (
+                      <div
+                        role="alert"
+                        className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2"
+                      >
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>{reviewError}</span>
+                      </div>
+                    )}
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      isLoading={isSubmittingReview}
+                      className="w-full sm:w-auto font-bold"
+                    >
+                      Gửi đánh giá xác thực
+                    </Button>
+                  </form>
+                )}
               </div>
             )}
 

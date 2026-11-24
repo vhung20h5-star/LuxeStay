@@ -3,11 +3,13 @@ import { createApiApp } from "./app.js";
 import { loadApiEnv } from "./config/env.js";
 import { createDbClient, type DbClientHandle } from "./db/client.js";
 import { createPostgresAuthRepository } from "./modules/auth/postgresRepository.js";
+import { createPostgresAvailabilityRepository } from "./modules/availability/postgresRepository.js";
 import { createPostgresCatalogRepository } from "./modules/catalog/postgresRepository.js";
 import { createPostgresFavoritesRepository } from "./modules/favorites/postgresRepository.js";
 import { createPostgresNotificationRepository } from "./modules/notifications/postgresRepository.js";
 import { createPostgresPaymentRepository } from "./modules/payments/postgresRepository.js";
 import { createPostgresReservationRepository } from "./modules/reservations/postgresRepository.js";
+import { createPostgresReviewRepository } from "./modules/reviews/postgresRepository.js";
 
 const env = loadApiEnv();
 
@@ -27,14 +29,18 @@ if (env.storageDriver === "database") {
   }
   dbClient = createDbClient(env.databaseUrl);
   const catalogRepository = createPostgresCatalogRepository(dbClient.db);
+  const availabilityRepository = createPostgresAvailabilityRepository(dbClient.db);
   const reservationRepository = createPostgresReservationRepository({
     db: dbClient.db,
     catalogRepository,
   });
+  const reviewRepository = createPostgresReviewRepository(dbClient.db);
   appOptions = {
     ...appOptions,
     catalogRepository,
+    availabilityRepository,
     reservationRepository,
+    reviewRepository,
     authRepository: createPostgresAuthRepository(dbClient.db),
     favoritesRepository: createPostgresFavoritesRepository(dbClient.db),
     paymentRepository: createPostgresPaymentRepository(dbClient.db),

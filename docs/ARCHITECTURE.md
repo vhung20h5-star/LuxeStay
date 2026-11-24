@@ -1,9 +1,9 @@
 # System & Software Architecture — LuxeStay (`travel-service`)
 
-- **Phiên bản kiến trúc:** 2.2 (Phase 2 Completed — Baseline v0.4.0)
+- **Phiên bản kiến trúc:** 2.4 (Phase 3 Completed — Baseline v0.6.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Từ vựng thiết kế & miền:** [GLOSSARY.md](../GLOSSARY.md) & [.agents/skills/codebase-design/SKILL.md](../.agents/skills/codebase-design/SKILL.md)
-- **Tài liệu liên quan:** [PRD.md](./PRD.md) | [PLAN.md](./PLAN.md) | [ADR Index](./adr/README.md) | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md) | [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md)
+- **Tài liệu liên quan:** [PRD.md](./PRD.md) | [PLAN.md](./PLAN.md) | [ADR Index](./adr/README.md) | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md) | [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md) | [ADR-0011](./adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md) | [ADR-0012](./adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md)
 
 ---
 
@@ -13,12 +13,12 @@
 | Thành phần | Công nghệ / Phiên bản | Ghi chú |
 | :--- | :--- | :--- |
 | **Monorepo Toolchain** | `npm workspaces` (`npm 11.9`) + `Turborepo` (`turbo`) | Quản lý 4 workspace (`packages/*`, `apps/*`), cache & dependency graph |
-| **Shared Contracts** | `@luxestay/contracts` + `Zod 3` + TypeScript 5 (`strict: true`) | Nguồn chân lý duy nhất cho Zod schemas (catalog, booking, auth, payment, notifications), `ApiSuccess`/`ApiError`, `API_ENDPOINTS` |
-| **Shared Domain** | `@luxestay/domain` (100% pure ESM TypeScript) | 5 deep modules thuần (`bookingSession`, `vouchers`, `catalogQuery`, `amenities`, `utils`) + `@luxestay/domain/seed` |
-| **Backend API (`apps/api`)** | `Hono 4` + `@hono/node-server` + `tsx` (port `4000`) | Thuần ESM, 7 modules (`health`, `catalog`, `auth`, `favorites`, `reservations`, `payments`, `notifications`), `scrypt` + HttpOnly Cookie + HMAC-SHA256 webhook |
-| **Database Layer (`apps/api/src/db`)** | **PostgreSQL 16** (`docker-compose.yml` `:5434->5432`) + **Drizzle ORM** (`drizzle-orm`, `pg`, `drizzle-kit`) | Cô lập trong `apps/api`; **19 bảng chuẩn hóa**, 2 migrations (`0000`, `0001`), seed idempotent, chuyển đổi qua `STORAGE_DRIVER=memory|database` |
-| **Frontend Web (`apps/web`)** | Next.js `16.4.6` (App Router, `--webpack`), React `19.3.0`, Tailwind CSS `v4`, Framer Motion `12.4.7`, Lucide React `1.16.0` (port `3000`) | Feature-based đối xứng với Backend, `/stays/[id]` SSR+SEO, `/bookings`, `/payments/[transactionId]` Sandbox, `AuthContext` tách riêng, split Contexts, Error Boundaries |
-| **Testing & CI** | Node.js `24` (`.nvmrc`) native `node:test`, ESLint `9` (`eslint.boundaries.mjs` cho toàn repo), GitHub Actions CI | **75/75 tests** trên 4 tầng, **0 errors / 0 warnings** |
+| **Shared Contracts** | `@luxestay/contracts` + `Zod 3` + TypeScript 5 (`strict: true`) | Nguồn chân lý duy nhất cho Zod schemas (catalog, booking, auth+RBAC, payment, notifications, availability, verified reviews, host CRUD/analytics), `ApiSuccess`/`ApiError`, `API_ENDPOINTS` |
+| **Shared Domain** | `@luxestay/domain` (100% pure ESM TypeScript) | 9 deep modules thuần (`bookingSession`, `availability`, `reviews`, `host`, `locale`, `vouchers`, `catalogQuery`, `amenities`, `utils`) + `@luxestay/domain/seed` |
+| **Backend API (`apps/api`)** | `Hono 4` + `@hono/node-server` + `tsx` (port `4000`) | Thuần ESM, 10 modules (`health`, `catalog`, `availability`, `reviews`, `host`, `auth`, `favorites`, `reservations`, `payments`, `notifications`), RBAC (`guest|host|admin`), khóa chống đặt trùng (`SELECT ... FOR UPDATE` / mutex), `scrypt` + HttpOnly Cookie + HMAC-SHA256 webhook |
+| **Database Layer (`apps/api/src/db`)** | **PostgreSQL 16** (`docker-compose.yml` `:5434->5432`) + **Drizzle ORM** (`drizzle-orm`, `pg`, `drizzle-kit`) | Cô lập trong `apps/api`; **20 bảng chuẩn hóa**, 4 migrations (`0000`–`0003`), seed idempotent (kèm Host/Admin demo), chuyển đổi qua `STORAGE_DRIVER=memory|database` |
+| **Frontend Web (`apps/web`)** | Next.js `16.4.6` (App Router, `--webpack`), React `19.3.0`, Tailwind CSS `v4`, Framer Motion `12.4.7`, Lucide React `1.16.0` (port `3000`) | Feature-based đối xứng với Backend, `/stays/[id]` SSR+SEO + `AvailabilityCalendar`, `/bookings` + Verified Review, `/host` RBAC Portal, `/payments/[transactionId]` Sandbox, `LocaleContext` + `AuthContext` + split Booking Contexts, Error Boundaries |
+| **Testing & CI** | Node.js `24` (`.nvmrc`) native `node:test`, **Playwright Chromium E2E** (`e2e/`), ESLint `9` (`eslint.boundaries.mjs` cho toàn repo), GitHub Actions CI | **90/90 unit/integration tests** trên 4 tầng + **3/3 Playwright E2E**, **0 errors / 0 warnings** |
 
 ### 1.2. Nguyên tắc thiết kế cốt lõi
 1. **Shared Contracts First (`@luxestay/contracts`):** Mọi payload qua mạng đều định nghĩa bằng Zod schema, dùng chung để validate đầu vào trên `apps/api` và xác thực phản hồi trên `apps/web`.
@@ -247,7 +247,7 @@ sequenceDiagram
 
 ## 6. Chiến lược Kiểm thử 4 Tầng & Cẩm nang Mở rộng
 
-### 6.1. Bộ kiểm thử tự động (`npm run test` — 75 tests)
+### 6.1. Bộ kiểm thử tự động (`npm run test` — 90 tests & `npm run test:e2e` — 3 Playwright E2E)
 
 | Tầng | Workspace | Tệp test | Số test | Phạm vi |
 | :---: | :--- | :--- | :---: | :--- |

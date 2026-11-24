@@ -23,6 +23,7 @@ import {
 } from "@luxestay/domain";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useBookingSession, useCatalog } from "@/features/booking/BookingContext";
+import { SeasonalPricingSummary } from "@/features/property/SeasonalPricingSummary";
 import { useOverlayLayer } from "@/shared/overlay/OverlayContext";
 import { HttpApiError, isAbortError } from "@/shared/ports/errors";
 import { Button } from "@/shared/ui/Button";
@@ -550,10 +551,11 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
 
             {/* Total breakdown */}
             <div className="p-4 rounded-2xl bg-slate-50 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600">
-                <span>Giá phòng ({nights} đêm)</span>
-                <span>{formatVND(pricing.nightsTotal)}</span>
-              </div>
+              <SeasonalPricingSummary
+                pricing={pricing}
+                nights={nights}
+                rooms={guests.rooms}
+              />
               <div className="flex justify-between text-slate-600">
                 <span>Phí dịch vụ &amp; dọn dẹp</span>
                 <span>{formatVND(pricing.cleaningFee)}</span>

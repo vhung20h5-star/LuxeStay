@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { buildDemoStaffUsers } from "../modules/auth/demoAccounts.js";
 import { createDbClient, type LuxeStayDb } from "./client.js";
 import {
   amenityCatalogTable,
@@ -13,6 +14,7 @@ import {
   propertyAmenitiesTable,
   reviewsTable,
   testimonialsTable,
+  usersTable,
 } from "./schema/index.js";
 
 export async function seedDatabase(db: LuxeStayDb): Promise<void> {
@@ -149,10 +151,34 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
       )
       .onConflictDoNothing();
 
-    await tx
-      .insert(propertiesTable)
-      .values(
-        snapshot.properties.map((prop, idx) => ({
+    // Seed built-in Host & Admin accounts before properties so owner_user_id FK resolves cleanly
+    for (const staff of buildDemoStaffUsers()) {
+      await tx
+        .insert(usersTable)
+        .values({
+          id: staff.id,
+          email: staff.email,
+          phone: staff.phone ?? null,
+          fullName: staff.fullName,
+          avatar: staff.avatar ?? null,
+          provider: staff.provider,
+          role: staff.role,
+          passwordHash: staff.passwordHash ?? null,
+          createdAt: new Date(staff.createdAt),
+        })
+        .onConflictDoUpdate({
+          target: usersTable.id,
+          set: {
+            role: staff.role,
+            fullName: staff.fullName,
+          },
+        });
+    }
+
+    for (const [idx, prop] of snapshot.properties.entries()) {
+      await tx
+        .insert(propertiesTable)
+        .values({
           id: prop.id,
           title: prop.title,
           subtitle: prop.subtitle,
@@ -171,6 +197,8 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
           bedrooms: prop.bedrooms,
           beds: prop.beds,
           bathrooms: prop.bathrooms,
+          inventoryCount: prop.inventoryCount,
+          ownerUserId: prop.ownerUserId ?? null,
           isSuperhost: Boolean(prop.isSuperhost),
           isFeatured: Boolean(prop.isFeatured),
           isFlashDeal: Boolean(prop.isFlashDeal),
@@ -183,9 +211,15 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
           hostResponseRate: prop.host.responseRate,
           hostIsSuperhost: prop.host.isSuperhost,
           sortOrder: idx,
-        }))
-      )
-      .onConflictDoNothing();
+        })
+        .onConflictDoUpdate({
+          target: propertiesTable.id,
+          set: {
+            inventoryCount: prop.inventoryCount,
+            ownerUserId: prop.ownerUserId ?? null,
+          },
+        });
+    }
 
     const amenityOverrideRows = snapshot.properties.flatMap((prop) =>
       prop.resortAmenities.map((override, idx) => ({

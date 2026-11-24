@@ -35,6 +35,10 @@ const STATUS_BADGE: Record<ReservationStatus, { label: string; className: string
     label: "Đã xác nhận",
     className: "bg-emerald-100 text-emerald-800 border-emerald-200",
   },
+  completed: {
+    label: "Hoàn tất lưu trú",
+    className: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  },
   payment_failed: {
     label: "Thanh toán thất bại",
     className: "bg-rose-100 text-rose-800 border-rose-200",

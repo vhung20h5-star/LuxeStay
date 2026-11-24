@@ -2,4 +2,8 @@ export * from "./utils.js";
 export * from "./amenities.js";
 export * from "./catalogQuery.js";
 export * from "./vouchers.js";
+export * from "./availability.js";
+export * from "./reviews.js";
+export * from "./host.js";
+export * from "./locale.js";
 export * from "./bookingSession.js";

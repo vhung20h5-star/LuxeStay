@@ -172,12 +172,22 @@ export type BookingSessionStep = z.infer<typeof BookingSessionStepSchema>;
 export const ReservationStatusSchema = z.enum([
   "pending_payment",
   "confirmed",
+  "completed",
   "payment_failed",
   "expired",
   "cancelled",
 ]);
 
 export type ReservationStatus = z.infer<typeof ReservationStatusSchema>;
+
+export const NightlyPriceReasonSchema = z.enum([
+  "base",
+  "weekend",
+  "holiday",
+  "override",
+]);
+
+export type NightlyPriceReason = z.infer<typeof NightlyPriceReasonSchema>;
 
 export const PaymentProviderSchema = z.enum(["momo", "vnpay", "card"]);
 
@@ -195,6 +205,18 @@ export type PaymentTransactionStatus = z.infer<typeof PaymentTransactionStatusSc
 export const AuthProviderSchema = z.enum(["password", "otp", "google"]);
 
 export type AuthProvider = z.infer<typeof AuthProviderSchema>;
+
+export const UserRoleSchema = z.enum(["guest", "host", "admin"]);
+
+export type UserRole = z.infer<typeof UserRoleSchema>;
+
+export const LocaleCodeSchema = z.enum(["vi", "en"]);
+
+export type LocaleCode = z.infer<typeof LocaleCodeSchema>;
+
+export const CurrencyCodeSchema = z.enum(["VND", "USD"]);
+
+export type CurrencyCode = z.infer<typeof CurrencyCodeSchema>;
 
 export const HealthDataSchema = z.object({
   status: z.literal("ok"),

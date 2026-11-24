@@ -1,16 +1,21 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
   BookingDetails,
+  NightlyPriceBreakdown,
   PaymentTransaction,
   Property,
   SelectedBookingAmenity,
 } from "@luxestay/contracts";
+import type { ReservationOccupancyLike } from "@luxestay/domain";
 import type { LuxeStayDb } from "../../db/client.js";
 import {
   paymentTransactionsTable,
+  propertiesTable,
+  propertyAvailabilityTable,
   reservationAmenitiesTable,
   reservationsTable,
 } from "../../db/schema/index.js";
+import { mapAvailabilityRowToDomain } from "../availability/postgresRepository.js";
 import type { ApiCatalogRepository } from "../catalog/repository.js";
 import type { ApiReservationRepository } from "./repository.js";
 
@@ -67,6 +72,14 @@ export function mapReservationRowsToBookingDetails(
     pricing: Object.freeze({
       basePrice: row.basePrice,
       nightsTotal: row.nightsTotal,
+      seasonalSurcharge: row.seasonalSurcharge,
+      ...(row.nightlyBreakdown
+        ? {
+            nightlyBreakdown: Object.freeze(
+              row.nightlyBreakdown.map((item) => Object.freeze({ ...item }))
+            ),
+          }
+        : {}),
       cleaningFee: row.cleaningFee,
       serviceFee: row.serviceFee,
       amenitiesFee: row.amenitiesFee,
@@ -88,9 +101,71 @@ export function mapReservationRowsToBookingDetails(
     status: row.status,
     ...(row.paymentExpiresAt ? { paymentExpiresAt: row.paymentExpiresAt.toISOString() } : {}),
     ...(paymentRow ? { payment: mapPaymentRowToDomain(paymentRow) } : {}),
+    ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : undefined,
     cancellationReason: row.cancellationReason ?? undefined,
   });
+}
+
+function mapActiveRowToOccupancy(row: {
+  propertyId: string;
+  checkIn: string;
+  nights: number;
+  adults: number;
+  children: number;
+  rooms: number;
+  status: ReservationRow["status"];
+  paymentExpiresAt: Date | null;
+}): ReservationOccupancyLike {
+  return {
+    property: { id: row.propertyId } as Property,
+    checkIn: row.checkIn,
+    nights: row.nights,
+    guests: {
+      adults: row.adults,
+      children: row.children,
+      rooms: row.rooms,
+    },
+    status: row.status,
+    ...(row.paymentExpiresAt ? { paymentExpiresAt: row.paymentExpiresAt.toISOString() } : {}),
+  };
+}
+
+function buildReservationInsertValues(bookingId: string, booking: BookingDetails) {
+  return {
+    bookingId,
+    propertyId: booking.property.id,
+    userId: booking.userId ?? null,
+    status: booking.status ?? "confirmed",
+    checkIn: booking.checkIn,
+    checkOut: booking.checkOut,
+    nights: booking.nights,
+    adults: booking.guests.adults,
+    children: booking.guests.children,
+    rooms: booking.guests.rooms,
+    basePrice: booking.pricing.basePrice,
+    nightsTotal: booking.pricing.nightsTotal,
+    seasonalSurcharge: booking.pricing.seasonalSurcharge ?? 0,
+    nightlyBreakdown: booking.pricing.nightlyBreakdown
+      ? (booking.pricing.nightlyBreakdown.map((item) => ({ ...item })) as NightlyPriceBreakdown[])
+      : null,
+    cleaningFee: booking.pricing.cleaningFee,
+    serviceFee: booking.pricing.serviceFee,
+    amenitiesFee: booking.pricing.amenitiesFee,
+    discount: booking.pricing.discount,
+    appliedPromoCode: booking.pricing.appliedPromoCode ?? null,
+    total: booking.pricing.total,
+    guestFullName: booking.guestInfo.fullName,
+    guestEmail: booking.guestInfo.email,
+    guestPhone: booking.guestInfo.phone,
+    guestNote: booking.guestInfo.note ?? null,
+    paymentMethod: booking.paymentMethod,
+    paymentExpiresAt: booking.paymentExpiresAt ? new Date(booking.paymentExpiresAt) : null,
+    createdAt: booking.createdAt ? new Date(booking.createdAt) : new Date(),
+    completedAt: booking.completedAt ? new Date(booking.completedAt) : null,
+    cancelledAt: booking.cancelledAt ? new Date(booking.cancelledAt) : null,
+    cancellationReason: booking.cancellationReason ?? null,
+  };
 }
 
 export function createPostgresReservationRepository(deps: {
@@ -154,35 +229,7 @@ export function createPostgresReservationRepository(deps: {
       }
 
       await db.transaction(async (tx) => {
-        await tx.insert(reservationsTable).values({
-          bookingId,
-          propertyId: booking.property.id,
-          userId: booking.userId ?? null,
-          status: booking.status ?? "confirmed",
-          checkIn: booking.checkIn,
-          checkOut: booking.checkOut,
-          nights: booking.nights,
-          adults: booking.guests.adults,
-          children: booking.guests.children,
-          rooms: booking.guests.rooms,
-          basePrice: booking.pricing.basePrice,
-          nightsTotal: booking.pricing.nightsTotal,
-          cleaningFee: booking.pricing.cleaningFee,
-          serviceFee: booking.pricing.serviceFee,
-          amenitiesFee: booking.pricing.amenitiesFee,
-          discount: booking.pricing.discount,
-          appliedPromoCode: booking.pricing.appliedPromoCode ?? null,
-          total: booking.pricing.total,
-          guestFullName: booking.guestInfo.fullName,
-          guestEmail: booking.guestInfo.email,
-          guestPhone: booking.guestInfo.phone,
-          guestNote: booking.guestInfo.note ?? null,
-          paymentMethod: booking.paymentMethod,
-          paymentExpiresAt: booking.paymentExpiresAt ? new Date(booking.paymentExpiresAt) : null,
-          createdAt: booking.createdAt ? new Date(booking.createdAt) : new Date(),
-          cancelledAt: booking.cancelledAt ? new Date(booking.cancelledAt) : null,
-          cancellationReason: booking.cancellationReason ?? null,
-        });
+        await tx.insert(reservationsTable).values(buildReservationInsertValues(bookingId, booking));
 
         if (booking.selectedAmenities.length > 0) {
           await tx.insert(reservationAmenitiesTable).values(
@@ -201,6 +248,106 @@ export function createPostgresReservationRepository(deps: {
       });
 
       return booking;
+    },
+
+    async findActiveByPropertyId(propertyId: string): Promise<readonly ReservationOccupancyLike[]> {
+      const normalized = propertyId.trim();
+      if (!normalized) return Object.freeze([]);
+
+      const rows = await db
+        .select({
+          propertyId: reservationsTable.propertyId,
+          checkIn: reservationsTable.checkIn,
+          nights: reservationsTable.nights,
+          adults: reservationsTable.adults,
+          children: reservationsTable.children,
+          rooms: reservationsTable.rooms,
+          status: reservationsTable.status,
+          paymentExpiresAt: reservationsTable.paymentExpiresAt,
+        })
+        .from(reservationsTable)
+        .where(
+          and(
+            eq(reservationsTable.propertyId, normalized),
+            inArray(reservationsTable.status, ["confirmed", "pending_payment"])
+          )
+        );
+
+      return Object.freeze(rows.map(mapActiveRowToOccupancy));
+    },
+
+    async createWithPropertyLock(propertyId, prepare) {
+      const normalized = propertyId.trim();
+      return db.transaction(async (tx) => {
+        // Acquire row-level exclusive lock on property row to prevent concurrent double-booking
+        await tx
+          .select({ id: propertiesTable.id })
+          .from(propertiesTable)
+          .where(eq(propertiesTable.id, normalized))
+          .for("update");
+
+        const [overrideRows, activeRows] = await Promise.all([
+          tx
+            .select()
+            .from(propertyAvailabilityTable)
+            .where(eq(propertyAvailabilityTable.propertyId, normalized))
+            .orderBy(asc(propertyAvailabilityTable.date)),
+          tx
+            .select({
+              propertyId: reservationsTable.propertyId,
+              checkIn: reservationsTable.checkIn,
+              nights: reservationsTable.nights,
+              adults: reservationsTable.adults,
+              children: reservationsTable.children,
+              rooms: reservationsTable.rooms,
+              status: reservationsTable.status,
+              paymentExpiresAt: reservationsTable.paymentExpiresAt,
+            })
+            .from(reservationsTable)
+            .where(
+              and(
+                eq(reservationsTable.propertyId, normalized),
+                inArray(reservationsTable.status, ["confirmed", "pending_payment"])
+              )
+            ),
+        ]);
+
+        const prepared = prepare({
+          existingReservations: activeRows.map(mapActiveRowToOccupancy),
+          dailyOverrides: overrideRows.map(mapAvailabilityRowToDomain),
+        });
+
+        if (!prepared.ok) {
+          return prepared;
+        }
+
+        const booking = prepared.booking;
+        const bookingId = booking.bookingId?.trim().toUpperCase();
+        if (!bookingId) {
+          throw new Error("Cannot persist reservation without bookingId.");
+        }
+
+        await tx
+          .insert(reservationsTable)
+          .values(buildReservationInsertValues(bookingId, booking));
+
+        if (booking.selectedAmenities.length > 0) {
+          await tx.insert(reservationAmenitiesTable).values(
+            booking.selectedAmenities.map((item, idx) => ({
+              bookingId,
+              amenityId: item.id,
+              sortOrder: idx,
+              name: item.name,
+              category: item.category,
+              pricingType: item.pricingType,
+              price: item.price,
+              priceUnit: item.priceUnit ?? null,
+            }))
+          );
+        }
+
+        return prepared;
+      });
     },
 
     async findById(bookingId: string): Promise<BookingDetails | null> {
@@ -258,6 +405,7 @@ export function createPostgresReservationRepository(deps: {
         .update(reservationsTable)
         .set({
           status: booking.status ?? "confirmed",
+          completedAt: booking.completedAt ? new Date(booking.completedAt) : null,
           cancelledAt: booking.cancelledAt ? new Date(booking.cancelledAt) : null,
           cancellationReason: booking.cancellationReason ?? null,
         })
