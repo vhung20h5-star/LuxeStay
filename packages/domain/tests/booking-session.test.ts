@@ -6,7 +6,7 @@ import type {
   ReservationSubmitter,
   SearchCriteria,
 } from "@luxestay/contracts";
-import { PROPERTIES } from "../dist/seed/index.js";
+import { PROMOTION_VOUCHERS, PROPERTIES } from "../dist/seed/index.js";
 import {
   createIdleBookingSession,
   openPropertySession,
@@ -17,11 +17,14 @@ import {
   updateSessionAdults,
   toggleSessionAmenity,
   removeSessionAmenity,
+  setSessionPromoCode,
   deriveBookingQuote,
+  evaluatePromotionVoucher,
   validateCheckoutGuestInput,
   processServerReservationIntent,
   matchesReservationContact,
   evaluateReservationCancellation,
+  evaluatePaymentWebhookTransition,
   submitBookingSession,
 } from "../dist/index.js";
 
@@ -138,10 +141,24 @@ test("preserves selections on reopen and checkout handoff for same property, res
   assert.equal(quote.pricing.nightsTotal, stay02.pricePerNight * 4);
   assert.equal(quote.pricing.amenitiesFee, 650000);
   assert.equal(quote.pricing.cleaningFee, 150000);
-  assert.equal(quote.pricing.discount, 100000);
+  assert.equal(quote.pricing.discount, 0);
   assert.equal(
     quote.pricing.total,
-    stay02.pricePerNight * 4 + 150000 + 650000 - 100000
+    stay02.pricePerNight * 4 + 150000 + 650000
+  );
+
+  // Applying a valid voucher dynamically reduces total and records appliedPromoCode
+  const withVoucher = deriveBookingQuote(
+    setSessionPromoCode(session, "luxestay250"),
+    baseDate,
+    { vouchers: PROMOTION_VOUCHERS, now: baseDate }
+  );
+  assert.ok(withVoucher);
+  assert.equal(withVoucher.pricing.appliedPromoCode, "LUXESTAY250");
+  assert.equal(withVoucher.pricing.discount, 250000);
+  assert.equal(
+    withVoucher.pricing.total,
+    stay02.pricePerNight * 4 + 150000 + 650000 - 250000
   );
 
   session = removeSessionAmenity(session, "herbal-spa");
@@ -423,13 +440,16 @@ test("processServerReservationIntent recalculates authoritative server pricing a
   assert.equal(res.ok, true);
   if (res.ok) {
     assert.equal(res.booking.bookingId, "LX-SERVER1");
+    assert.equal(res.booking.status, "pending_payment");
+    assert.ok(res.booking.paymentExpiresAt);
     assert.equal(res.booking.guests.adults, stay02.maxGuests);
     assert.equal(res.booking.selectedAmenities.length, 2);
     assert.equal(res.booking.pricing.nightsTotal, stay02.pricePerNight * 3);
     assert.equal(res.booking.pricing.amenitiesFee, 650000);
+    assert.equal(res.booking.pricing.discount, 0);
     assert.equal(
       res.booking.pricing.total,
-      stay02.pricePerNight * 3 + 150000 + 650000 - 100000
+      stay02.pricePerNight * 3 + 150000 + 650000
     );
   }
 });
@@ -450,10 +470,15 @@ test("matchesReservationContact normalizes VN phones & case-insensitive email, a
         phone: "0912 345 678",
         email: "Guest@LuxeStay.vn",
       },
-      paymentMethod: "momo",
+      paymentMethod: "hotel",
     },
     PROPERTIES,
-    { bookingId: "LX-CAN01", createdAt: "2026-11-24T00:00:00.000Z", fallbackBaseDate: baseDate }
+    {
+      bookingId: "LX-CAN01",
+      createdAt: "2026-11-24T00:00:00.000Z",
+      fallbackBaseDate: baseDate,
+      userId: "user-owner-1",
+    }
   );
   assert.equal(created.ok, true);
   if (!created.ok) return;
@@ -475,7 +500,7 @@ test("matchesReservationContact normalizes VN phones & case-insensitive email, a
     assert.equal(wrongContact.code, "FORBIDDEN");
   }
 
-  // Non-free cancellation property -> 409 CONFLICT
+  // Non-free cancellation property -> 409 CONFLICT for confirmed bookings
   const strictBooking = { ...created.booking, property: nonFreeProp };
   const blockedByPolicy = evaluateReservationCancellation(strictBooking, {
     contact: "guest@luxestay.vn",
@@ -485,6 +510,15 @@ test("matchesReservationContact normalizes VN phones & case-insensitive email, a
     assert.equal(blockedByPolicy.status, 409);
     assert.equal(blockedByPolicy.code, "CONFLICT");
   }
+
+  // Pending payment booking on non-free property CAN be cancelled freely by owner userId without contact
+  const pendingStrict = { ...strictBooking, status: "pending_payment" as const };
+  const cancelPendingByOwner = evaluateReservationCancellation(
+    pendingStrict,
+    { reason: "Đổi phương thức thanh toán" },
+    { authenticatedUserId: "user-owner-1" }
+  );
+  assert.equal(cancelPendingByOwner.ok, true);
 
   // Valid cancellation -> frozen cancelled booking
   const cancelled = evaluateReservationCancellation(
@@ -509,4 +543,143 @@ test("matchesReservationContact normalizes VN phones & case-insensitive email, a
       assert.equal(doubleCancel.code, "CONFLICT");
     }
   }
+});
+
+test("evaluatePromotionVoucher validates fixed/percent/cap/minOrder/expiry/memberOnly and processServerReservationIntent enforces vouchers", () => {
+  // LUXESTAY250: fixed 250k, min 1.5M
+  const lowOrder = evaluatePromotionVoucher("luxestay250", 1200000, PROMOTION_VOUCHERS, {
+    now: baseDate,
+  });
+  assert.equal(lowOrder.ok, false);
+  if (!lowOrder.ok) assert.equal(lowOrder.reason, "MIN_ORDER");
+
+  const validFixed = evaluatePromotionVoucher("  luxestay250  ", 2000000, PROMOTION_VOUCHERS, {
+    now: baseDate,
+  });
+  assert.equal(validFixed.ok, true);
+  if (validFixed.ok) {
+    assert.equal(validFixed.code, "LUXESTAY250");
+    assert.equal(validFixed.discount, 250000);
+  }
+
+  // SUMMERVIBE: 10% capped at 500k
+  const uncappedPercent = evaluatePromotionVoucher("SUMMERVIBE", 2500000, PROMOTION_VOUCHERS, {
+    now: baseDate,
+  });
+  assert.equal(uncappedPercent.ok, true);
+  if (uncappedPercent.ok) assert.equal(uncappedPercent.discount, 250000);
+
+  const cappedPercent = evaluatePromotionVoucher("SUMMERVIBE", 10000000, PROMOTION_VOUCHERS, {
+    now: baseDate,
+  });
+  assert.equal(cappedPercent.ok, true);
+  if (cappedPercent.ok) assert.equal(cappedPercent.discount, 500000);
+
+  // Expired voucher
+  const expired = evaluatePromotionVoucher("SUMMERVIBE", 2000000, PROMOTION_VOUCHERS, {
+    now: new Date("2026-12-05T00:00:00.000Z"),
+  });
+  assert.equal(expired.ok, false);
+  if (!expired.ok) assert.equal(expired.reason, "EXPIRED");
+
+  // Member-only voucher
+  const memberVoucher = {
+    ...PROMOTION_VOUCHERS[0],
+    id: "voucher-member",
+    code: "MEMBERVIP",
+    memberOnly: true,
+    minOrderTotal: 0,
+  };
+  const guestBlocked = evaluatePromotionVoucher("MEMBERVIP", 2000000, [memberVoucher], {
+    now: baseDate,
+    isAuthenticated: false,
+  });
+  assert.equal(guestBlocked.ok, false);
+  if (!guestBlocked.ok) assert.equal(guestBlocked.reason, "MEMBER_ONLY");
+
+  const memberAllowed = evaluatePromotionVoucher("MEMBERVIP", 2000000, [memberVoucher], {
+    now: baseDate,
+    isAuthenticated: true,
+  });
+  assert.equal(memberAllowed.ok, true);
+
+  // Server intent rejects invalid promoCode with 400 and applies valid promoCode authoritatively
+  const badIntent = processServerReservationIntent(
+    {
+      propertyId: "stay-02",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Test", phone: "0912345678", email: "test@luxestay.vn" },
+      paymentMethod: "vnpay",
+      promoCode: "FAKECODE99",
+    },
+    PROPERTIES,
+    { fallbackBaseDate: baseDate, vouchers: PROMOTION_VOUCHERS }
+  );
+  assert.equal(badIntent.ok, false);
+  if (!badIntent.ok) assert.equal(badIntent.status, 400);
+
+  const goodIntent = processServerReservationIntent(
+    {
+      propertyId: "stay-02",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Test", phone: "0912345678", email: "test@luxestay.vn" },
+      paymentMethod: "vnpay",
+      promoCode: "SUMMERVIBE",
+    },
+    PROPERTIES,
+    { fallbackBaseDate: baseDate, vouchers: PROMOTION_VOUCHERS }
+  );
+  assert.equal(goodIntent.ok, true);
+  if (goodIntent.ok) {
+    const subtotal = stay02.pricePerNight * 2 + 150000;
+    const expectedDiscount = Math.min(500000, Math.round(subtotal * 0.1));
+    assert.equal(goodIntent.booking.pricing.appliedPromoCode, "SUMMERVIBE");
+    assert.equal(goodIntent.booking.pricing.discount, expectedDiscount);
+    assert.equal(goodIntent.booking.pricing.total, subtotal - expectedDiscount);
+    assert.equal(goodIntent.booking.status, "pending_payment");
+  }
+});
+
+test("evaluatePaymentWebhookTransition enforces pending_payment state transitions and rejects terminal overrides", () => {
+  const created = processServerReservationIntent(
+    {
+      propertyId: "stay-02",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Pay", phone: "0912345678", email: "pay@luxestay.vn" },
+      paymentMethod: "momo",
+    },
+    PROPERTIES,
+    { bookingId: "LX-PAY01", fallbackBaseDate: baseDate }
+  );
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  assert.equal(created.booking.status, "pending_payment");
+
+  const succeeded = evaluatePaymentWebhookTransition(created.booking, "succeeded");
+  assert.equal(succeeded.ok, true);
+  if (succeeded.ok) {
+    assert.equal(succeeded.changed, true);
+    assert.equal(succeeded.nextStatus, "confirmed");
+    assert.equal(succeeded.booking.status, "confirmed");
+
+    // Replaying same outcome is idempotent no-op
+    const replay = evaluatePaymentWebhookTransition(succeeded.booking, "succeeded");
+    assert.equal(replay.ok, true);
+    if (replay.ok) assert.equal(replay.changed, false);
+
+    // Conflicting transition from confirmed -> failed is blocked (409)
+    const conflict = evaluatePaymentWebhookTransition(succeeded.booking, "failed");
+    assert.equal(conflict.ok, false);
+    if (!conflict.ok) assert.equal(conflict.status, 409);
+  }
+
+  const expired = evaluatePaymentWebhookTransition(created.booking, "expired");
+  assert.equal(expired.ok, true);
+  if (expired.ok) assert.equal(expired.nextStatus, "expired");
 });

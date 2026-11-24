@@ -47,7 +47,9 @@ export function createReservationRoutes(reservationService: ReservationService) 
       );
     }
 
-    const result = await reservationService.createReservation(parsed.data);
+    const result = await reservationService.createReservation(parsed.data, {
+      authUser: c.get("authUser"),
+    });
     if (!result.ok) {
       return c.json(
         buildApiError(result.code, result.message, undefined, buildMeta(c)),
@@ -58,32 +60,87 @@ export function createReservationRoutes(reservationService: ReservationService) 
     return c.json(buildApiSuccess(result.booking, buildMeta(c)), 201);
   });
 
-  routes.get("/api/v1/reservations/:bookingId", async (c) => {
-    const parsed = ReservationLookupInputSchema.safeParse({
-      bookingId: c.req.param("bookingId"),
-      contact: c.req.query("contact") ?? "",
-    });
+  // MUST be registered BEFORE /api/v1/reservations/:bookingId
+  routes.get(API_ENDPOINTS.myReservations, async (c) => {
+    const authUser = c.get("authUser");
+    if (!authUser) {
+      return c.json(
+        buildApiError(
+          "UNAUTHORIZED",
+          "Vui lòng đăng nhập để xem lịch sử đơn đặt phòng của bạn.",
+          undefined,
+          buildMeta(c)
+        ),
+        401
+      );
+    }
 
-    if (!parsed.success) {
-      const firstIssue = parsed.error.issues[0];
+    const bookings = await reservationService.listMyReservations(authUser.id);
+    return c.json(buildApiSuccess({ bookings }, buildMeta(c)), 200);
+  });
+
+  routes.get("/api/v1/reservations/:bookingId/notifications", async (c) => {
+    const bookingId = c.req.param("bookingId");
+    const contact = c.req.query("contact")?.trim() || undefined;
+    const authUser = c.get("authUser");
+
+    if (!authUser && !contact) {
       return c.json(
         buildApiError(
           "VALIDATION_ERROR",
-          firstIssue?.message ?? "Thiếu mã đặt phòng hoặc thông tin liên hệ.",
-          parsed.error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
+          "Vui lòng đăng nhập hoặc cung cấp email/số điện thoại để xem thông báo đơn.",
+          undefined,
           buildMeta(c)
         ),
         400
       );
     }
 
-    const result = await reservationService.lookupReservation(
-      parsed.data.bookingId,
-      parsed.data.contact
-    );
+    const result = await reservationService.listReservationNotifications(bookingId, {
+      contact,
+      authUser,
+    });
+    if (!result.ok) {
+      return c.json(
+        buildApiError(result.code, result.message, undefined, buildMeta(c)),
+        result.status
+      );
+    }
+
+    return c.json(buildApiSuccess({ notifications: result.notifications }, buildMeta(c)), 200);
+  });
+
+  routes.get("/api/v1/reservations/:bookingId", async (c) => {
+    const bookingIdParam = c.req.param("bookingId");
+    const contactQuery = c.req.query("contact") ?? "";
+    const authUser = c.get("authUser");
+
+    if (!authUser) {
+      const parsed = ReservationLookupInputSchema.safeParse({
+        bookingId: bookingIdParam,
+        contact: contactQuery,
+      });
+      if (!parsed.success) {
+        const firstIssue = parsed.error.issues[0];
+        return c.json(
+          buildApiError(
+            "VALIDATION_ERROR",
+            firstIssue?.message ?? "Thiếu mã đặt phòng hoặc thông tin liên hệ.",
+            parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+            buildMeta(c)
+          ),
+          400
+        );
+      }
+    }
+
+    const result = await reservationService.lookupReservation(bookingIdParam, {
+      contact: contactQuery.trim() || undefined,
+      authUser,
+    });
     if (!result.ok) {
       return c.json(
         buildApiError(result.code, result.message, undefined, buildMeta(c)),
@@ -96,6 +153,7 @@ export function createReservationRoutes(reservationService: ReservationService) 
 
   routes.patch("/api/v1/reservations/:bookingId/cancel", async (c) => {
     const bookingId = c.req.param("bookingId");
+    const authUser = c.get("authUser");
     let rawBody: unknown;
     try {
       rawBody = await c.req.json();
@@ -112,23 +170,16 @@ export function createReservationRoutes(reservationService: ReservationService) 
     }
 
     const parsed = CancelReservationInputSchema.safeParse(rawBody);
-    if (!parsed.success) {
-      const firstIssue = parsed.error.issues[0];
-      return c.json(
-        buildApiError(
-          "VALIDATION_ERROR",
-          firstIssue?.message ?? "Thiếu thông tin xác nhận hủy đặt phòng.",
-          parsed.error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
-          buildMeta(c)
-        ),
-        400
-      );
+    if (!parsed.success || (!authUser && !parsed.data.contact)) {
+      const message = !parsed.success
+        ? (parsed.error.issues[0]?.message ?? "Thiếu thông tin xác nhận hủy đặt phòng.")
+        : "Vui lòng nhập email hoặc số điện thoại để xác nhận chủ đơn.";
+      return c.json(buildApiError("VALIDATION_ERROR", message, undefined, buildMeta(c)), 400);
     }
 
-    const result = await reservationService.cancelReservation(bookingId, parsed.data);
+    const result = await reservationService.cancelReservation(bookingId, parsed.data, {
+      authUser,
+    });
     if (!result.ok) {
       return c.json(
         buildApiError(result.code, result.message, undefined, buildMeta(c)),

@@ -1,8 +1,20 @@
 import type {
+  AuthUser,
   BookingDetails,
   CatalogSnapshot,
+  LoginInput,
+  NotificationLog,
+  OtpRequestInput,
+  OtpRequestResult,
+  OtpVerifyInput,
+  PaymentGatewaySession,
+  PaymentSimulateInput,
+  PaymentWebhookResult,
   Property,
+  RegisterInput,
   ReservationSubmitter,
+  ValidateVoucherInput,
+  VoucherValidationResult,
 } from "@luxestay/contracts";
 
 export interface StorageLike {
@@ -35,14 +47,51 @@ export interface CatalogRepository {
 export interface ReservationManagerPort {
   lookup(
     bookingId: string,
-    contact: string,
+    contact?: string,
     options?: { signal?: AbortSignal }
   ): Promise<BookingDetails>;
   cancel(
     bookingId: string,
-    input: { contact: string; reason?: string },
+    input: { contact?: string; reason?: string },
     options?: { signal?: AbortSignal }
   ): Promise<BookingDetails>;
+  listMine(options?: { signal?: AbortSignal }): Promise<readonly BookingDetails[]>;
+  listNotifications(
+    bookingId: string,
+    contact?: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<readonly NotificationLog[]>;
+}
+
+export interface AuthPort {
+  me(options?: { signal?: AbortSignal }): Promise<AuthUser | null>;
+  register(input: RegisterInput): Promise<AuthUser>;
+  login(input: LoginInput): Promise<AuthUser>;
+  requestOtp(input: OtpRequestInput): Promise<OtpRequestResult>;
+  verifyOtp(input: OtpVerifyInput): Promise<AuthUser>;
+  logout(): Promise<void>;
+  getRemoteFavorites(): Promise<readonly string[]>;
+  syncFavorites(
+    propertyIds: readonly string[],
+    mode?: "merge" | "replace"
+  ): Promise<readonly string[]>;
+  toggleRemoteFavorite(propertyId: string): Promise<readonly string[]>;
+}
+
+export interface PaymentGatewayPort {
+  getGatewaySession(
+    transactionId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<PaymentGatewaySession>;
+  simulateOutcome(
+    transactionId: string,
+    input: PaymentSimulateInput,
+    options?: { signal?: AbortSignal }
+  ): Promise<PaymentWebhookResult>;
+  validateVoucher(
+    input: ValidateVoucherInput,
+    options?: { signal?: AbortSignal }
+  ): Promise<VoucherValidationResult>;
 }
 
 export interface InMemoryReservationAdapter extends ReservationSubmitter {
@@ -53,4 +102,5 @@ export interface AppPorts {
   favorites: FavoritesRepository;
   reservations: ReservationSubmitter;
   reservationManager: ReservationManagerPort;
+  paymentGateway: PaymentGatewayPort;
 }

@@ -9,11 +9,16 @@ import {
 } from "@luxestay/domain";
 import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { getPublicWebEnv, getServerWebEnv } from "@/shared/config/env";
+import { createHttpAuthPort, createMockAuthPort } from "@/shared/ports/authPort";
 import {
   createCatalogRepositoryForMode,
   createHttpCatalogRepository,
 } from "@/shared/ports/catalogPort";
 import { HttpApiError } from "@/shared/ports/errors";
+import {
+  createHttpPaymentGatewayPort,
+  createMockPaymentGatewayPort,
+} from "@/shared/ports/paymentPort";
 import {
   DEFAULT_FAVORITE_IDS,
   FAVORITES_STORAGE_KEY,
@@ -712,4 +717,158 @@ test("ReservationManagerPort supports browser localStorage persistence, in-memor
       err.code === "CONFLICT" &&
       err.requestId === "req-cancel-409"
   );
+});
+
+test("AuthPort supports HttpOnly cookie credentials, register/login/OTP, and remote favorites sync", async () => {
+  // 1. Mock AuthPort works offline for mock mode
+  const mockAuth = createMockAuthPort();
+  assert.equal(await mockAuth.me(), null);
+  const otpReq = await mockAuth.requestOtp({ identifier: "0912345678" });
+  assert.equal(otpReq.devCode, "123456");
+  await assert.rejects(
+    mockAuth.verifyOtp({ identifier: "0912345678", code: "000000" }),
+    (err: unknown) => err instanceof HttpApiError && err.status === 401
+  );
+  const otpUser = await mockAuth.verifyOtp({
+    identifier: "0912345678",
+    code: "123456",
+    fullName: "Khách Mock",
+  });
+  assert.equal(otpUser.fullName, "Khách Mock");
+  assert.deepEqual(await mockAuth.syncFavorites(["stay-01", "stay-02"], "merge"), [
+    "stay-01",
+    "stay-02",
+  ]);
+  assert.deepEqual(await mockAuth.toggleRemoteFavorite("stay-01"), ["stay-02"]);
+  await mockAuth.logout();
+  assert.equal(await mockAuth.me(), null);
+
+  // 2. HTTP AuthPort sends credentials: include and validates contracts
+  const sampleUser = {
+    id: "USR-HTTP01",
+    email: "member@luxestay.vn",
+    fullName: "Nguyễn Thành Viên",
+    provider: "password" as const,
+    createdAt: "2026-11-24T10:00:00.000Z",
+  };
+  const httpAuth = createHttpAuthPort({
+    baseUrl: "http://localhost:4000/",
+    fetchImpl: async (input, init) => {
+      assert.equal(init?.credentials, "include");
+      const url = String(input);
+      if (url === "http://localhost:4000/api/v1/auth/me") {
+        return new Response(JSON.stringify(buildApiSuccess({ user: sampleUser })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "http://localhost:4000/api/v1/auth/login") {
+        const body = JSON.parse(String(init?.body));
+        if (body.password !== "secret123") {
+          return new Response(
+            JSON.stringify(buildApiError("UNAUTHORIZED", "Sai mật khẩu")),
+            { status: 401, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(JSON.stringify(buildApiSuccess({ user: sampleUser })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "http://localhost:4000/api/v1/favorites?mode=merge") {
+        return new Response(
+          JSON.stringify(buildApiSuccess({ propertyIds: ["stay-01", "stay-05"] })),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected auth request: ${url}`);
+    },
+  });
+
+  assert.equal((await httpAuth.me())?.id, "USR-HTTP01");
+  await assert.rejects(
+    httpAuth.login({ email: "member@luxestay.vn", password: "wrong" }),
+    (err: unknown) => err instanceof HttpApiError && err.status === 401 && err.code === "UNAUTHORIZED"
+  );
+  assert.equal((await httpAuth.login({ email: "member@luxestay.vn", password: "secret123" })).email, "member@luxestay.vn");
+  assert.deepEqual(await httpAuth.syncFavorites(["stay-01"], "merge"), ["stay-01", "stay-05"]);
+});
+
+test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulates sandbox outcomes", async () => {
+  // Mock voucher validation uses domain engine directly
+  const mockPayment = createMockPaymentGatewayPort({
+    vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+  });
+  const okVoucher = await mockPayment.validateVoucher({ code: "luxestay250", subtotal: 2000000 });
+  assert.equal(okVoucher.valid, true);
+  assert.equal(okVoucher.discount, 250000);
+
+  const badVoucher = await mockPayment.validateVoucher({ code: "LUXESTAY250", subtotal: 900000 });
+  assert.equal(badVoucher.valid, false);
+  assert.equal(badVoucher.discount, 0);
+
+  // HTTP PaymentGatewayPort validates PaymentGatewaySession & PaymentWebhookResult contracts
+  const sampleTx = {
+    transactionId: "TXN-DEMO01",
+    bookingId: "LX-PAY123",
+    provider: "vnpay" as const,
+    amount: 2450000,
+    currency: "VND" as const,
+    status: "pending" as const,
+    checkoutUrl: "/payments/TXN-DEMO01",
+    expiresAt: "2026-11-24T11:00:00.000Z",
+    createdAt: "2026-11-24T10:45:00.000Z",
+    updatedAt: "2026-11-24T10:45:00.000Z",
+  };
+  const httpPayment = createHttpPaymentGatewayPort({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (input, init) => {
+      assert.equal(init?.credentials, "include");
+      const url = String(input);
+      if (url === "http://localhost:4000/api/v1/payments/TXN-DEMO01") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess({
+              transaction: sampleTx,
+              bookingSummary: {
+                bookingId: "LX-PAY123",
+                propertyTitle: stay02.title,
+                propertyCity: stay02.location.city,
+                checkIn: "20/12/2026",
+                checkOut: "22/12/2026",
+                nights: 2,
+                guestFullName: "Test Guest",
+                guestEmail: "guest@luxestay.vn",
+                status: "pending_payment",
+              },
+              sandboxEnabled: true,
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url === "http://localhost:4000/api/v1/payments/TXN-DEMO01/simulate") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess({
+              received: true,
+              deduplicated: false,
+              transaction: { ...sampleTx, status: "succeeded", paidAt: "2026-11-24T10:46:00.000Z" },
+              bookingStatus: "confirmed",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected payment request: ${url}`);
+    },
+  });
+
+  const gw = await httpPayment.getGatewaySession("txn-demo01");
+  assert.equal(gw.transaction.transactionId, "TXN-DEMO01");
+  assert.equal(gw.sandboxEnabled, true);
+
+  const sim = await httpPayment.simulateOutcome("TXN-DEMO01", { outcome: "succeeded" });
+  assert.equal(sim.bookingStatus, "confirmed");
+  assert.equal(sim.deduplicated, false);
 });

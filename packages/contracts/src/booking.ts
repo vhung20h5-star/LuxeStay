@@ -11,6 +11,7 @@ import {
   type Property,
   type ResolvedPropertyAmenity,
 } from "./catalog.js";
+import { PaymentTransactionSchema } from "./payment.js";
 
 export const VN_PHONE_REGEX = /^(?:\+?84|0)\d{8,10}$/;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,6 +42,7 @@ export const BookingPricingSchema = z.object({
   serviceFee: z.number().nonnegative(),
   amenitiesFee: z.number().nonnegative(),
   discount: z.number().nonnegative(),
+  appliedPromoCode: z.string().min(1).optional(),
   total: z.number().nonnegative(),
 });
 
@@ -74,6 +76,11 @@ export type GuestInfo = z.infer<typeof GuestInfoSchema>;
 
 export const CheckoutGuestInputSchema = GuestInfoSchema.extend({
   paymentMethod: PaymentMethodSchema,
+  promoCode: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val.toUpperCase() : undefined)),
 });
 
 export interface CheckoutGuestInput {
@@ -82,6 +89,7 @@ export interface CheckoutGuestInput {
   email: string;
   note?: string;
   paymentMethod: PaymentMethod;
+  promoCode?: string;
 }
 
 export const ServerReservationIntentSchema = z.object({
@@ -96,6 +104,12 @@ export const ServerReservationIntentSchema = z.object({
   selectedAmenityIds: z.array(z.string()).default([]),
   guestInfo: GuestInfoSchema,
   paymentMethod: PaymentMethodSchema,
+  promoCode: z
+    .string()
+    .trim()
+    .max(64)
+    .optional()
+    .transform((val) => (val && val.length > 0 ? val.toUpperCase() : undefined)),
 });
 
 export type ServerReservationIntent = z.infer<typeof ServerReservationIntentSchema>;
@@ -118,7 +132,8 @@ export const CancelReservationInputSchema = z.object({
   contact: z
     .string()
     .trim()
-    .min(1, "Vui lòng nhập email hoặc số điện thoại để xác nhận chủ đơn."),
+    .min(1, "Vui lòng nhập email hoặc số điện thoại để xác nhận chủ đơn.")
+    .optional(),
   reason: z
     .string()
     .max(500, "Lý do hủy không được vượt quá 500 ký tự.")
@@ -144,8 +159,11 @@ export const BookingDetailsSchema = z.object({
   }),
   paymentMethod: PaymentMethodSchema,
   bookingId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
   createdAt: z.string().min(1).optional(),
   status: ReservationStatusSchema.default("confirmed"),
+  paymentExpiresAt: z.string().min(1).optional(),
+  payment: PaymentTransactionSchema.optional(),
   cancelledAt: z.string().min(1).optional(),
   cancellationReason: z.string().min(1).optional(),
 });
@@ -160,6 +178,7 @@ export interface BookingSessionState {
   nights: number;
   guests: Guests;
   selectedAmenityIds: string[];
+  promoCode?: string;
   confirmedBooking: BookingDetails | null;
 }
 
@@ -184,6 +203,7 @@ export interface ReservationSubmissionRequest {
     note?: string;
   };
   paymentMethod: PaymentMethod;
+  promoCode?: string;
 }
 
 export interface ReservationSubmitter {

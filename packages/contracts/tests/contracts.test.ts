@@ -9,6 +9,11 @@ import {
   createApiSuccessSchema,
   GuestInfoSchema,
   HealthDataSchema,
+  LoginInputSchema,
+  OtpRequestInputSchema,
+  OtpVerifyInputSchema,
+  PaymentWebhookPayloadSchema,
+  RegisterInputSchema,
   ReservationLookupInputSchema,
   ServerReservationIntentSchema,
 } from "../dist/index.js";
@@ -112,4 +117,55 @@ test("ReservationLookupInputSchema and CancelReservationInputSchema normalize in
   if (cancel.success) {
     assert.equal(cancel.data.reason, "Đổi lịch công tác");
   }
+});
+
+test("Phase 2 auth, voucher, and payment webhook contracts validate payloads and endpoints", () => {
+  const reg = RegisterInputSchema.safeParse({
+    fullName: "  Lê Minh Anh  ",
+    email: "  ANH@LUXESTAY.VN ",
+    phone: "0912345678",
+    password: "secret123",
+  });
+  assert.equal(reg.success, true);
+  if (reg.success) {
+    assert.equal(reg.data.email, "anh@luxestay.vn");
+    assert.equal(reg.data.fullName, "Lê Minh Anh");
+  }
+
+  assert.equal(LoginInputSchema.safeParse({ email: "bad", password: "123" }).success, false);
+  assert.equal(OtpRequestInputSchema.safeParse({ identifier: "0912345678" }).success, true);
+  assert.equal(OtpRequestInputSchema.safeParse({ identifier: "user@luxestay.vn" }).success, true);
+  assert.equal(OtpRequestInputSchema.safeParse({ identifier: "invalid" }).success, false);
+  assert.equal(OtpVerifyInputSchema.safeParse({ identifier: "0912345678", code: "123456" }).success, true);
+  assert.equal(OtpVerifyInputSchema.safeParse({ identifier: "0912345678", code: "12ab" }).success, false);
+
+  const intentWithPromo = ServerReservationIntentSchema.safeParse({
+    propertyId: "stay-01",
+    nights: 2,
+    guests: { adults: 2, children: 0, rooms: 1 },
+    guestInfo: { fullName: "Test User", phone: "0912345678", email: "test@luxestay.vn" },
+    paymentMethod: "vnpay",
+    promoCode: " luxestay250 ",
+  });
+  assert.equal(intentWithPromo.success, true);
+  if (intentWithPromo.success) {
+    assert.equal(intentWithPromo.data.promoCode, "LUXESTAY250");
+  }
+
+  const webhook = PaymentWebhookPayloadSchema.safeParse({
+    eventId: "evt-001",
+    transactionId: "TXN-ABC123",
+    bookingId: "LX-123456",
+    provider: "vnpay",
+    outcome: "succeeded",
+    amount: 2500000,
+    occurredAt: "2026-11-24T08:00:00.000Z",
+  });
+  assert.equal(webhook.success, true);
+
+  assert.equal(API_ENDPOINTS.validateVoucher, "/api/v1/vouchers/validate");
+  assert.equal(API_ENDPOINTS.authLogin, "/api/v1/auth/login");
+  assert.equal(API_ENDPOINTS.favorites, "/api/v1/favorites");
+  assert.equal(API_ENDPOINTS.paymentWebhook("VNPAY"), "/api/v1/payments/webhook/vnpay");
+  assert.equal(API_ENDPOINTS.paymentSimulate("txn-01"), "/api/v1/payments/TXN-01/simulate");
 });

@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD) — LuxeStay (`travel-service`)
 
-- **Phiên bản tài liệu:** 1.2 (Phase 1 Completed — Baseline v0.3.0)
+- **Phiên bản tài liệu:** 1.3 (Phase 2 Completed — Baseline v0.4.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Trạng thái:** Living Document (Active)
 - **Tài liệu liên quan:**
@@ -19,25 +19,23 @@
 ### 1.2. Đề xuất giá trị cốt lõi (Core Value Proposition)
 1. **Tìm kiếm thông minh cho người dùng Việt:** Hỗ trợ tìm điểm đến không dấu tiếng Việt, chọn nhanh xu hướng du lịch, gợi ý ngày cuối tuần/lễ, đồng bộ URL chia sẻ và lọc kết hợp nhiều tiêu chí mà không làm mất ngữ cảnh.
 2. **Minh bạch tiện ích & dịch vụ đi kèm:** Chuẩn hóa 51 tiện ích theo 7 nhóm khoa học, phân rõ 3 nhóm chi phí (`Miễn phí bao gồm sẵn`, `Miễn phí cần đặt trước`, `Có phụ phí`) và đồng bộ 1-click trực tiếp vào báo giá đặt phòng.
-3. **Báo giá nhất quán từ tìm kiếm đến vé điện tử & quản lý đơn:** Lịch trình và số khách từ thanh tìm kiếm được chuyển tiếp tự động sang trang chi tiết chỗ nghỉ (`/stays/[id]`), bước thanh toán, tính lại độc lập trên server, lưu xuống PostgreSQL và hỗ trợ tra cứu/hủy đơn tại `/bookings`.
+3. **Trải nghiệm thương mại khép kín từ tài khoản tới thanh toán & vé điện tử:** Đăng nhập tài khoản (Email/Mật khẩu hoặc OTP) đồng bộ Wishlist và lịch sử đơn đặt phòng, áp mã giảm giá động kiểm tra chuẩn trên server, thanh toán qua cổng Sandbox có xác thực webhook HMAC-SHA256 và nhận email vé điện tử.
 4. **Trải nghiệm mượt mà trên mọi thiết bị:** Giao diện Glassmorphism, điều phối ngăn xếp hộp thoại nhất quán (phím `Escape`, khóa cuộn nền, hỗ trợ màn hình di động).
 
-### 1.3. Ma trận phạm vi hiện trạng (Baseline v0.3.0)
+### 1.3. Ma trận phạm vi hiện trạng (Baseline v0.4.0)
 
 | Nhóm tính năng | Trạng thái hiện tại | Ghi chú kiểm soát |
 | :--- | :--- | :--- |
 | Tìm kiếm, lọc đa tiêu chí, sắp xếp, thẻ lọc nhanh & URL Query Sync | **Đã triển khai đầy đủ** | 12 chỗ nghỉ, 8 thành phố, 5 loại hình, giá 790k–6.5tr VNĐ/đêm; đồng bộ 2 chiều query string trên `/` |
 | Trang chi tiết chỗ nghỉ riêng (`/stays/[id]`) & SEO/OpenGraph | **Đã triển khai đầy đủ** | SSR gọi `GET /api/v1/properties/:id`, `generateMetadata`, liên kết từ `PropertyCard` & `PropertyModal`, `404` khi không tồn tại |
-| Danh sách yêu thích (Wishlist Drawer) | **Đã triển khai đầy đủ** | Lưu `localStorage` (`travel_favorites`), đồng bộ đa tab, an toàn SSR |
+| Đăng nhập / Đăng ký / OTP & Đồng bộ Wishlist (`AuthModal`, `AuthContext`) | **Đã triển khai đầy đủ** | Mật khẩu `scrypt`, OTP 6 số (dev sandbox có mã thử), phiên `HttpOnly` Cookie lưu PostgreSQL, merge Wishlist `localStorage ↔ user_favorites`, seam Google OAuth |
+| Hệ thống Mã giảm giá động (Voucher Engine) | **Đã triển khai đầy đủ** | `evaluatePromotionVoucher` + `POST /api/v1/vouchers/validate` + kiểm tra đơn tối thiểu/trần giảm/hạn dùng trên cả FE & BE (`LUXESTAY250`, `SUMMERVIBE`) |
+| Cổng thanh toán Sandbox, Webhook HMAC-SHA256 & Email vé điện tử | **Đã triển khai đầy đủ (Sandbox)** | `hotel` xác nhận ngay; `vnpay`/`momo`/`card` đi qua `pending_payment` → `/payments/[transactionId]` → webhook ký `HMAC-SHA256` + chống trùng idempotency + lưu & xem trước email trong `notification_logs` |
 | Hệ thống Tiện ích khu nghỉ dưỡng (51 mục / 7 nhóm) | **Đã triển khai đầy đủ** | Master–Detail Explorer + đồng bộ dịch vụ chọn thêm vào báo giá |
-| Phiên đặt phòng, báo giá, Backend Hono API & PostgreSQL/Drizzle | **Đã triển khai đầy đủ** | `@luxestay/api` (`:4000`) đồng bộ Zod contract (`@luxestay/contracts`), 12 bảng PostgreSQL 16 + Drizzle ORM (`STORAGE_DRIVER=database|memory`), `NEXT_PUBLIC_DATA_MODE=api|mock` tường minh |
-| Tra cứu & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`) | **Đã triển khai đầy đủ** | Xác thực theo `bookingId` + email/SĐT VN chuẩn hóa (`+84`/`0`), tuân thủ `freeCancellation`, chống hủy trùng (`409 CONFLICT`), hỗ trợ in/lưu vé PDF |
-| Vé điện tử & In/Lưu PDF | **Đã triển khai (Client Print)** | Hiển thị vé + hiệu ứng pháo hoa + nút mở trang quản lý đơn + `window.print()` |
+| Quản lý, Lịch sử & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`) | **Đã triển khai đầy đủ** | Hiển thị **"Đơn đặt phòng của tôi"** khi đăng nhập, tra cứu khách vãng lai bằng `bookingId` + email/SĐT VN, hủy theo chính sách `freeCancellation`, xem email vé điện tử & in PDF |
 | Điều phối lớp phủ (7 Modal/Drawer) & ARIA Dialog | **Đã triển khai đầy đủ** | Quản lý `z-index`, `Escape`, scroll lock tập trung |
-| Đăng nhập / Tài khoản (`AuthModal`) | **Prototype UI-only** | Chỉ hiển thị modal chào mừng; chưa có phiên đăng nhập thật (mục tiêu **Phase 2**) |
-| Mã giảm giá (`PromotionBanner`) | **Prototype UI-only** | Sao chép mã `LUXESTAY250`, `SUMMERVIBE`; chưa trừ động vào báo giá (đang áp cố định giảm `100.000đ` — mục tiêu **Phase 2**) |
-| Thanh toán (`MoMo`, `VNPAY`, `Card`, `Tại chỗ nghỉ`) | **Mô phỏng lựa chọn** | Chưa kết nối cổng thanh toán / webhook thật (mục tiêu **Phase 2**) |
-| Đa ngôn ngữ / Đa tiền tệ (`Navbar`) | **Tĩnh (VNĐ • Tiếng Việt)** | Chưa có bộ chuyển đổi i18n/currency (mục tiêu **Phase 3**) |
+| Lịch trống phòng chống đặt trùng, Đánh giá xác thực & Cổng Chủ nhà | **Chưa triển khai** | Mục tiêu **Phase 3** |
+| Đa ngôn ngữ / Đa tiền tệ (`Navbar`) | **Tĩnh (VNĐ • Tiếng Việt)** | Mục tiêu **Phase 3** |
 
 ---
 
@@ -161,10 +159,10 @@ Chi tiết phân kỳ triển khai xem tại [PLAN.md](./PLAN.md). Tóm tắt tr
 
 1. ~~**Epic 1 — Lưu trữ Cơ sở dữ liệu & Quản lý Đơn đặt phòng:**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — PostgreSQL 16 + Drizzle ORM, tra cứu & hủy đơn tại `/bookings` & `/bookings/[bookingId]`.
 2. ~~**Epic 2 — Đường dẫn Chỗ nghỉ riêng & Đồng bộ URL (SEO & Deep-linking):**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — `/stays/[id]` SSR + OpenGraph & URL query sync trên `/`.
-3. **Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị (Phase 2):** Hoàn thiện `AuthModal` thành hệ thống đăng nhập thật (Google OAuth / OTP) và đồng bộ Wishlist từ `localStorage` lên tài khoản.
-4. **Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine — Phase 2):** Cho phép nhập/áp mã `LUXESTAY250`, `SUMMERVIBE` tại checkout, kiểm tra điều kiện đơn tối thiểu, trần giảm giá và hạn dùng ở cả client lẫn server.
-5. **Epic 5 — Tích hợp Thanh toán & Thông báo thực tế (Phase 2):** Nối cổng thanh toán (VNPAY, MoMo, thẻ quốc tế) với luồng webhook cập nhật trạng thái đơn và gửi vé xác nhận qua Email/Zalo.
-6. **Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà (Phase 3):** Kiểm soát phòng trống theo ngày chống đặt trùng, cho phép khách đã lưu trú gửi đánh giá, và cổng quản trị cho chủ nhà/vận hành.
+3. ~~**Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie), `AuthContext` + `AuthModal`, merge Wishlist `localStorage ↔ user_favorites` và **"Đơn đặt phòng của bạn"**.
+4. ~~**Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine):**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — `evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, áp mã `LUXESTAY250` / `SUMMERVIBE` trên `BookingCheckoutModal` & xác thực chuẩn phía server.
+5. ~~**Epic 5 — Tích hợp Thanh toán & Thông báo:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`, Sandbox Production-flow)** — `pending_payment` → `/payments/[transactionId]` → Webhook ký `HMAC-SHA256` + Idempotency + nhật ký email vé điện tử `notification_logs`.
+6. **Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà (Phase 3):** Kiểm soát phòng trống theo ngày chống đặt trùng, cho phép khách đã lưu trú gửi đánh giá, đa ngôn ngữ (`vi`/`en`) và cổng quản trị cho chủ nhà/vận hành.
 
 ---
 

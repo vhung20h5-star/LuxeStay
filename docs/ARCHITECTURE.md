@@ -1,9 +1,9 @@
 # System & Software Architecture — LuxeStay (`travel-service`)
 
-- **Phiên bản kiến trúc:** 2.1 (Phase 1 Completed — Baseline v0.3.0)
+- **Phiên bản kiến trúc:** 2.2 (Phase 2 Completed — Baseline v0.4.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Từ vựng thiết kế & miền:** [GLOSSARY.md](../GLOSSARY.md) & [.agents/skills/codebase-design/SKILL.md](../.agents/skills/codebase-design/SKILL.md)
-- **Tài liệu liên quan:** [PRD.md](./PRD.md) | [PLAN.md](./PLAN.md) | [ADR Index](./adr/README.md) | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md)
+- **Tài liệu liên quan:** [PRD.md](./PRD.md) | [PLAN.md](./PLAN.md) | [ADR Index](./adr/README.md) | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md) | [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md)
 
 ---
 
@@ -13,12 +13,12 @@
 | Thành phần | Công nghệ / Phiên bản | Ghi chú |
 | :--- | :--- | :--- |
 | **Monorepo Toolchain** | `npm workspaces` (`npm 11.9`) + `Turborepo` (`turbo`) | Quản lý 4 workspace (`packages/*`, `apps/*`), cache & dependency graph |
-| **Shared Contracts** | `@luxestay/contracts` + `Zod 3` + TypeScript 5 (`strict: true`) | Nguồn chân lý duy nhất cho Zod schemas, DTOs, `ApiSuccess`/`ApiError`, `API_ENDPOINTS` |
-| **Shared Domain** | `@luxestay/domain` (100% pure ESM TypeScript) | 4 deep modules thuần (`bookingSession`, `catalogQuery`, `amenities`, `utils`) + `@luxestay/domain/seed` |
-| **Backend API (`apps/api`)** | `Hono 4` + `@hono/node-server` + `tsx` (port `4000`) | Thuần ESM, modular `health`/`catalog`/`reservations`, test in-process qua `app.request()` |
-| **Database Layer (`apps/api/src/db`)** | **PostgreSQL 16** (`docker-compose.yml`) + **Drizzle ORM** (`drizzle-orm`, `pg`, `drizzle-kit`) | Cô lập trong `apps/api`; 12 bảng chuẩn hóa, migration SQL, seed idempotent, chuyển đổi qua `STORAGE_DRIVER=memory|database` |
-| **Frontend Web (`apps/web`)** | Next.js `16.4.6` (App Router, `--webpack`), React `19.3.0`, Tailwind CSS `v4`, Framer Motion `12.4.7`, Lucide React `1.16.0` (port `3000`) | Feature-based đối xứng với Backend, `/stays/[id]` SSR+SEO, `/bookings`, URL query sync, `useSyncExternalStore`, split Contexts, Error Boundaries |
-| **Testing & CI** | Node.js `24` (`.nvmrc`) native `node:test`, ESLint `9` (`eslint.boundaries.mjs` cho toàn repo), GitHub Actions CI | **67/67 tests** trên 4 tầng, **0 errors / 0 warnings** |
+| **Shared Contracts** | `@luxestay/contracts` + `Zod 3` + TypeScript 5 (`strict: true`) | Nguồn chân lý duy nhất cho Zod schemas (catalog, booking, auth, payment, notifications), `ApiSuccess`/`ApiError`, `API_ENDPOINTS` |
+| **Shared Domain** | `@luxestay/domain` (100% pure ESM TypeScript) | 5 deep modules thuần (`bookingSession`, `vouchers`, `catalogQuery`, `amenities`, `utils`) + `@luxestay/domain/seed` |
+| **Backend API (`apps/api`)** | `Hono 4` + `@hono/node-server` + `tsx` (port `4000`) | Thuần ESM, 7 modules (`health`, `catalog`, `auth`, `favorites`, `reservations`, `payments`, `notifications`), `scrypt` + HttpOnly Cookie + HMAC-SHA256 webhook |
+| **Database Layer (`apps/api/src/db`)** | **PostgreSQL 16** (`docker-compose.yml` `:5434->5432`) + **Drizzle ORM** (`drizzle-orm`, `pg`, `drizzle-kit`) | Cô lập trong `apps/api`; **19 bảng chuẩn hóa**, 2 migrations (`0000`, `0001`), seed idempotent, chuyển đổi qua `STORAGE_DRIVER=memory|database` |
+| **Frontend Web (`apps/web`)** | Next.js `16.4.6` (App Router, `--webpack`), React `19.3.0`, Tailwind CSS `v4`, Framer Motion `12.4.7`, Lucide React `1.16.0` (port `3000`) | Feature-based đối xứng với Backend, `/stays/[id]` SSR+SEO, `/bookings`, `/payments/[transactionId]` Sandbox, `AuthContext` tách riêng, split Contexts, Error Boundaries |
+| **Testing & CI** | Node.js `24` (`.nvmrc`) native `node:test`, ESLint `9` (`eslint.boundaries.mjs` cho toàn repo), GitHub Actions CI | **75/75 tests** trên 4 tầng, **0 errors / 0 warnings** |
 
 ### 1.2. Nguyên tắc thiết kế cốt lõi
 1. **Shared Contracts First (`@luxestay/contracts`):** Mọi payload qua mạng đều định nghĩa bằng Zod schema, dùng chung để validate đầu vào trên `apps/api` và xác thực phản hồi trên `apps/web`.
@@ -247,14 +247,14 @@ sequenceDiagram
 
 ## 6. Chiến lược Kiểm thử 4 Tầng & Cẩm nang Mở rộng
 
-### 6.1. Bộ kiểm thử tự động (`npm run test` — 67 tests)
+### 6.1. Bộ kiểm thử tự động (`npm run test` — 75 tests)
 
 | Tầng | Workspace | Tệp test | Số test | Phạm vi |
 | :---: | :--- | :--- | :---: | :--- |
-| **1** | `@luxestay/contracts` | `packages/contracts/tests/contracts.test.ts` | **4** | Zod schemas, `ApiSuccess`/`ApiError`, strip trường giả mạo, `API_ENDPOINTS`, `ReservationLookupInputSchema` & `CancelReservationInputSchema` |
-| **2** | `@luxestay/domain` | `packages/domain/tests/*.test.ts` (5 files) | **39** | Seed catalog (51 amenities / 12 properties), `WeakMap` projection, Explorer, Pricing Descriptors, `StayCatalogQuery` + URL serialization/parsing, `BookingSession`, `processServerReservationIntent`, `matchesReservationContact` & `evaluateReservationCancellation` |
-| **3** | `@luxestay/api` | `apps/api/tests/api.test.ts` | **7** | In-process Hono routes (`health`, `catalog`, `properties/:id`, `reservations` POST/GET/PATCH cancel + ownership 403 + `freeCancellation`/double-cancel 409) & `STORAGE_DRIVER` env validation + PostgreSQL mappers |
-| **4** | `@luxestay/web` | `apps/web/tests/*.test.ts` (2 files) | **17** | Overlay stack (7), `FavoritesRepository` & `useSyncExternalStore` (5), `ReservationSubmitter` / `ReservationManagerPort` / `CatalogRepository.getPropertyById` / strict `HttpApiError` / `api|mock` ports & env (5) |
+| **1** | `@luxestay/contracts` | `packages/contracts/tests/contracts.test.ts` | **5** | Zod schemas (`catalog`, `booking`, `auth`, `payment`, `notifications`), `ApiSuccess`/`ApiError`, strip trường giả mạo, `API_ENDPOINTS` |
+| **2** | `@luxestay/domain` | `packages/domain/tests/*.test.ts` (5 files) | **41** | Seed catalog (51 amenities / 12 properties), `WeakMap` projection, Explorer, Pricing Descriptors, `StayCatalogQuery` + URL sync, `BookingSession`, `evaluatePromotionVoucher`, `evaluatePaymentWebhookTransition`, ownership & cancellation |
+| **3** | `@luxestay/api` | `apps/api/tests/api.test.ts` | **10** | In-process Hono routes (`health`, `catalog`, `properties/:id`, `auth` password+OTP+cookie, `favorites` merge/toggle, `vouchers/validate`, `reservations` + `/my` + `/notifications`, `payments` sandbox + HMAC-SHA256 webhook + idempotency) & `STORAGE_DRIVER` + Postgres mappers |
+| **4** | `@luxestay/web` | `apps/web/tests/*.test.ts` (2 files) | **19** | Overlay stack (7), `FavoritesRepository` & `useSyncExternalStore` (5), `ReservationSubmitter` / `ReservationManagerPort` / `CatalogRepository` / `AuthPort` / `PaymentGatewayPort` / strict `HttpApiError` (7) |
 
 ### 6.2. Cẩm nang Mở rộng (Extension Playbook)
 

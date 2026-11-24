@@ -1,6 +1,6 @@
 # Engineering, Maintenance & Feature Expansion Plan — LuxeStay (`travel-service`)
 
-- **Phiên bản kế hoạch:** 2.1 (Phase 1 Completed — Baseline v0.3.0)
+- **Phiên bản kế hoạch:** 2.2 (Phase 2 Completed — Baseline v0.4.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Trạng thái:** Active Roadmap
 - **Tài liệu liên quan:** [PRD.md](./PRD.md) | [ARCHITECTURE.md](./ARCHITECTURE.md) | [ADR Index](./adr/README.md) | [GLOSSARY.md](../GLOSSARY.md)
@@ -20,13 +20,14 @@
 | **M5 — Overlay Stack Coordinator** | `f467d47` | Deep module `overlayStack` + `OverlayContext`, `z-index` theo tier, 1 listener `Escape`, ref-counted scroll lock, ARIA | [ADR-0005](./adr/0005-centralized-overlay-stack-coordinator.md) |
 | **M6 — Persistence & Reservation Ports** | `0f26b7b` | `AppPorts`, `FavoritesRepository` với `useSyncExternalStore`, tách hoàn toàn I/O khỏi domain | [ADR-0006](./adr/0006-app-ports-persistence-and-split-domain-contexts.md) |
 | **M7 — Server API & Split Contexts** | `abedd20`, `eb4674e` | Tính giá chuẩn phía server, tách 3 domain contexts (`useFavorites`, `useCatalog`, `useBookingSession`), nâng Next.js `16.4.6` | [ADR-0002](./adr/0002-booking-session-and-authoritative-server-pricing.md), [ADR-0006](./adr/0006-app-ports-persistence-and-split-domain-contexts.md) |
-| **M8 — Monorepo v0.2.0 & Phase 0 Hardening** | `bbcc2d6` (`v0.2.0`) | Chuyển đổi sang TypeScript Monorepo (`npm workspaces` + `Turborepo`): `@luxestay/contracts` (Zod), `@luxestay/domain`, `@luxestay/api` (Hono `:4000` + khung `src/db/`), `@luxestay/web` (feature-based `:3000`), `NEXT_PUBLIC_DATA_MODE=api|mock` không fallback ngầm, Error Boundaries, `.nvmrc`, `apps/web/AGENTS.md` + `apps/api/AGENTS.md`, ESLint boundary toàn repo (`eslint.boundaries.mjs`), GitHub Actions CI | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) |
-| **M9 — Phase 1: PostgreSQL/Drizzle, Booking Lifecycle & Shareable Routing** | `v0.3.0` | Tầng DB PostgreSQL 16 + Drizzle ORM (`docker-compose.yml`, 12 bảng chuẩn hóa, migration SQL, idempotent seed, `PostgresCatalogRepository`, `PostgresReservationRepository`, hỗ trợ song song `STORAGE_DRIVER=memory|database`); Tra cứu & hủy đơn đặt phòng (`GET /api/v1/reservations/:bookingId`, `PATCH .../cancel`, xác thực email/SĐT VN, kiểm tra `freeCancellation`, `/bookings`, `/bookings/[bookingId]`); Trang chi tiết chỗ nghỉ SSR + SEO/OpenGraph (`/stays/[id]`) và đồng bộ URL query trên trang chủ (`/`); 67/67 tests + 12/12 E2E smoke | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) |
+| **M8 — Monorepo v0.2.0 & Phase 0 Hardening** | `bbcc2d6` (`v0.2.0`) | Chuyển đổi sang TypeScript Monorepo (`npm workspaces` + `Turborepo`): `@luxestay/contracts` (Zod), `@luxestay/domain`, `@luxestay/api` (Hono `:4000`), `@luxestay/web` (feature-based `:3000`), `NEXT_PUBLIC_DATA_MODE=api|mock` không fallback ngầm, Error Boundaries, `.nvmrc`, `apps/web/AGENTS.md` + `apps/api/AGENTS.md`, ESLint boundary toàn repo, GitHub Actions CI | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) |
+| **M9 — Phase 1: PostgreSQL/Drizzle, Booking Lifecycle & Shareable Routing** | `bc04ca3` (`v0.3.0`) | PostgreSQL 16 + Drizzle ORM (`docker-compose.yml` `:5434->5432`, 12 bảng, migration `0000`, idempotent seed, dual driver `memory|database`), tra cứu & hủy đơn (`/bookings`, `/bookings/[bookingId]`), trang chi tiết `/stays/[id]` SSR + SEO/OpenGraph & đồng bộ URL query | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) |
+| **M10 — Phase 2: Commercialization (Auth, Wishlist Sync, Voucher Engine & Payment Sandbox)** | `v0.4.0` | Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie + `OAuthProviderSeam`, `AuthContext` tách riêng), đồng bộ Wishlist `user_favorites` + lịch sử `Đơn đặt phòng của tôi` (`/api/v1/reservations/my`); Dynamic Voucher Engine (`evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, ô áp mã trên Checkout); Payment Gateway Sandbox (`pending_payment → confirmed/payment_failed/expired`, `/payments/[transactionId]`, Webhook `HMAC-SHA256` + Idempotency + `notification_logs` email vé điện tử); Migration `0001` (19 bảng PostgreSQL 16), 75/75 tests + 13/13 live PostgreSQL E2E | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md), [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md) |
 
 ### 1.2. Hiện trạng kiểm chứng kỹ thuật
-- **Automated Tests (4 tầng):** `67/67` đạt (`contracts`: 4, `domain`: 39, `api`: 7, `web`: 17) qua `npm run test`.
+- **Automated Tests (4 tầng):** `75/75` đạt (`contracts`: 5, `domain`: 41, `api`: 10, `web`: 19) qua `npm run test`.
 - **Lint & Typecheck:** `npm run lint` (**ESLint 9 + Import Boundaries trên cả 4 workspaces, 0 errors, 0 warnings**) và `npm run typecheck` (6/6 tasks pass).
-- **Production Build & Live Smoke:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`); kiểm chứng sống end-to-end 12/12 kiểm tra (homepage, URL filter query, `/stays/[id]` SEO/OpenGraph + 404, tạo đơn → tra cứu `403`/`200` với SĐT `+84` → hủy `200` → hủy lại `409 CONFLICT`).
+- **Production Build & Live PostgreSQL 16 E2E:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`, `/payments/[transactionId]`); kiểm chứng sống 13/13 kiểm tra trên PostgreSQL 16 Docker (`19` bảng chuẩn hóa, migration `0001`, giữ phiên cookie/wishlist/đơn qua khởi động lại tiến trình API, xác thực HMAC-SHA256 webhook + chống xử lý trùng idempotency + email vé điện tử).
 
 ---
 
@@ -56,21 +57,21 @@
 
 ---
 
-### Phase 2 — Authentication, Dynamic Vouchers & Real Payments (Tiếp theo — Thương mại hóa)
+### Phase 2 — Authentication, Dynamic Vouchers & Real Payments (ĐÃ HOÀN THÀNH ✅)
 **Mục tiêu:** Chuyển các luồng đang ở mức UI prototype sang tính năng thương mại đầy đủ.
 
-- [ ] **P2.1 — Xác thực Người dùng & Đồng bộ Wishlist (cần ADR mới):**
-  - Hoàn thiện `AuthModal` + `apps/api/src/modules/auth` (Google OAuth / OTP) và `AuthContext` riêng trong `apps/web/src/features/auth/`.
-  - Cài đặt `RemoteFavoritesAdapter` thỏa `FavoritesRepository` để đồng bộ Wishlist theo `userId` (merge từ `localStorage` khi đăng nhập).
-- [ ] **P2.2 — Hệ thống Mã giảm giá động (Voucher Engine):**
-  - Thay `SERVICE_DISCOUNT = 100000` cố định bằng hàm thuần `evaluatePromotionVoucher` trong `packages/domain`, bổ sung `promoCode` vào `ServerReservationIntentSchema` (`@luxestay/contracts`) và ô áp mã trên `BookingCheckoutModal`.
-- [ ] **P2.3 — Tích hợp Cổng thanh toán & Thông báo (cần ADR mới):**
-  - Mở rộng trạng thái đơn: `pending_payment` → `confirmed` / `payment_failed` / `expired` / `cancelled`.
-  - Tích hợp sandbox VNPAY / MoMo / Stripe với webhook xác thực chữ ký + idempotency và gửi email xác nhận vé điện tử.
+- [x] **P2.1 — Xác thực Người dùng & Đồng bộ Wishlist ([ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md)):**
+  - Hoàn thiện `AuthModal` (3 tab Đăng nhập / Đăng ký / OTP nhanh) + `apps/api/src/modules/auth` (`scrypt` + OTP + `HttpOnly` Session Cookie + `OAuthProviderSeam`) và `AuthContext` tách riêng trong `apps/web/src/features/auth/`.
+  - Cài đặt đồng bộ Wishlist theo `userId` (`GET`/`PUT`/`POST /api/v1/favorites`, bảng `user_favorites`, tự động merge từ `localStorage` khi đăng nhập) và hiển thị lịch sử **"Đơn đặt phòng của bạn"** (`GET /api/v1/reservations/my`).
+- [x] **P2.2 — Hệ thống Mã giảm giá động (Voucher Engine):**
+  - Thay `SERVICE_DISCOUNT = 100000` cố định bằng module thuần `evaluatePromotionVoucher` (`packages/domain/src/vouchers.ts`), bổ sung `POST /api/v1/vouchers/validate`, `promoCode` vào `ServerReservationIntentSchema`, lưu quy tắc động trong bảng `promotions` và ô áp mã kèm chọn nhanh trên `BookingCheckoutModal`.
+- [x] **P2.3 — Tích hợp Cổng thanh toán Sandbox & Thông báo ([ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md)):**
+  - Mở rộng trạng thái đơn: `pending_payment` → `confirmed` / `payment_failed` / `expired` / `cancelled` (`hotel` xác nhận ngay; `vnpay`/`momo`/`card` qua cổng `/payments/[transactionId]`).
+  - Triển khai Webhook `POST /api/v1/payments/webhook/:provider` xác thực chữ ký `HMAC-SHA256` + chống xử lý trùng idempotency (`payment_webhook_events`) và ghi email vé điện tử vào `notification_logs` (hiển thị bản xem trước email trên `/bookings/[bookingId]`).
 
 ---
 
-### Phase 3 — Availability Engine, Verified Reviews & Host Portal (Mở rộng Nền tảng)
+### Phase 3 — Availability Engine, Verified Reviews & Host Portal (Tiếp theo — Mở rộng Nền tảng)
 - [ ] **P3.1 — Quản lý Lịch trống & Giá theo mùa:** Bảng `property_availability`, khóa giao dịch DB chống double-booking và phụ thu cuối tuần/lễ trong `deriveBookingQuote`.
 - [ ] **P3.2 — Đánh giá xác thực (Verified Reviews):** Chỉ khách có đơn hoàn tất mới gửi review; tự tính lại `rating` & `reviewCount`.
 - [ ] **P3.3 — Cổng Chủ nhà & Quản trị (Host/Admin Portal):** CRUD chỗ nghỉ, tiện ích, lịch phòng và báo cáo doanh thu.

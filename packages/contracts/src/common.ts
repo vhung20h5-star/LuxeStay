@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const ErrorCodeSchema = z.enum([
   "VALIDATION_ERROR",
+  "UNAUTHORIZED",
   "FORBIDDEN",
   "NOT_FOUND",
   "CONFLICT",
@@ -168,9 +169,32 @@ export const BookingSessionStepSchema = z.enum([
 
 export type BookingSessionStep = z.infer<typeof BookingSessionStepSchema>;
 
-export const ReservationStatusSchema = z.enum(["confirmed", "cancelled"]);
+export const ReservationStatusSchema = z.enum([
+  "pending_payment",
+  "confirmed",
+  "payment_failed",
+  "expired",
+  "cancelled",
+]);
 
 export type ReservationStatus = z.infer<typeof ReservationStatusSchema>;
+
+export const PaymentProviderSchema = z.enum(["momo", "vnpay", "card"]);
+
+export type PaymentProvider = z.infer<typeof PaymentProviderSchema>;
+
+export const PaymentTransactionStatusSchema = z.enum([
+  "pending",
+  "succeeded",
+  "failed",
+  "expired",
+]);
+
+export type PaymentTransactionStatus = z.infer<typeof PaymentTransactionStatusSchema>;
+
+export const AuthProviderSchema = z.enum(["password", "otp", "google"]);
+
+export type AuthProvider = z.infer<typeof AuthProviderSchema>;
 
 export const HealthDataSchema = z.object({
   status: z.literal("ok"),

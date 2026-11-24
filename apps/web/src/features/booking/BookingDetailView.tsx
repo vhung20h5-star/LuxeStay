@@ -8,20 +8,24 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  Clock,
+  CreditCard,
   Download,
   ExternalLink,
+  Mail,
   MapPin,
   PhoneCall,
   ShieldAlert,
   Sparkles,
   XCircle,
 } from "lucide-react";
-import type { BookingDetails } from "@luxestay/contracts";
+import type { BookingDetails, NotificationLog, ReservationStatus } from "@luxestay/contracts";
 import {
   describeSelectedAmenity,
   formatAmenitiesFeeSummary,
   formatVND,
 } from "@luxestay/domain";
+import { useAuth } from "@/features/auth/AuthContext";
 import { useBookingSession } from "@/features/booking/BookingContext";
 import { HttpApiError, isAbortError } from "@/shared/ports/errors";
 import { Button } from "@/shared/ui/Button";
@@ -39,17 +43,57 @@ const PAYMENT_METHOD_LABELS: Record<BookingDetails["paymentMethod"], string> = {
   hotel: "Thanh toán tại chỗ nghỉ",
 };
 
+const STATUS_HEADER: Record<
+  ReservationStatus,
+  { badge: string; gradient: string; badgeClass: string; icon: "check" | "clock" | "x" }
+> = {
+  confirmed: {
+    badge: "Đã xác nhận",
+    gradient: "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700",
+    badgeClass: "bg-white/20 text-emerald-50",
+    icon: "check",
+  },
+  pending_payment: {
+    badge: "Chờ thanh toán",
+    gradient: "bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700",
+    badgeClass: "bg-white/20 text-amber-50",
+    icon: "clock",
+  },
+  payment_failed: {
+    badge: "Thanh toán thất bại",
+    gradient: "bg-gradient-to-r from-rose-700 via-rose-800 to-slate-900",
+    badgeClass: "bg-rose-400/25 text-rose-100",
+    icon: "x",
+  },
+  expired: {
+    badge: "Hết hạn thanh toán",
+    gradient: "bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900",
+    badgeClass: "bg-white/15 text-slate-200",
+    icon: "clock",
+  },
+  cancelled: {
+    badge: "Đơn đã hủy",
+    gradient: "bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900",
+    badgeClass: "bg-rose-500/25 text-rose-200",
+    icon: "x",
+  },
+};
+
 export function BookingDetailView({
   bookingId,
   initialContact = "",
 }: BookingDetailViewProps) {
   const router = useRouter();
-  const { lookupReservation, cancelReservation } = useBookingSession();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { lookupReservation, cancelReservation, listReservationNotifications } =
+    useBookingSession();
 
   const [contactInput, setContactInput] = useState(initialContact);
   const [verifiedContact, setVerifiedContact] = useState(initialContact.trim());
   const [booking, setBooking] = useState<BookingDetails | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(initialContact.trim()));
+  const [notifications, setNotifications] = useState<readonly NotificationLog[]>([]);
+  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(Boolean(initialContact.trim()) || isAuthLoading);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Cancellation flow state
@@ -62,12 +106,16 @@ export function BookingDetailView({
 
   useEffect(() => {
     const trimmed = initialContact.trim();
-    if (!trimmed) return;
-    const key = `${bookingId.toUpperCase()}::${trimmed}`;
+    if (!trimmed && isAuthLoading) return;
+    if (!trimmed && !user) {
+      return;
+    }
+
+    const key = `${bookingId.toUpperCase()}::${trimmed || user?.id || ""}`;
     if (lastLoadedKeyRef.current === key) return;
 
     const controller = new AbortController();
-    lookupReservation(bookingId, trimmed, controller.signal)
+    lookupReservation(bookingId, trimmed || undefined, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         lastLoadedKeyRef.current = key;
@@ -75,6 +123,16 @@ export function BookingDetailView({
         setVerifiedContact(trimmed);
         setErrorMessage(null);
         setIsLoading(false);
+
+        void listReservationNotifications(
+          result.bookingId ?? bookingId,
+          trimmed || undefined,
+          controller.signal
+        ).then((logs) => {
+          if (!controller.signal.aborted) {
+            setNotifications(logs);
+          }
+        });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted || isAbortError(err)) return;
@@ -88,7 +146,14 @@ export function BookingDetailView({
       });
 
     return () => controller.abort();
-  }, [bookingId, initialContact, lookupReservation]);
+  }, [
+    bookingId,
+    initialContact,
+    isAuthLoading,
+    listReservationNotifications,
+    lookupReservation,
+    user,
+  ]);
 
   const handleVerifySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,6 +171,8 @@ export function BookingDetailView({
       setBooking(result);
       setVerifiedContact(trimmed);
       setIsLoading(false);
+      const logs = await listReservationNotifications(result.bookingId ?? bookingId, trimmed);
+      setNotifications(logs);
       router.replace(
         `/bookings/${encodeURIComponent(bookingId.toUpperCase())}?contact=${encodeURIComponent(trimmed)}`
       );
@@ -123,17 +190,22 @@ export function BookingDetailView({
 
   const handleCancelBooking = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!booking || !verifiedContact) return;
+    if (!booking) return;
     setCancelError(null);
     setIsCancelling(true);
     try {
       const updated = await cancelReservation(booking.bookingId ?? bookingId, {
-        contact: verifiedContact,
+        contact: verifiedContact || undefined,
         reason: cancelReason,
       });
       setBooking(updated);
       setShowCancelForm(false);
       setCancelReason("");
+      const logs = await listReservationNotifications(
+        updated.bookingId ?? bookingId,
+        verifiedContact || undefined
+      );
+      setNotifications(logs);
     } catch (err) {
       setCancelError(
         err instanceof HttpApiError
@@ -145,7 +217,7 @@ export function BookingDetailView({
     }
   };
 
-  if (isLoading) {
+  if (isLoading && (Boolean(initialContact.trim()) || Boolean(user) || isAuthLoading)) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center bg-slate-50 px-4">
         <div className="text-center space-y-3">
@@ -176,16 +248,16 @@ export function BookingDetailView({
                 {bookingId.toUpperCase()}
               </span>
               <h1 className="text-xl font-black text-slate-900 mt-3">
-                Xác minh thông tin chủ đơn
+                Xác minh thông tin đặt phòng
               </h1>
               <p className="text-xs text-slate-500 mt-1">
-                Nhập email hoặc số điện thoại bạn đã dùng khi đặt phòng để xem chi tiết vé.
+                Vui lòng nhập email hoặc số điện thoại đã đăng ký để xem chi tiết vé đặt phòng này.
               </p>
             </div>
 
             <form onSubmit={handleVerifySubmit} className="space-y-4">
               <Input
-                label="Email hoặc Số điện thoại"
+                label="Email hoặc Số điện thoại đặt phòng"
                 value={contactInput}
                 onChange={(e) => setContactInput(e.target.value)}
                 placeholder="guest@luxestay.vn hoặc 0912 345 678"
@@ -195,7 +267,7 @@ export function BookingDetailView({
               {errorMessage && (
                 <div
                   role="alert"
-                  className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-xs font-semibold text-rose-800"
+                  className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-2 text-xs font-semibold text-rose-800"
                 >
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>{errorMessage}</span>
@@ -212,8 +284,13 @@ export function BookingDetailView({
     );
   }
 
+  const statusMeta = STATUS_HEADER[booking.status] ?? STATUS_HEADER.confirmed;
   const isCancelled = booking.status === "cancelled";
-  const canCancelOnline = !isCancelled && Boolean(booking.property.freeCancellation);
+  const isPendingPayment = booking.status === "pending_payment";
+  const isClosedFailure =
+    booking.status === "payment_failed" || booking.status === "expired";
+  const canCancelOnline =
+    isPendingPayment || (booking.status === "confirmed" && Boolean(booking.property.freeCancellation));
 
   return (
     <div className="min-h-[80vh] bg-slate-50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8">
@@ -224,7 +301,7 @@ export function BookingDetailView({
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-700"
           >
             <ArrowLeft className="w-4 h-4" />
-            Tra cứu đơn khác
+            Quay lại danh sách / Tra cứu đơn khác
           </Link>
           <Link
             href="/"
@@ -236,29 +313,21 @@ export function BookingDetailView({
 
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl overflow-hidden">
           {/* Header Banner */}
-          <div
-            className={`p-6 sm:p-8 text-white ${
-              isCancelled
-                ? "bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900"
-                : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700"
-            }`}
-          >
+          <div className={`p-6 sm:p-8 text-white ${statusMeta.gradient}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                {isCancelled ? (
-                  <XCircle className="w-9 h-9 text-rose-300 shrink-0" />
+                {statusMeta.icon === "x" ? (
+                  <XCircle className="w-9 h-9 text-rose-200 shrink-0" />
+                ) : statusMeta.icon === "clock" ? (
+                  <Clock className="w-9 h-9 text-amber-200 shrink-0" />
                 ) : (
                   <CheckCircle2 className="w-9 h-9 text-white shrink-0" />
                 )}
                 <div>
                   <span
-                    className={`inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                      isCancelled
-                        ? "bg-rose-500/25 text-rose-200"
-                        : "bg-white/20 text-emerald-50"
-                    }`}
+                    className={`inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${statusMeta.badgeClass}`}
                   >
-                    {isCancelled ? "Đơn đã hủy" : "Đã xác nhận"}
+                    {statusMeta.badge}
                   </span>
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight mt-1">
                     Vé điện tử LuxeStay
@@ -274,6 +343,28 @@ export function BookingDetailView({
               </div>
             </div>
 
+            {isPendingPayment && booking.payment?.checkoutUrl && (
+              <div className="mt-4 p-4 rounded-2xl bg-black/20 backdrop-blur-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <div className="font-bold text-white">
+                    Đơn đang giữ chỗ — vui lòng hoàn tất thanh toán trực tuyến
+                  </div>
+                  {booking.paymentExpiresAt && (
+                    <div className="text-amber-100 mt-0.5">
+                      Hạn thanh toán: {new Date(booking.paymentExpiresAt).toLocaleString("vi-VN")}
+                    </div>
+                  )}
+                </div>
+                <Link
+                  href={booking.payment.checkoutUrl}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-amber-800 font-bold hover:bg-amber-50 transition-colors print:hidden"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Mở cổng thanh toán
+                </Link>
+              </div>
+            )}
+
             {isCancelled && (
               <div className="mt-4 p-3.5 rounded-2xl bg-white/10 text-xs text-slate-200 space-y-1">
                 <div className="font-semibold">
@@ -285,6 +376,12 @@ export function BookingDetailView({
                 {booking.cancellationReason && (
                   <div className="text-slate-300">Lý do: {booking.cancellationReason}</div>
                 )}
+              </div>
+            )}
+
+            {isClosedFailure && booking.payment?.failureReason && (
+              <div className="mt-4 p-3.5 rounded-2xl bg-white/10 text-xs text-rose-100">
+                Lý do: {booking.payment.failureReason}
               </div>
             )}
           </div>
@@ -362,9 +459,14 @@ export function BookingDetailView({
                 <span className="font-bold text-slate-900 block mt-0.5">
                   {PAYMENT_METHOD_LABELS[booking.paymentMethod]}
                 </span>
+                {booking.payment && (
+                  <span className="text-[11px] font-mono text-slate-500 block mt-0.5">
+                    Mã GD: {booking.payment.transactionId} ({booking.payment.status})
+                  </span>
+                )}
                 {booking.guestInfo.note && (
-                  <span className="text-slate-500 block mt-1">
-                    Ghi chú: {booking.guestInfo.note}
+                  <span className="text-slate-500 block mt-1 italic">
+                    Ghi chú: &ldquo;{booking.guestInfo.note}&rdquo;
                   </span>
                 )}
               </div>
@@ -380,9 +482,11 @@ export function BookingDetailView({
                       Tiện ích &amp; dịch vụ đi kèm ({booking.selectedAmenities.length})
                     </span>
                   </div>
-                  <span className="text-emerald-700">
-                    {formatAmenitiesFeeSummary(booking.pricing.amenitiesFee)}
-                  </span>
+                  {booking.pricing.amenitiesFee > 0 && (
+                    <span className="text-emerald-700">
+                      {formatAmenitiesFeeSummary(booking.pricing.amenitiesFee)}
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   {booking.selectedAmenities.map((item) => {
@@ -390,9 +494,9 @@ export function BookingDetailView({
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between gap-2 text-xs bg-white px-3 py-2 rounded-xl border border-emerald-100"
+                        className="flex items-center justify-between gap-2 text-xs bg-white/90 px-3 py-2 rounded-xl border border-emerald-100"
                       >
-                        <span className="font-medium text-slate-800">{item.name}</span>
+                        <span className="font-medium text-slate-800 truncate">{item.name}</span>
                         <span
                           className={`font-bold shrink-0 ${
                             display.tone === "paid" ? "text-amber-700" : "text-teal-700"
@@ -411,7 +515,7 @@ export function BookingDetailView({
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>
-                  Giá phòng ({formatVND(booking.pricing.basePrice)} × {booking.nights} đêm)
+                  {formatVND(booking.pricing.basePrice)} × {booking.nights} đêm
                 </span>
                 <span>{formatVND(booking.pricing.nightsTotal)}</span>
               </div>
@@ -419,124 +523,194 @@ export function BookingDetailView({
                 <span>Phí dịch vụ &amp; dọn dẹp</span>
                 <span>{formatVND(booking.pricing.cleaningFee)}</span>
               </div>
-              {booking.selectedAmenities.length > 0 && (
+              {booking.pricing.amenitiesFee > 0 && (
                 <div className="flex justify-between text-slate-600">
-                  <span>Phụ phí tiện ích đi kèm</span>
-                  <span>{formatAmenitiesFeeSummary(booking.pricing.amenitiesFee)}</span>
+                  <span>Phí tiện ích chọn thêm</span>
+                  <span>{formatVND(booking.pricing.amenitiesFee)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>Giảm giá khuyến mãi</span>
-                <span>-{formatVND(booking.pricing.discount)}</span>
-              </div>
+              {booking.pricing.discount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>
+                    Mã ưu đãi{" "}
+                    {booking.pricing.appliedPromoCode
+                      ? `(${booking.pricing.appliedPromoCode})`
+                      : ""}
+                  </span>
+                  <span>-{formatVND(booking.pricing.discount)}</span>
+                </div>
+              )}
               <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-bold text-slate-900">
                 <span>Tổng thanh toán</span>
-                <span className="text-emerald-700 font-black">
+                <span className="text-lg font-black text-emerald-700">
                   {formatVND(booking.pricing.total)}
                 </span>
               </div>
             </div>
 
-            {/* Host Notice */}
-            {!isCancelled && (
+            {/* Sent Email Notification Logs */}
+            {notifications.length > 0 && (
+              <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-3 print:hidden">
+                <div className="flex items-center gap-2 text-xs font-bold text-sky-900">
+                  <Mail className="w-4 h-4 text-sky-600" />
+                  <span>Email xác nhận &amp; thông báo đã gửi ({notifications.length})</span>
+                </div>
+                <div className="space-y-2">
+                  {notifications.map((item) => {
+                    const expanded = expandedEmailId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-white rounded-xl border border-sky-100 p-3 space-y-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">{item.subject}</div>
+                            <div className="text-[11px] text-slate-500">
+                              Tới: {item.recipientEmail} •{" "}
+                              {new Date(item.createdAt).toLocaleString("vi-VN")}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedEmailId(expanded ? null : item.id)}
+                            className="text-[11px] font-bold text-sky-700 hover:text-sky-900 shrink-0"
+                          >
+                            {expanded ? "Thu gọn" : "Xem nội dung email"}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-600">{item.previewText}</p>
+                        {expanded && (
+                          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 overflow-x-auto">
+                            <iframe
+                              title={item.subject}
+                              srcDoc={item.htmlBody}
+                              sandbox=""
+                              className="w-full h-56 border-0 bg-white rounded"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Host instructions */}
+            {booking.status === "confirmed" && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-start gap-3 text-xs text-amber-900">
                 <PhoneCall className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold block">Hướng dẫn nhận phòng:</span>
                   <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                    Chủ nhà ({booking.property.host.name}) sẽ gửi hướng dẫn check-in tới{" "}
-                    <strong>{booking.guestInfo.phone}</strong> trước giờ nhận phòng.
+                    Chủ nhà ({booking.property.host.name}) sẽ gửi mã khóa cửa thông minh và vị trí
+                    định vị qua Zalo/SMS tới số điện thoại{" "}
+                    <strong>{booking.guestInfo.phone}</strong> trước giờ check-in.
                   </p>
                 </div>
               </div>
             )}
 
-            {/* Actions & Cancellation */}
-            <div className="space-y-4 print:hidden">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1 justify-center"
-                  onClick={() => window.print()}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  In / Lưu vé PDF
-                </Button>
-
-                {canCancelOnline && !showCancelForm && (
-                  <Button
-                    variant="outline"
-                    className="flex-1 justify-center border-rose-200 text-rose-700 hover:bg-rose-50 hover:border-rose-300"
-                    onClick={() => setShowCancelForm(true)}
-                  >
-                    Hủy đặt phòng miễn phí
-                  </Button>
-                )}
-              </div>
-
-              {!isCancelled && !booking.property.freeCancellation && (
-                <div className="p-3.5 rounded-2xl bg-slate-100 text-xs text-slate-600 flex items-start gap-2.5">
-                  <ShieldAlert className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                  <span>
-                    Chỗ nghỉ này không áp dụng chính sách hủy miễn phí trực tuyến. Nếu cần thay đổi
-                    lịch trình, vui lòng liên hệ đội ngũ hỗ trợ LuxeStay.
-                  </span>
-                </div>
-              )}
-
-              {canCancelOnline && showCancelForm && (
-                <form
-                  onSubmit={handleCancelBooking}
-                  className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-3"
-                >
-                  <h3 className="text-sm font-bold text-rose-900">
-                    Xác nhận hủy đặt phòng miễn phí
-                  </h3>
-                  <p className="text-xs text-rose-700">
-                    Thao tác hủy phòng không thể hoàn tác. Bạn vẫn có thể xem lại biên nhận đã hủy
-                    sau đó.
+            {/* Policy note when confirmed booking is non-free-cancellation */}
+            {booking.status === "confirmed" && !booking.property.freeCancellation && (
+              <div className="p-4 rounded-2xl bg-slate-100 border border-slate-200 flex items-start gap-3 text-xs text-slate-700 print:hidden">
+                <ShieldAlert className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Chính sách hủy đặt phòng</span>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Chỗ nghỉ này không hỗ trợ hủy miễn phí trực tuyến. Nếu cần thay đổi lịch trình,
+                    vui lòng liên hệ bộ phận hỗ trợ LuxeStay.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Cancellation Confirmation Form */}
+            {showCancelForm && canCancelOnline && (
+              <form
+                onSubmit={handleCancelBooking}
+                className="p-5 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-4 print:hidden"
+              >
+                <div>
+                  <h3 className="text-sm font-bold text-rose-900">
+                    Xác nhận hủy đơn {booking.bookingId}
+                  </h3>
+                  <p className="text-xs text-rose-800 mt-0.5">
+                    Thao tác này sẽ chuyển đơn đặt phòng sang trạng thái đã hủy và không thể hoàn
+                    tác.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-rose-900">
+                    Lý do hủy phòng (Tùy chọn)
+                  </label>
                   <textarea
                     rows={2}
                     value={cancelReason}
                     onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder="Lý do hủy (tùy chọn, ví dụ: thay đổi lịch trình)..."
-                    className="w-full rounded-xl bg-white border border-rose-200 p-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+                    placeholder="Ví dụ: Thay đổi lịch trình công tác, đổi ngày đi..."
+                    className="w-full rounded-xl bg-white border border-rose-200 p-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500"
                   />
+                </div>
 
-                  {cancelError && (
-                    <div
-                      role="alert"
-                      className="text-xs font-semibold text-rose-800 flex items-center gap-1.5"
-                    >
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>{cancelError}</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setShowCancelForm(false);
-                        setCancelError(null);
-                      }}
-                    >
-                      Giữ lại đơn
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      isLoading={isCancelling}
-                      className="bg-rose-600 hover:bg-rose-700"
-                    >
-                      Xác nhận hủy đơn
-                    </Button>
+                {cancelError && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-xl bg-white border border-rose-300 text-xs font-semibold text-rose-700 flex items-center gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{cancelError}</span>
                   </div>
-                </form>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowCancelForm(false);
+                      setCancelError(null);
+                    }}
+                    disabled={isCancelling}
+                    className="flex-1 justify-center"
+                  >
+                    Giữ lại đặt phòng
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    isLoading={isCancelling}
+                    className="flex-1 justify-center bg-rose-600 hover:bg-rose-700"
+                  >
+                    Xác nhận hủy đơn
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {/* Footer Actions */}
+            <div className="flex flex-col sm:flex-row gap-3 print:hidden">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 justify-center"
+                onClick={() => window.print()}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                In / Lưu vé xác nhận PDF
+              </Button>
+              {canCancelOnline && !showCancelForm && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 justify-center border-rose-200 text-rose-700 hover:bg-rose-50"
+                  onClick={() => setShowCancelForm(true)}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Hủy đặt phòng
+                </Button>
               )}
             </div>
           </div>

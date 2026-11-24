@@ -40,6 +40,13 @@ export const promotionsTable = pgTable("promotions", {
   description: text("description").notNull(),
   tone: text("tone").$type<"emerald" | "amber">().notNull(),
   expiryLabel: text("expiry_label").notNull(),
+  discountType: text("discount_type").$type<"fixed" | "percent">().notNull().default("fixed"),
+  discountValue: integer("discount_value").notNull().default(0),
+  minOrderTotal: integer("min_order_total").notNull().default(0),
+  maxDiscount: integer("max_discount"),
+  expiresAt: text("expires_at").notNull().default("2026-11-30T23:59:59.000Z"),
+  isActive: boolean("is_active").notNull().default(true),
+  memberOnly: boolean("member_only").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
 });
 

@@ -48,19 +48,41 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
       )
       .onConflictDoNothing();
 
-    await tx
-      .insert(promotionsTable)
-      .values(
-        snapshot.promotions.vouchers.map((voucher, idx) => ({
+    for (const [idx, voucher] of snapshot.promotions.vouchers.entries()) {
+      await tx
+        .insert(promotionsTable)
+        .values({
           id: voucher.id,
           code: voucher.code,
           description: voucher.description,
           tone: voucher.tone,
           expiryLabel: snapshot.promotions.expiryLabel,
+          discountType: voucher.discountType,
+          discountValue: voucher.discountValue,
+          minOrderTotal: voucher.minOrderTotal,
+          maxDiscount: voucher.maxDiscount ?? null,
+          expiresAt: voucher.expiresAt,
+          isActive: voucher.isActive,
+          memberOnly: voucher.memberOnly,
           sortOrder: idx,
-        }))
-      )
-      .onConflictDoNothing();
+        })
+        .onConflictDoUpdate({
+          target: promotionsTable.id,
+          set: {
+            description: voucher.description,
+            tone: voucher.tone,
+            expiryLabel: snapshot.promotions.expiryLabel,
+            discountType: voucher.discountType,
+            discountValue: voucher.discountValue,
+            minOrderTotal: voucher.minOrderTotal,
+            maxDiscount: voucher.maxDiscount ?? null,
+            expiresAt: voucher.expiresAt,
+            isActive: voucher.isActive,
+            memberOnly: voucher.memberOnly,
+            sortOrder: idx,
+          },
+        });
+    }
 
     await tx
       .insert(testimonialsTable)

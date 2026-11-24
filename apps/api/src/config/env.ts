@@ -10,6 +10,10 @@ const ApiEnvSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     STORAGE_DRIVER: StorageDriverSchema.default("memory"),
     DATABASE_URL: z.string().url().optional(),
+    SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+    PAYMENT_WEBHOOK_SECRET: z.string().min(8).optional(),
+    PAYMENT_SANDBOX_ENABLED: z.enum(["true", "false"]).optional(),
+    NOTIFICATION_WEBHOOK_URL: z.string().url().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.STORAGE_DRIVER === "database" && !data.DATABASE_URL) {
@@ -17,6 +21,13 @@ const ApiEnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ["DATABASE_URL"],
         message: "DATABASE_URL is required when STORAGE_DRIVER=database",
+      });
+    }
+    if (data.NODE_ENV === "production" && !data.PAYMENT_WEBHOOK_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PAYMENT_WEBHOOK_SECRET"],
+        message: "PAYMENT_WEBHOOK_SECRET is required in production",
       });
     }
   });
@@ -27,6 +38,10 @@ export interface ApiEnv {
   nodeEnv: "development" | "test" | "production";
   storageDriver: StorageDriver;
   databaseUrl?: string;
+  sessionTtlDays: number;
+  paymentWebhookSecret: string;
+  paymentSandboxEnabled: boolean;
+  notificationWebhookUrl?: string;
 }
 
 export function loadApiEnv(rawEnv: Record<string, string | undefined> = process.env): ApiEnv {
@@ -36,6 +51,10 @@ export function loadApiEnv(rawEnv: Record<string, string | undefined> = process.
     NODE_ENV: rawEnv.NODE_ENV || undefined,
     STORAGE_DRIVER: rawEnv.STORAGE_DRIVER || undefined,
     DATABASE_URL: rawEnv.DATABASE_URL || undefined,
+    SESSION_TTL_DAYS: rawEnv.SESSION_TTL_DAYS || undefined,
+    PAYMENT_WEBHOOK_SECRET: rawEnv.PAYMENT_WEBHOOK_SECRET || undefined,
+    PAYMENT_SANDBOX_ENABLED: rawEnv.PAYMENT_SANDBOX_ENABLED || undefined,
+    NOTIFICATION_WEBHOOK_URL: rawEnv.NOTIFICATION_WEBHOOK_URL || undefined,
   });
 
   if (!parsed.success) {
@@ -47,11 +66,21 @@ export function loadApiEnv(rawEnv: Record<string, string | undefined> = process.
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+  const paymentSandboxEnabled =
+    parsed.data.PAYMENT_SANDBOX_ENABLED !== undefined
+      ? parsed.data.PAYMENT_SANDBOX_ENABLED === "true"
+      : parsed.data.NODE_ENV !== "production";
+
   return {
     port: parsed.data.PORT,
     corsOrigins: corsOrigins.length > 0 ? corsOrigins : ["http://localhost:3000"],
     nodeEnv: parsed.data.NODE_ENV,
     storageDriver: parsed.data.STORAGE_DRIVER,
     databaseUrl: parsed.data.DATABASE_URL,
+    sessionTtlDays: parsed.data.SESSION_TTL_DAYS,
+    paymentWebhookSecret:
+      parsed.data.PAYMENT_WEBHOOK_SECRET ?? "luxestay-dev-webhook-secret-change-in-prod",
+    paymentSandboxEnabled,
+    notificationWebhookUrl: parsed.data.NOTIFICATION_WEBHOOK_URL,
   };
 }

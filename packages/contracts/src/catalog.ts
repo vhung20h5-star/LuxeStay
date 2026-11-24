@@ -168,9 +168,33 @@ export const PromotionVoucherSchema = z.object({
   code: z.string().min(1),
   description: z.string().min(1),
   tone: z.enum(["emerald", "amber"]),
+  discountType: z.enum(["fixed", "percent"]).default("fixed"),
+  discountValue: z.number().nonnegative().default(0),
+  minOrderTotal: z.number().nonnegative().default(0),
+  maxDiscount: z.number().nonnegative().optional(),
+  expiresAt: z.string().min(1).default("2026-11-30T23:59:59.000Z"),
+  isActive: z.boolean().default(true),
+  memberOnly: z.boolean().default(false),
 });
 
 export type PromotionVoucher = z.infer<typeof PromotionVoucherSchema>;
+
+export const ValidateVoucherInputSchema = z.object({
+  code: z.string().trim().min(1, "Vui lòng nhập mã giảm giá."),
+  subtotal: z.number().nonnegative(),
+});
+
+export type ValidateVoucherInput = z.infer<typeof ValidateVoucherInputSchema>;
+
+export const VoucherValidationResultSchema = z.object({
+  valid: z.boolean(),
+  code: z.string(),
+  discount: z.number().nonnegative(),
+  message: z.string().min(1),
+  voucher: PromotionVoucherSchema.optional(),
+});
+
+export type VoucherValidationResult = z.infer<typeof VoucherValidationResultSchema>;
 
 export const PromotionsBundleSchema = z.object({
   expiryLabel: z.string().min(1),

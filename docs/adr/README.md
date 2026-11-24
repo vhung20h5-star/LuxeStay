@@ -16,6 +16,8 @@ Thư mục này lưu trữ toàn bộ **Architecture Decision Records (ADR)** c�
 | [0006](./0006-app-ports-persistence-and-split-domain-contexts.md) | Cô lập I/O qua `AppPorts` (`useSyncExternalStore`) & Tách Domain Contexts | **Accepted** | 2026-11-24 | `0f26b7b`, `abedd20`, [Spec](../superpowers/specs/2026-11-21-persistence-reservation-port-design.md) |
 | [0007](./0007-monorepo-hono-zod-contracts.md) | Tái cấu trúc sang TypeScript Monorepo (`npm workspaces` + `Turborepo`), Hono API & Zod Contracts | **Accepted** | 2026-11-24 | Monorepo v0.2.0, [ARCHITECTURE](../ARCHITECTURE.md) |
 | [0008](./0008-postgresql-drizzle-database-layer.md) | Chọn PostgreSQL 16 + Drizzle ORM cho Tầng Cơ sở Dữ liệu Phase 1 (`apps/api/src/db`) | **Accepted** | 2026-11-24 | Phase 1 (`P1.1`), [DB README](../../apps/api/src/db/README.md) |
+| [0009](./0009-custom-session-auth-and-wishlist-sync.md) | Custom Session Auth (`scrypt` + OTP) & Đồng bộ Wishlist trên `@luxestay/api` | **Accepted** | 2026-11-24 | Phase 2 (`P2.1`), [PLAN](../PLAN.md) |
+| [0010](./0010-payment-sandbox-webhook-and-notifications.md) | Cổng thanh toán Sandbox chuẩn HMAC-SHA256 Webhook, Idempotency & Notification Log | **Accepted** | 2026-11-24 | Phase 2 (`P2.3`), [PLAN](../PLAN.md) |
 
 ---
 

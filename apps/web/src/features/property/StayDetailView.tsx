@@ -564,10 +564,20 @@ export function StayDetailView({ property }: { property: Property }) {
                     <span>{formatAmenitiesFeeSummary(quote.pricing.amenitiesFee)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-emerald-700 font-semibold">
-                  <span>Ưu đãi LuxeStay</span>
-                  <span>-{formatVND(quote.pricing.discount)}</span>
-                </div>
+                {quote.pricing.discount > 0 ? (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>
+                      Mã ưu đãi{" "}
+                      {quote.pricing.appliedPromoCode ? `(${quote.pricing.appliedPromoCode})` : ""}
+                    </span>
+                    <span>-{formatVND(quote.pricing.discount)}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-slate-400 text-[11px]">
+                    <span>Mã giảm giá</span>
+                    <span>Áp dụng tại bước thanh toán</span>
+                  </div>
+                )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-black text-slate-900">
                   <span>Tổng tạm tính</span>
                   <span className="text-emerald-700">{formatVND(quote.pricing.total)}</span>

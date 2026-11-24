@@ -12,6 +12,7 @@ import type {
   ReservationStatus,
 } from "@luxestay/contracts";
 import { propertiesTable } from "./catalog.js";
+import { usersTable } from "./auth.js";
 
 export const reservationsTable = pgTable(
   "reservations",
@@ -20,6 +21,7 @@ export const reservationsTable = pgTable(
     propertyId: text("property_id")
       .notNull()
       .references(() => propertiesTable.id),
+    userId: text("user_id").references(() => usersTable.id, { onDelete: "set null" }),
     status: text("status").$type<ReservationStatus>().notNull().default("confirmed"),
     checkIn: text("check_in").notNull(),
     checkOut: text("check_out").notNull(),
@@ -33,12 +35,14 @@ export const reservationsTable = pgTable(
     serviceFee: integer("service_fee").notNull().default(0),
     amenitiesFee: integer("amenities_fee").notNull().default(0),
     discount: integer("discount").notNull().default(0),
+    appliedPromoCode: text("applied_promo_code"),
     total: integer("total").notNull(),
     guestFullName: text("guest_full_name").notNull(),
     guestEmail: text("guest_email").notNull(),
     guestPhone: text("guest_phone").notNull(),
     guestNote: text("guest_note"),
     paymentMethod: text("payment_method").$type<PaymentMethod>().notNull(),
+    paymentExpiresAt: timestamp("payment_expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancellationReason: text("cancellation_reason"),
@@ -46,6 +50,7 @@ export const reservationsTable = pgTable(
   (table) => [
     index("reservations_property_id_idx").on(table.propertyId),
     index("reservations_guest_email_idx").on(table.guestEmail),
+    index("reservations_user_id_idx").on(table.userId),
   ]
 );
 

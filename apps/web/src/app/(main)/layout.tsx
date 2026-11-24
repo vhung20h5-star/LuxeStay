@@ -1,4 +1,6 @@
 import React from "react";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { AuthModal } from "@/features/auth/AuthModal";
 import { BookingProvider } from "@/features/booking/BookingContext";
 import { BookingCheckoutModal } from "@/features/booking/BookingCheckoutModal";
 import { BookingSuccessModal } from "@/features/booking/BookingSuccessModal";
@@ -19,21 +21,24 @@ export default async function MainLayout({
   const { catalog, dataMode, publicApiBaseUrl } = await loadInitialCatalog();
 
   return (
-    <BookingProvider
-      initialCatalog={catalog}
-      dataMode={dataMode}
-      apiBaseUrl={publicApiBaseUrl}
-    >
-      <Navbar />
-      <main className="flex-1">{children}</main>
-      <Footer />
+    <AuthProvider dataMode={dataMode} apiBaseUrl={publicApiBaseUrl}>
+      <BookingProvider
+        initialCatalog={catalog}
+        dataMode={dataMode}
+        apiBaseUrl={publicApiBaseUrl}
+      >
+        <Navbar />
+        <main className="flex-1">{children}</main>
+        <Footer />
 
-      {/* Global Modals & Drawers */}
-      <FavoritesDrawer />
-      <FilterModal />
-      <PropertyModal />
-      <BookingCheckoutModal />
-      <BookingSuccessModal />
-    </BookingProvider>
+        {/* Global Modals & Drawers */}
+        <AuthModal />
+        <FavoritesDrawer />
+        <FilterModal />
+        <PropertyModal />
+        <BookingCheckoutModal />
+        <BookingSuccessModal />
+      </BookingProvider>
+    </AuthProvider>
   );
 }

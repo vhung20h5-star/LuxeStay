@@ -661,10 +661,20 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                         </div>
                       )}
 
-                      <div className="flex justify-between text-emerald-700 font-semibold">
-                        <span>Ưu đãi thành viên LuxeStay</span>
-                        <span>-{formatVND(pricing.discount)}</span>
-                      </div>
+                      {pricing.discount > 0 ? (
+                        <div className="flex justify-between text-emerald-700 font-semibold">
+                          <span>
+                            Mã giảm giá{" "}
+                            {pricing.appliedPromoCode ? `(${pricing.appliedPromoCode})` : ""}
+                          </span>
+                          <span>-{formatVND(pricing.discount)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between text-slate-400 text-[11px]">
+                          <span>Mã ưu đãi</span>
+                          <span>Áp dụng ở bước thanh toán</span>
+                        </div>
+                      )}
 
                       <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline text-sm">
                         <span className="font-bold text-slate-900">Tổng thanh toán</span>

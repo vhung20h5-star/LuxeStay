@@ -211,6 +211,13 @@ export function createPostgresCatalogRepository(db: LuxeStayDb): ApiCatalogRepos
             code: row.code,
             description: row.description,
             tone: row.tone,
+            discountType: row.discountType,
+            discountValue: row.discountValue,
+            minOrderTotal: row.minOrderTotal,
+            maxDiscount: row.maxDiscount ?? undefined,
+            expiresAt: row.expiresAt,
+            isActive: row.isActive,
+            memberOnly: row.memberOnly,
           })),
         },
         testimonials: testimonialRows.map((row) => ({

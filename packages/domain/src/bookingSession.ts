@@ -5,7 +5,10 @@ import {
   type BookingQuote,
   type BookingSessionState,
   type CheckoutGuestInput,
+  type PaymentOutcome,
+  type PromotionVoucher,
   type Property,
+  type ReservationStatus,
   type ReservationSubmitter,
   type ResolvedPropertyAmenity,
   type SearchCriteria,
@@ -13,9 +16,10 @@ import {
   type ServerReservationIntent,
 } from "@luxestay/contracts";
 import { projectPropertyAmenities } from "./amenities.js";
+import { evaluatePromotionVoucher, normalizeVoucherCode } from "./vouchers.js";
 
 export const CLEANING_FEE = 150000;
-export const SERVICE_DISCOUNT = 100000;
+export const PAYMENT_EXPIRY_MINUTES = 15;
 const DEFAULT_NIGHTS = 2;
 const MAX_NIGHTS = 30;
 const MS_PER_DAY = 86_400_000;
@@ -207,7 +211,13 @@ function buildSelectedBookingAmenities(
 function calculateBookingPricing(
   pricePerNight: number,
   nights: number,
-  selectedAmenities: SelectedBookingAmenity[]
+  selectedAmenities: SelectedBookingAmenity[],
+  promo?: {
+    promoCode?: string;
+    vouchers?: readonly PromotionVoucher[];
+    now?: Date;
+    isAuthenticated?: boolean;
+  }
 ): BookingQuote["pricing"] {
   const safeNights = clampNights(nights);
   const nightsTotal = pricePerNight * safeNights;
@@ -215,7 +225,29 @@ function calculateBookingPricing(
     (sum, item) => sum + (item.pricingType === "paid" ? item.price : 0),
     0
   );
-  const total = Math.max(0, nightsTotal + CLEANING_FEE + amenitiesFee - SERVICE_DISCOUNT);
+  const subtotal = nightsTotal + CLEANING_FEE + amenitiesFee;
+
+  let discount = 0;
+  let appliedPromoCode: string | undefined;
+
+  const normalizedPromo = normalizeVoucherCode(promo?.promoCode);
+  if (normalizedPromo && promo?.vouchers && promo.vouchers.length > 0) {
+    const evalResult = evaluatePromotionVoucher(
+      normalizedPromo,
+      subtotal,
+      promo.vouchers,
+      {
+        now: promo.now,
+        isAuthenticated: promo.isAuthenticated,
+      }
+    );
+    if (evalResult.ok) {
+      discount = evalResult.discount;
+      appliedPromoCode = evalResult.code;
+    }
+  }
+
+  const total = Math.max(0, subtotal - discount);
 
   return {
     basePrice: pricePerNight,
@@ -223,7 +255,8 @@ function calculateBookingPricing(
     cleaningFee: CLEANING_FEE,
     serviceFee: 0,
     amenitiesFee,
-    discount: SERVICE_DISCOUNT,
+    discount,
+    ...(appliedPromoCode ? { appliedPromoCode } : {}),
     total,
   };
 }
@@ -254,6 +287,7 @@ function seedSessionForProperty(
       rooms: seededRooms,
     },
     selectedAmenityIds: [],
+    promoCode: undefined,
     confirmedBooking: null,
   };
 }
@@ -271,6 +305,7 @@ export function createIdleBookingSession(): BookingSessionState {
       rooms: 1,
     },
     selectedAmenityIds: [],
+    promoCode: undefined,
     confirmedBooking: null,
   };
 }
@@ -407,9 +442,27 @@ export function removeSessionAmenity(
   };
 }
 
+export function setSessionPromoCode(
+  current: BookingSessionState,
+  promoCode: string | undefined | null
+): BookingSessionState {
+  const normalized = normalizeVoucherCode(promoCode);
+  return {
+    ...current,
+    promoCode: normalized || undefined,
+  };
+}
+
+export interface DeriveBookingQuoteOptions {
+  vouchers?: readonly PromotionVoucher[];
+  now?: Date;
+  isAuthenticated?: boolean;
+}
+
 export function deriveBookingQuote(
   session: BookingSessionState,
-  fallbackBaseDate: Date = new Date()
+  fallbackBaseDate: Date = new Date(),
+  options?: DeriveBookingQuoteOptions
 ): BookingQuote | null {
   if (!session.property) return null;
 
@@ -422,7 +475,12 @@ export function deriveBookingQuote(
     resolvedAmenities,
     session.selectedAmenityIds
   );
-  const pricing = calculateBookingPricing(property.pricePerNight, nights, selectedAmenities);
+  const pricing = calculateBookingPricing(property.pricePerNight, nights, selectedAmenities, {
+    promoCode: session.promoCode,
+    vouchers: options?.vouchers,
+    now: options?.now ?? fallbackBaseDate,
+    isAuthenticated: options?.isAuthenticated,
+  });
 
   return {
     property,
@@ -479,6 +537,9 @@ export function validateCheckoutGuestInput(
       email,
       note,
       paymentMethod: input.paymentMethod,
+      ...(input.promoCode?.trim()
+        ? { promoCode: normalizeVoucherCode(input.promoCode) }
+        : {}),
     },
   };
 }
@@ -490,6 +551,11 @@ export function processServerReservationIntent(
     bookingId?: string;
     createdAt?: string;
     fallbackBaseDate?: Date;
+    vouchers?: readonly PromotionVoucher[];
+    userId?: string;
+    isAuthenticated?: boolean;
+    now?: Date;
+    paymentExpiresInMinutes?: number;
   }
 ):
   | { ok: true; booking: BookingDetails }
@@ -526,6 +592,7 @@ export function processServerReservationIntent(
     email: intent.guestInfo?.email ?? "",
     note: intent.guestInfo?.note,
     paymentMethod: intent.paymentMethod,
+    promoCode: intent.promoCode,
   });
   if (!validation.ok) {
     return {
@@ -536,8 +603,10 @@ export function processServerReservationIntent(
   }
 
   const fallbackBaseDate = options?.fallbackBaseDate ?? new Date();
+  const evalNow = options?.now ?? fallbackBaseDate;
   const parsedIn = parseDateInput(intent.checkInSeed, fallbackBaseDate.getFullYear());
   const validCheckInSeed = parsedIn ? (intent.checkInSeed?.trim() ?? "") : "";
+  const requestedPromoCode = normalizeVoucherCode(intent.promoCode);
 
   const serverSession: BookingSessionState = {
     step: "checking-out",
@@ -553,10 +622,50 @@ export function processServerReservationIntent(
     selectedAmenityIds: Array.isArray(intent.selectedAmenityIds)
       ? intent.selectedAmenityIds.filter((id): id is string => typeof id === "string")
       : [],
+    promoCode: requestedPromoCode || undefined,
     confirmedBooking: null,
   };
 
-  const serverQuote = deriveBookingQuote(serverSession, fallbackBaseDate);
+  // If client explicitly supplied a promoCode, validate strictly before building quote
+  if (requestedPromoCode) {
+    const baseQuote = deriveBookingQuote(
+      { ...serverSession, promoCode: undefined },
+      fallbackBaseDate
+    );
+    if (!baseQuote) {
+      return {
+        ok: false,
+        error: "Không thể tính báo giá cho chỗ nghỉ này.",
+        status: 422,
+      };
+    }
+    const subtotal =
+      baseQuote.pricing.nightsTotal +
+      baseQuote.pricing.cleaningFee +
+      baseQuote.pricing.amenitiesFee;
+    const voucherEval = evaluatePromotionVoucher(
+      requestedPromoCode,
+      subtotal,
+      options?.vouchers ?? [],
+      {
+        now: evalNow,
+        isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
+      }
+    );
+    if (!voucherEval.ok) {
+      return {
+        ok: false,
+        error: voucherEval.message,
+        status: 400,
+      };
+    }
+  }
+
+  const serverQuote = deriveBookingQuote(serverSession, fallbackBaseDate, {
+    vouchers: options?.vouchers,
+    now: evalNow,
+    isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
+  });
   if (!serverQuote) {
     return {
       ok: false,
@@ -569,6 +678,14 @@ export function processServerReservationIntent(
     options?.bookingId ?? `LX-${Math.floor(100000 + Math.random() * 900000)}`;
   const createdAt = options?.createdAt ?? new Date().toISOString();
   const { fullName, phone, email, note, paymentMethod } = validation.value;
+
+  const isOnlinePayment = paymentMethod !== "hotel";
+  const initialStatus: ReservationStatus = isOnlinePayment ? "pending_payment" : "confirmed";
+  const expiryMinutes = options?.paymentExpiresInMinutes ?? PAYMENT_EXPIRY_MINUTES;
+  const createdAtMs = Date.parse(createdAt);
+  const paymentExpiresAt = isOnlinePayment
+    ? new Date((Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) + expiryMinutes * 60_000).toISOString()
+    : undefined;
 
   const booking: BookingDetails = Object.freeze({
     property: serverQuote.property,
@@ -583,8 +700,10 @@ export function processServerReservationIntent(
     guestInfo: Object.freeze({ fullName, phone, email, note }),
     paymentMethod,
     bookingId,
+    ...(options?.userId ? { userId: options.userId } : {}),
     createdAt,
-    status: "confirmed",
+    status: initialStatus,
+    ...(paymentExpiresAt ? { paymentExpiresAt } : {}),
   });
 
   return {
@@ -625,14 +744,36 @@ export function matchesReservationContact(
   return trimmed.toLowerCase() === booking.guestInfo.email.trim().toLowerCase();
 }
 
+export function canAccessReservation(
+  booking: Pick<BookingDetails, "guestInfo" | "userId">,
+  credentials: { contact?: string; authenticatedUserId?: string }
+): boolean {
+  if (
+    credentials.authenticatedUserId &&
+    booking.userId &&
+    booking.userId === credentials.authenticatedUserId
+  ) {
+    return true;
+  }
+  if (credentials.contact && matchesReservationContact(booking, credentials.contact)) {
+    return true;
+  }
+  return false;
+}
+
 export function evaluateReservationCancellation(
   booking: BookingDetails,
-  input: { contact: string; reason?: string },
-  options?: { cancelledAt?: string }
+  input: { contact?: string; reason?: string },
+  options?: { cancelledAt?: string; authenticatedUserId?: string }
 ):
   | { ok: true; booking: BookingDetails }
   | { ok: false; status: 403 | 409; code: "FORBIDDEN" | "CONFLICT"; error: string } {
-  if (!matchesReservationContact(booking, input.contact)) {
+  if (
+    !canAccessReservation(booking, {
+      contact: input.contact,
+      authenticatedUserId: options?.authenticatedUserId,
+    })
+  ) {
     return {
       ok: false,
       status: 403,
@@ -650,7 +791,17 @@ export function evaluateReservationCancellation(
     };
   }
 
-  if (!booking.property.freeCancellation) {
+  if (booking.status === "payment_failed" || booking.status === "expired") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: "Đơn đặt phòng này đã kết thúc do thanh toán không thành công hoặc hết hạn.",
+    };
+  }
+
+  // Confirmed reservations must respect property freeCancellation policy; pending_payment can always be cancelled
+  if (booking.status === "confirmed" && !booking.property.freeCancellation) {
     return {
       ok: false,
       status: 409,
@@ -682,6 +833,51 @@ export function evaluateReservationCancellation(
   };
 }
 
+export function evaluatePaymentWebhookTransition(
+  booking: BookingDetails,
+  outcome: PaymentOutcome
+):
+  | { ok: true; nextStatus: ReservationStatus; booking: BookingDetails; changed: boolean }
+  | { ok: false; status: 409; code: "CONFLICT"; error: string } {
+  const targetStatus: ReservationStatus =
+    outcome === "succeeded"
+      ? "confirmed"
+      : outcome === "failed"
+        ? "payment_failed"
+        : "expired";
+
+  if (booking.status === targetStatus) {
+    return { ok: true, nextStatus: targetStatus, booking, changed: false };
+  }
+
+  if (booking.status !== "pending_payment") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: `Không thể chuyển trạng thái đơn từ "${booking.status}" sang "${targetStatus}".`,
+    };
+  }
+
+  const nextBooking: BookingDetails = Object.freeze({
+    ...booking,
+    guests: Object.freeze({ ...booking.guests }),
+    pricing: Object.freeze({ ...booking.pricing }),
+    selectedAmenities: Object.freeze(
+      booking.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ ...booking.guestInfo }),
+    status: targetStatus,
+  });
+
+  return {
+    ok: true,
+    nextStatus: targetStatus,
+    booking: nextBooking,
+    changed: true,
+  };
+}
+
 function createAbortError(): Error {
   const error = new Error("Reservation submission aborted");
   error.name = "AbortError";
@@ -692,7 +888,12 @@ export async function submitBookingSession(
   session: BookingSessionState,
   input: CheckoutGuestInput,
   submitter: ReservationSubmitter,
-  options?: { signal?: AbortSignal; fallbackBaseDate?: Date }
+  options?: {
+    signal?: AbortSignal;
+    fallbackBaseDate?: Date;
+    vouchers?: readonly PromotionVoucher[];
+    isAuthenticated?: boolean;
+  }
 ): Promise<
   | { ok: true; booking: BookingDetails; nextSession: BookingSessionState }
   | { ok: false; error: string }
@@ -708,7 +909,15 @@ export async function submitBookingSession(
     };
   }
 
-  const quote = deriveBookingQuote(session, options?.fallbackBaseDate);
+  const effectivePromo = normalizeVoucherCode(input.promoCode ?? session.promoCode) || undefined;
+  const quote = deriveBookingQuote(
+    { ...session, promoCode: effectivePromo },
+    options?.fallbackBaseDate,
+    {
+      vouchers: options?.vouchers,
+      isAuthenticated: options?.isAuthenticated,
+    }
+  );
   if (!quote) {
     return {
       ok: false,
@@ -716,17 +925,21 @@ export async function submitBookingSession(
     };
   }
 
-  const validation = validateCheckoutGuestInput(input);
+  const validation = validateCheckoutGuestInput({
+    ...input,
+    promoCode: effectivePromo,
+  });
   if (!validation.ok) {
     return validation;
   }
 
-  const { fullName, phone, email, note, paymentMethod } = validation.value;
+  const { fullName, phone, email, note, paymentMethod, promoCode } = validation.value;
   const booking = await submitter.submit(
     {
       quote,
       guestInfo: { fullName, phone, email, note },
       paymentMethod,
+      ...(promoCode ? { promoCode } : {}),
     },
     { signal: options?.signal }
   );

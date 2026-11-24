@@ -1,6 +1,6 @@
 # LuxeStay Domain Glossary
 
-Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.3.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
+Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.4.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
 
 ---
 
@@ -84,4 +84,13 @@ Seam tại `apps/web/src/shared/ports/persistencePort.ts` cung cấp `lookup(boo
 Cặp hàm thuần `serializeCatalogQueryToSearchParams` & `parseCatalogQueryFromSearchParams` (`packages/domain/src/catalogQuery.ts`) kết hợp component `CatalogUrlSync` (`apps/web/src/features/catalog/CatalogUrlSync.tsx`) giúp đồng bộ 2 chiều giữa bộ lọc trang chủ `/` và query string URL (tự loại bỏ giá trị mặc định và sanitize tham số sai lệch).
 
 ### Storage Driver (`memory` | `database`)
-Biến môi trường `STORAGE_DRIVER` trên `@luxestay/api` điều khiển lớp lưu trữ của Backend: `memory` chạy in-memory/seed (mặc định cho test & CI không cần Docker), còn `database` kích hoạt PostgreSQL 16 + Drizzle ORM (`apps/api/src/db/`) theo [ADR-0008](./docs/adr/0008-postgresql-drizzle-database-layer.md).
+Biến môi trường `STORAGE_DRIVER` trên `@luxestay/api` điều khiển lớp lưu trữ của Backend: `memory` chạy in-memory/seed (mặc định cho test & CI không cần Docker), còn `database` kích hoạt PostgreSQL 16 + Drizzle ORM (`apps/api/src/db/`, 19 bảng chuẩn hóa) theo [ADR-0008](./docs/adr/0008-postgresql-drizzle-database-layer.md).
+
+### Auth Session & Remote Wishlist Sync (`AuthContext`, `AuthPort`)
+Hệ thống xác thực tự chủ của LuxeStay ([ADR-0009](./docs/adr/0009-custom-session-auth-and-wishlist-sync.md)): băm mật khẩu bằng `crypto.scrypt`, hỗ trợ đăng nhập OTP 6 số, lưu phiên bằng `HttpOnly` cookie `luxestay_session` (hash SHA-256 trong `user_sessions`), tự động hợp nhất Wishlist từ `localStorage` lên `user_favorites` khi đăng nhập, và gắn `userId` vào đơn đặt phòng mới.
+
+### Dynamic Voucher Engine (`evaluatePromotionVoucher`)
+Module thuần tại `packages/domain/src/vouchers.ts` thay thế mức giảm giá cố định cũ bằng quy tắc mã giảm giá động (`fixed` hoặc `percent` có `minOrderTotal`, `maxDiscount`, `expiresAt`, `isActive`, `memberOnly`), dùng chung cho cả preview tại `BookingCheckoutModal`, endpoint `POST /api/v1/vouchers/validate` và tính giá chuẩn phía server trong `processServerReservationIntent`.
+
+### Payment Gateway Sandbox & Webhook Idempotency
+Quy trình thanh toán trực tuyến chuẩn thực tế ([ADR-0010](./docs/adr/0010-payment-sandbox-webhook-and-notifications.md)): đơn thanh toán qua `vnpay`/`momo`/`card` khởi tạo ở trạng thái `pending_payment` kèm `PaymentTransaction` (`TXN-XXXXXX`), chuyển sang `/payments/[transactionId]`, và chỉ chuyển sang `confirmed` / `payment_failed` / `expired` thông qua webhook `POST /api/v1/payments/webhook/:provider` được ký `HMAC-SHA256` (`x-luxestay-signature`) với kiểm tra chống xử lý trùng (`payment_webhook_events`) và ghi email vé điện tử vào `notification_logs`.

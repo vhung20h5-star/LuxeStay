@@ -4,7 +4,9 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -22,6 +24,7 @@ import type {
   CheckoutGuestInput,
   Destination,
   FilterState,
+  NotificationLog,
   PromotionsBundle,
   Property,
   PropertyType,
@@ -54,6 +57,7 @@ import {
   setQueryPriceRange,
   setQueryPropertyTypeTab,
   setQuerySortBy,
+  setSessionPromoCode,
   startCheckoutSession,
   submitBookingSession,
   toggleQueryAmenity,
@@ -62,9 +66,10 @@ import {
   updateSessionAdults,
   updateSessionNights,
 } from "@luxestay/domain";
+import { useAuth } from "@/features/auth/AuthContext";
 import type { DataMode } from "@/shared/config/env";
 import { createWebAppPorts } from "@/shared/ports/persistencePort";
-import type { AppPorts } from "@/shared/ports/types";
+import type { AppPorts, PaymentGatewayPort } from "@/shared/ports/types";
 
 export interface FavoritesContextValue {
   favorites: readonly string[];
@@ -125,20 +130,28 @@ export interface BookingSessionContextValue {
   setDraftAdults: (adults: number) => void;
   toggleBookingAmenity: (amenityId: string) => void;
   removeBookingAmenity: (amenityId: string) => void;
+  setBookingPromoCode: (promoCode: string | undefined | null) => void;
   submitCheckout: (
     input: CheckoutGuestInput,
     signal?: AbortSignal
   ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
   lookupReservation: (
     bookingId: string,
-    contact: string,
+    contact?: string,
     signal?: AbortSignal
   ) => Promise<BookingDetails>;
   cancelReservation: (
     bookingId: string,
-    input: { contact: string; reason?: string },
+    input: { contact?: string; reason?: string },
     signal?: AbortSignal
   ) => Promise<BookingDetails>;
+  listMyReservations: (signal?: AbortSignal) => Promise<readonly BookingDetails[]>;
+  listReservationNotifications: (
+    bookingId: string,
+    contact?: string,
+    signal?: AbortSignal
+  ) => Promise<readonly NotificationLog[]>;
+  paymentGateway: PaymentGatewayPort;
 }
 
 export type BookingContextType = FavoritesContextValue &
@@ -179,6 +192,8 @@ export function BookingProvider({
     [properties]
   );
 
+  const { user, authPort } = useAuth();
+
   // Explicit mode selection (api vs mock) with ZERO silent fallback in api mode
   const defaultPorts = useMemo(
     () =>
@@ -186,14 +201,16 @@ export function BookingProvider({
         mode: dataMode,
         apiBaseUrl,
         validPropertyIds,
+        vouchers: promotions.vouchers,
         mockReservationDelayMs: 1200,
       }),
-    [apiBaseUrl, dataMode, validPropertyIds]
+    [apiBaseUrl, dataMode, promotions.vouchers, validPropertyIds]
   );
 
   const favoritesRepository = ports?.favorites ?? defaultPorts.favorites;
   const reservationSubmitter = ports?.reservations ?? defaultPorts.reservations;
   const reservationManager = ports?.reservationManager ?? defaultPorts.reservationManager;
+  const paymentGateway = ports?.paymentGateway ?? defaultPorts.paymentGateway;
 
   // 1. Favorites Domain State
   const subscribeFavorites = useCallback(
@@ -215,6 +232,34 @@ export function BookingProvider({
     getFavoritesServerSnapshot
   );
 
+  // Merge localStorage wishlist with remote account wishlist when user signs in
+  const syncedUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user) {
+      syncedUserIdRef.current = null;
+      return;
+    }
+    if (syncedUserIdRef.current === user.id) return;
+    syncedUserIdRef.current = user.id;
+
+    let cancelled = false;
+    const localIds = favoritesRepository.getSnapshot();
+    authPort
+      .syncFavorites(localIds, "merge")
+      .then((mergedIds) => {
+        if (!cancelled) {
+          favoritesRepository.setAll(mergedIds);
+        }
+      })
+      .catch(() => {
+        // Keep local wishlist intact if remote sync fails transiently
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authPort, favoritesRepository, user]);
+
   const [favoritesDrawerOpen, setFavoritesDrawerOpen] = useState(false);
 
   const favoriteProperties = useMemo(
@@ -225,8 +270,18 @@ export function BookingProvider({
   const toggleFavorite = useCallback(
     (id: string) => {
       favoritesRepository.toggle(id);
+      if (user) {
+        authPort
+          .toggleRemoteFavorite(id)
+          .then((serverIds) => {
+            favoritesRepository.setAll(serverIds);
+          })
+          .catch(() => {
+            // Keep optimistic toggle on transient failure
+          });
+      }
     },
-    [favoritesRepository]
+    [authPort, favoritesRepository, user]
   );
 
   const isFavorite = useCallback((id: string) => favorites.includes(id), [favorites]);
@@ -403,7 +458,14 @@ export function BookingProvider({
   const [bookingSession, setBookingSession] = useState<BookingSessionState>(() =>
     createIdleBookingSession()
   );
-  const bookingQuote = useMemo(() => deriveBookingQuote(bookingSession), [bookingSession]);
+  const bookingQuote = useMemo(
+    () =>
+      deriveBookingQuote(bookingSession, undefined, {
+        vouchers: promotions.vouchers,
+        isAuthenticated: Boolean(user),
+      }),
+    [bookingSession, promotions.vouchers, user]
+  );
 
   const selectedProperty =
     bookingSession.step === "previewing" ? bookingSession.property : null;
@@ -486,36 +548,61 @@ export function BookingProvider({
     setBookingSession((prev) => removeSessionAmenity(prev, amenityId));
   }, []);
 
+  const setBookingPromoCode = useCallback((promoCode: string | undefined | null) => {
+    setBookingSession((prev) => setSessionPromoCode(prev, promoCode));
+  }, []);
+
   const submitCheckout = useCallback(
     async (input: CheckoutGuestInput, signal?: AbortSignal) => {
       const result = await submitBookingSession(bookingSession, input, reservationSubmitter, {
         signal,
+        vouchers: promotions.vouchers,
+        isAuthenticated: Boolean(user),
       });
       if (!result.ok) {
         return result;
       }
       if (!signal?.aborted) {
-        setBookingSession((prev) =>
-          prev.step === "checking-out" && prev.property?.id === result.booking.property.id
-            ? result.nextSession
-            : prev
-        );
+        setBookingSession((prev) => {
+          if (prev.step !== "checking-out" || prev.property?.id !== result.booking.property.id) {
+            return prev;
+          }
+          // Online payment redirects to /payments/[transactionId]; clear modal without showing success ticket yet
+          if (result.booking.status === "pending_payment" && result.booking.payment?.checkoutUrl) {
+            return createIdleBookingSession();
+          }
+          return result.nextSession;
+        });
       }
       return { ok: true as const, booking: result.booking };
     },
-    [bookingSession, reservationSubmitter]
+    [bookingSession, promotions.vouchers, reservationSubmitter, user]
   );
 
   const lookupReservation = useCallback(
-    (bookingId: string, contact: string, signal?: AbortSignal) => {
+    (bookingId: string, contact?: string, signal?: AbortSignal) => {
       return reservationManager.lookup(bookingId, contact, { signal });
     },
     [reservationManager]
   );
 
   const cancelReservation = useCallback(
-    (bookingId: string, input: { contact: string; reason?: string }, signal?: AbortSignal) => {
+    (bookingId: string, input: { contact?: string; reason?: string }, signal?: AbortSignal) => {
       return reservationManager.cancel(bookingId, input, { signal });
+    },
+    [reservationManager]
+  );
+
+  const listMyReservations = useCallback(
+    (signal?: AbortSignal) => {
+      return reservationManager.listMine({ signal });
+    },
+    [reservationManager]
+  );
+
+  const listReservationNotifications = useCallback(
+    (bookingId: string, contact?: string, signal?: AbortSignal) => {
+      return reservationManager.listNotifications(bookingId, contact, { signal });
     },
     [reservationManager]
   );
@@ -536,9 +623,13 @@ export function BookingProvider({
       setDraftAdults,
       toggleBookingAmenity,
       removeBookingAmenity,
+      setBookingPromoCode,
       submitCheckout,
       lookupReservation,
       cancelReservation,
+      listMyReservations,
+      listReservationNotifications,
+      paymentGateway,
     }),
     [
       bookingSession,
@@ -555,9 +646,13 @@ export function BookingProvider({
       setDraftAdults,
       toggleBookingAmenity,
       removeBookingAmenity,
+      setBookingPromoCode,
       submitCheckout,
       lookupReservation,
       cancelReservation,
+      listMyReservations,
+      listReservationNotifications,
+      paymentGateway,
     ]
   );
 
