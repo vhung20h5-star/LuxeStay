@@ -891,6 +891,17 @@ test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulat
   assert.equal(eligiblePropertyVoucher.valid, true);
   assert.equal(eligiblePropertyVoucher.discount, 200_000);
 
+  await assert.rejects(
+    () =>
+      mockPayment.validateVoucher({
+        code: "HOMESTAY10",
+        subtotal: 2_000_000,
+        propertyId: "unknown-stay",
+      }),
+    (err: unknown) =>
+      err instanceof HttpApiError && err.status === 404 && err.code === "NOT_FOUND"
+  );
+
   // createWebAppPorts(mode: "mock") wires properties into mock paymentGateway parity
   const mockAppPorts = createWebAppPorts({
     mode: "mock",

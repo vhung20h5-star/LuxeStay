@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function DealsPage() {
+  const nowIso = new Date().toISOString();
   const dealsHub = await loadDealsHub();
-  return <DealsCenterView initialDeals={dealsHub} />;
+  return <DealsCenterView initialDeals={dealsHub} nowIso={nowIso} />;
 }

@@ -14,6 +14,7 @@ import { loadDealsHub } from "@/shared/ports/dealsPort";
 import { HttpApiError } from "@/shared/ports/errors";
 
 export default async function HomePage() {
+  const nowIso = new Date().toISOString();
   let dealsHub: DealsHub | null = null;
   let dealsError: DealsLoadError | null = null;
 
@@ -44,7 +45,7 @@ export default async function HomePage() {
       <HeroSection />
 
       {/* 2. 3-Tier Traveloka-inspired Promotions Hub */}
-      <PromotionsHub initialDeals={dealsHub} error={dealsError} />
+      <PromotionsHub initialDeals={dealsHub} error={dealsError} nowIso={nowIso} />
 
       {/* 3. Interactive Sticky Categories Bar */}
       <CategoryBar />

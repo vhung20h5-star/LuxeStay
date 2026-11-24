@@ -75,6 +75,18 @@ export function createCatalogRoutes(
         : Promise.resolve(undefined),
     ]);
 
+    if (parsed.data.propertyId && !property) {
+      return c.json(
+        buildApiError(
+          "NOT_FOUND",
+          "Không tìm thấy chỗ nghỉ theo mã yêu cầu.",
+          { propertyId: parsed.data.propertyId },
+          buildMeta(c)
+        ),
+        404
+      );
+    }
+
     const evaluation = evaluatePromotionVoucher(
       parsed.data.code,
       parsed.data.subtotal,

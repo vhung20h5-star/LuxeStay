@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowRight, Gift, RefreshCw, Sparkles } from "lucide-react";
@@ -23,15 +23,17 @@ export interface DealsLoadError {
 export interface PromotionsHubProps {
   initialDeals: DealsHub | null;
   error?: DealsLoadError | null;
+  nowIso?: string;
 }
 
 /** Homepage 3-tier Promotions Hub placed directly below HeroSection. */
-export function PromotionsHub({ initialDeals, error = null }: PromotionsHubProps) {
+export function PromotionsHub({ initialDeals, error = null, nowIso }: PromotionsHubProps) {
   const router = useRouter();
   const { locale, t } = useLocale();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [inspectedVoucher, setInspectedVoucher] = useState<PromotionVoucher | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const referenceDate = useMemo(() => (nowIso ? new Date(nowIso) : new Date()), [nowIso]);
 
   useEffect(() => {
     return () => {
@@ -108,12 +110,16 @@ export function PromotionsHub({ initialDeals, error = null }: PromotionsHubProps
     return null;
   }
 
-  const tier1Vouchers = buildHomepageTier1Vouchers(initialDeals.vouchers);
-  const { hero, carousel } = partitionCampaigns(initialDeals.campaigns);
+  const tier1Vouchers = buildHomepageTier1Vouchers(initialDeals.vouchers, referenceDate);
+  const { hero, carousel } = partitionCampaigns(initialDeals.campaigns, referenceDate);
   const featuredHeroVoucher = hero
     ? (resolveCampaignVouchers(hero, initialDeals.vouchers)[0] ?? null)
     : null;
   const hasCampaigns = hero !== null || carousel.length > 0;
+
+  if (!error && initialDeals && tier1Vouchers.length === 0 && !hasCampaigns) {
+    return null;
+  }
 
   return (
     <section

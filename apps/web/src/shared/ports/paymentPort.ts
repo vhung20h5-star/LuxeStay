@@ -170,6 +170,14 @@ export function createMockPaymentGatewayPort(options?: {
       const property = propertyId
         ? options?.properties?.find((item) => item.id === propertyId)
         : undefined;
+      if (propertyId && options?.properties !== undefined && !property) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: "Không tìm thấy chỗ nghỉ theo mã yêu cầu.",
+          details: { propertyId },
+        });
+      }
       const evaluated = evaluatePromotionVoucher(
         input.code,
         input.subtotal,

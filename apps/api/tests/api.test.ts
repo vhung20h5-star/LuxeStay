@@ -1470,10 +1470,57 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
   assert.equal(minimalMapped.audience, "all");
   assert.equal(minimalMapped.newUserOnly, false);
 
-  const createStubDb = (existingCampaignRows: Array<{ id: string }>) => {
+  const createStubDb = (
+    existingCampaignRows: Array<{ id: string }>,
+    stubOptions?: { failFirstTransactionOnCampaignInsertIndex?: number }
+  ) => {
     const selectTables: unknown[] = [];
     const insertedRowsByTable = new Map<unknown, unknown[]>();
     const otherWriteTables: unknown[] = [];
+    let transactionCalls = 0;
+    let nonTransactionalInserts = 0;
+
+    const createInsertHandler = (
+      targetMap: Map<unknown, unknown[]>,
+      options: {
+        isTransactional: boolean;
+        txAttemptNumber: number;
+        campaignInsertCounter: { count: number };
+      }
+    ) => {
+      return (table: unknown) => ({
+        values(payload: unknown) {
+          const items = Array.isArray(payload) ? payload : [payload];
+          const record = async () => {
+            if (!options.isTransactional) {
+              nonTransactionalInserts += 1;
+            }
+            if (table === promotionCampaignsTable) {
+              options.campaignInsertCounter.count += 1;
+              if (
+                options.txAttemptNumber === 1 &&
+                stubOptions?.failFirstTransactionOnCampaignInsertIndex !== undefined &&
+                options.campaignInsertCounter.count ===
+                  stubOptions.failFirstTransactionOnCampaignInsertIndex
+              ) {
+                throw new Error("Simulated transient DB error mid-backfill");
+              }
+            }
+            const rows = targetMap.get(table) ?? [];
+            rows.push(...items);
+            targetMap.set(table, rows);
+          };
+          return {
+            async onConflictDoUpdate() {
+              await record();
+            },
+            async onConflictDoNothing() {
+              await record();
+            },
+          };
+        },
+      });
+    };
 
     const db = {
       select() {
@@ -1482,32 +1529,21 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
             selectTables.push(table);
             return {
               async limit() {
-                return table === promotionCampaignsTable ? existingCampaignRows : [];
+                if (table !== promotionCampaignsTable) return [];
+                if (existingCampaignRows.length > 0) return existingCampaignRows;
+                return (insertedRowsByTable.get(promotionCampaignsTable) ?? []) as Array<{
+                  id: string;
+                }>;
               },
             };
           },
         };
       },
-      insert(table: unknown) {
-        return {
-          values(payload: unknown) {
-            const items = Array.isArray(payload) ? payload : [payload];
-            const record = async () => {
-              const rows = insertedRowsByTable.get(table) ?? [];
-              rows.push(...items);
-              insertedRowsByTable.set(table, rows);
-            };
-            return {
-              async onConflictDoUpdate() {
-                await record();
-              },
-              async onConflictDoNothing() {
-                await record();
-              },
-            };
-          },
-        };
-      },
+      insert: createInsertHandler(insertedRowsByTable, {
+        isTransactional: false,
+        txAttemptNumber: 0,
+        campaignInsertCounter: { count: 0 },
+      }),
       update(table: unknown) {
         otherWriteTables.push(table);
         return {
@@ -1528,6 +1564,26 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
           },
         };
       },
+      async transaction<T>(fn: (tx: typeof db) => Promise<T>): Promise<T> {
+        transactionCalls += 1;
+        const txRows = new Map<unknown, unknown[]>(
+          [...insertedRowsByTable.entries()].map(([tbl, rows]) => [tbl, [...rows]])
+        );
+        const tx = {
+          ...db,
+          insert: createInsertHandler(txRows, {
+            isTransactional: true,
+            txAttemptNumber: transactionCalls,
+            campaignInsertCounter: { count: 0 },
+          }),
+        };
+        const result = await fn(tx);
+        insertedRowsByTable.clear();
+        for (const [tbl, rows] of txRows.entries()) {
+          insertedRowsByTable.set(tbl, rows);
+        }
+        return result;
+      },
     };
 
     return {
@@ -1535,13 +1591,21 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
       selectTables,
       insertedRowsByTable,
       otherWriteTables,
+      get transactionCalls() {
+        return transactionCalls;
+      },
+      get nonTransactionalInserts() {
+        return nonTransactionalInserts;
+      },
     };
   };
 
-  // Case 1: Empty promotion_campaigns triggers backfill of 6 vouchers + 5 campaigns, never touching propertiesTable
+  // Case 1: Empty promotion_campaigns triggers atomic transactional backfill of 6 vouchers + 5 campaigns, never touching propertiesTable
   const emptyStub = createStubDb([]);
   const emptyResult = await backfillPromotionsIfNeeded(emptyStub.db);
   assert.deepEqual(emptyResult, { backfilled: true });
+  assert.equal(emptyStub.transactionCalls, 1);
+  assert.equal(emptyStub.nonTransactionalInserts, 0);
   assert.deepEqual(emptyStub.selectTables, [promotionCampaignsTable]);
   assert.equal(
     emptyStub.insertedRowsByTable.get(promotionsTable)?.length,
@@ -1556,12 +1620,34 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
   assert.equal(emptyStub.insertedRowsByTable.get(propertiesTable), undefined);
   assert.equal(emptyStub.otherWriteTables.length, 0);
 
-  // Case 2: Non-empty promotion_campaigns skips backfill without any writes
+  // Case 2: Non-empty promotion_campaigns skips backfill without opening a transaction or writing
   const populatedStub = createStubDb([{ id: "camp-black-friday-2026" }]);
   const populatedResult = await backfillPromotionsIfNeeded(populatedStub.db);
   assert.deepEqual(populatedResult, { backfilled: false });
+  assert.equal(populatedStub.transactionCalls, 0);
+  assert.equal(populatedStub.nonTransactionalInserts, 0);
   assert.equal(populatedStub.insertedRowsByTable.size, 0);
   assert.equal(populatedStub.otherWriteTables.length, 0);
+
+  // Case 3: Mid-backfill failure rolls back atomically so a subsequent db:prepare retries cleanly
+  const transientFailStub = createStubDb([], {
+    failFirstTransactionOnCampaignInsertIndex: 2,
+  });
+  await assert.rejects(
+    () => backfillPromotionsIfNeeded(transientFailStub.db),
+    /Simulated transient DB error mid-backfill/
+  );
+  assert.equal(transientFailStub.transactionCalls, 1);
+  assert.equal(transientFailStub.nonTransactionalInserts, 0);
+  assert.equal(transientFailStub.insertedRowsByTable.size, 0);
+
+  const retryResult = await backfillPromotionsIfNeeded(transientFailStub.db);
+  assert.deepEqual(retryResult, { backfilled: true });
+  assert.equal(transientFailStub.transactionCalls, 2);
+  assert.equal(transientFailStub.nonTransactionalInserts, 0);
+  assert.equal(transientFailStub.insertedRowsByTable.get(promotionsTable)?.length, 6);
+  assert.equal(transientFailStub.insertedRowsByTable.get(promotionCampaignsTable)?.length, 5);
+  assert.equal(transientFailStub.insertedRowsByTable.get(propertiesTable), undefined);
 });
 
 test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
@@ -1679,6 +1765,17 @@ test("Server-authoritative voucher validation enforces property eligibility and 
   ).data;
   assert.equal(validHomestay.valid, true);
   assert.equal(validHomestay.discount, 200000);
+
+  // 1b. Unknown propertyId returns explicit 404 NOT_FOUND instead of bypassing property restrictions
+  const unknownPropertyRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "unknown-stay" }),
+  });
+  assert.equal(unknownPropertyRes.status, 404);
+  const unknownPropertyErr = ApiErrorResponseSchema.parse(await unknownPropertyRes.json());
+  assert.equal(unknownPropertyErr.error.code, "NOT_FOUND");
+  assert.deepEqual(unknownPropertyErr.error.details, { propertyId: "unknown-stay" });
 
   // 2. Guest visitor validating WELCOME150 gets valid: true
   const guestWelcomeRes = await app.request(API_ENDPOINTS.validateVoucher, {

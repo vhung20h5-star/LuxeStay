@@ -49,7 +49,9 @@ export async function backfillPromotionsIfNeeded(
     return { backfilled: false };
   }
 
-  await seedPromotionsAndCampaigns(db);
+  await db.transaction(async (tx) => {
+    await seedPromotionsAndCampaigns(tx);
+  });
   return { backfilled: true };
 }
 

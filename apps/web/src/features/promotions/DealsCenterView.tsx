@@ -20,28 +20,31 @@ import { useCopiedVoucherCode } from "./useCopiedVoucherCode";
 
 export interface DealsCenterViewProps {
   initialDeals: DealsHub;
+  nowIso?: string;
 }
 
 /** Dedicated /deals Promotions Center with audience-filtered voucher vault and active campaigns. */
-export function DealsCenterView({ initialDeals }: DealsCenterViewProps) {
+export function DealsCenterView({ initialDeals, nowIso }: DealsCenterViewProps) {
   const { locale, t } = useLocale();
   const [activeAudience, setActiveAudience] = useState<VoucherAudience>("all");
   const [inspectedVoucher, setInspectedVoucher] = useState<PromotionVoucher | null>(null);
   const { copiedCode, handleCopy } = useCopiedVoucherCode();
 
+  const referenceDate = useMemo(() => (nowIso ? new Date(nowIso) : new Date()), [nowIso]);
+
   const audienceCounts = useMemo(
-    () => buildDealAudienceCounts(initialDeals.vouchers),
-    [initialDeals.vouchers]
+    () => buildDealAudienceCounts(initialDeals.vouchers, referenceDate),
+    [initialDeals.vouchers, referenceDate]
   );
 
   const filteredVouchers = useMemo(
-    () => filterVouchersByAudience(initialDeals.vouchers, activeAudience),
-    [initialDeals.vouchers, activeAudience]
+    () => filterVouchersByAudience(initialDeals.vouchers, activeAudience, referenceDate),
+    [initialDeals.vouchers, activeAudience, referenceDate]
   );
 
   const { hero, carousel, allActive } = useMemo(
-    () => partitionCampaigns(initialDeals.campaigns),
-    [initialDeals.campaigns]
+    () => partitionCampaigns(initialDeals.campaigns, referenceDate),
+    [initialDeals.campaigns, referenceDate]
   );
 
   const featuredHeroVoucher = useMemo(

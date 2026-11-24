@@ -37,6 +37,7 @@ import { useCopiedVoucherCode } from "./useCopiedVoucherCode";
 
 export interface DealDetailViewProps {
   detail: DealDetail;
+  nowIso?: string;
 }
 
 function ScopePillIcon({ kind }: { kind: CampaignScopePill["kind"] }) {
@@ -53,14 +54,15 @@ function ScopePillIcon({ kind }: { kind: CampaignScopePill["kind"] }) {
 }
 
 /** Dedicated /deals/[slug] Campaign Detail view with voucher selection and promo-prefilled stays. */
-export function DealDetailView({ detail }: DealDetailViewProps) {
+export function DealDetailView({ detail, nowIso }: DealDetailViewProps) {
   const { campaign, vouchers, properties } = detail;
   const { locale, t } = useLocale();
   const { openPropertyWithPromo, startCheckoutWithPromo, setBookingPromoCode } =
     useBookingSession();
   const { copiedCode, handleCopy } = useCopiedVoucherCode();
 
-  const expired = isCampaignExpired(campaign);
+  const referenceDate = useMemo(() => (nowIso ? new Date(nowIso) : new Date()), [nowIso]);
+  const expired = isCampaignExpired(campaign, referenceDate);
   const themeStyle = getCampaignThemeStyle(campaign.theme);
 
   const [selectedVoucherCode, setSelectedVoucherCode] = useState<string | null>(() =>
@@ -85,7 +87,7 @@ export function DealDetailView({ detail }: DealDetailViewProps) {
     property: Property,
     promoCode: string | undefined
   ) => {
-    if (expired) {
+    if (!promoCode) {
       setBookingPromoCode(null);
     }
     openPropertyWithPromo(property, promoCode);
@@ -95,7 +97,7 @@ export function DealDetailView({ detail }: DealDetailViewProps) {
     property: Property,
     promoCode: string | undefined
   ) => {
-    if (expired) {
+    if (!promoCode) {
       setBookingPromoCode(null);
     }
     startCheckoutWithPromo(property, promoCode);

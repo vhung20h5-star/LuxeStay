@@ -51,5 +51,6 @@ export default async function DealDetailPage({
     notFound();
   }
 
-  return <DealDetailView key={detail.campaign.slug} detail={detail} />;
+  const nowIso = new Date().toISOString();
+  return <DealDetailView key={detail.campaign.slug} detail={detail} nowIso={nowIso} />;
 }
