@@ -7,6 +7,8 @@ export const API_ENDPOINTS = Object.freeze({
   propertyReviews: (id: string) =>
     `/api/v1/properties/${encodeURIComponent(id)}/reviews`,
   validateVoucher: "/api/v1/vouchers/validate",
+  deals: "/api/v1/deals",
+  dealBySlug: (slug: string) => `/api/v1/deals/${encodeURIComponent(slug.trim())}`,
   reservations: "/api/v1/reservations",
   myReservations: "/api/v1/reservations/my",
   reservationById: (bookingId: string) =>

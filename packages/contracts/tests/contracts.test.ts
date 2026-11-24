@@ -10,6 +10,8 @@ import {
   createApiSuccessSchema,
   CreateHostPropertyInputSchema,
   CreateReviewInputSchema,
+  DealDetailSchema,
+  DealsHubSchema,
   GuestInfoSchema,
   HealthDataSchema,
   HostAnalyticsDataSchema,
@@ -17,11 +19,13 @@ import {
   OtpRequestInputSchema,
   OtpVerifyInputSchema,
   PaymentWebhookPayloadSchema,
+  PromotionVoucherSchema,
   PropertyAvailabilityDataSchema,
   RegisterInputSchema,
   ReservationLookupInputSchema,
   ServerReservationIntentSchema,
   UpsertHostAvailabilityInputSchema,
+  ValidateVoucherInputSchema,
 } from "../dist/index.js";
 
 test("ApiSuccess and ApiError builders produce contract-compliant envelopes", () => {
@@ -284,4 +288,146 @@ test("Phase 3B RBAC, Host CRUD, availability overrides, and analytics contracts 
   assert.equal(API_ENDPOINTS.hostProperties, "/api/v1/host/properties");
   assert.equal(API_ENDPOINTS.hostPropertyAvailability("stay-01"), "/api/v1/host/properties/stay-01/availability");
   assert.equal(API_ENDPOINTS.hostAnalytics, "/api/v1/host/analytics");
+});
+
+test("Promotions Hub and Deals contracts validate extended vouchers, campaigns, deal details, and endpoints", () => {
+  const legacyVoucher = PromotionVoucherSchema.parse({
+    id: "v-legacy",
+    code: "LUXESTAY250",
+    description: "Giảm 250.000đ cho đơn từ 1.500.000đ",
+    tone: "emerald",
+  });
+  assert.equal(legacyVoucher.audience, "all");
+  assert.equal(legacyVoucher.newUserOnly, false);
+
+  const extendedVoucher = PromotionVoucherSchema.parse({
+    id: "v-ext",
+    code: "NEWSTAY250",
+    description: "Ưu đãi khách mới giảm 250.000đ",
+    tone: "amber",
+    discountType: "fixed",
+    discountValue: 250_000,
+    minOrderTotal: 1_500_000,
+    title: "Chào bạn mới",
+    subtitle: "Áp dụng cho kỳ nghỉ đầu tiên",
+    badge: "MỚI",
+    iconName: "sparkles",
+    audience: "new-user",
+    newUserOnly: true,
+    applicablePropertyTypes: ["hotel", "resort"],
+    applicableCategories: ["luxury-resort"],
+    terms: ["Áp dụng cho đơn đầu tiên", "Không cộng dồn ưu đãi khác"],
+  });
+  assert.equal(extendedVoucher.audience, "new-user");
+  assert.equal(extendedVoucher.newUserOnly, true);
+  assert.deepEqual(extendedVoucher.applicablePropertyTypes, ["hotel", "resort"]);
+  assert.deepEqual(extendedVoucher.applicableCategories, ["luxury-resort"]);
+
+  assert.equal(
+    ValidateVoucherInputSchema.safeParse({ code: "LUXESTAY250", subtotal: 2_000_000 }).success,
+    true
+  );
+  const validateWithProperty = ValidateVoucherInputSchema.safeParse({
+    code: "NEWSTAY250",
+    subtotal: 2_000_000,
+    propertyId: "stay-02",
+  });
+  assert.equal(validateWithProperty.success, true);
+  if (validateWithProperty.success) {
+    assert.equal(validateWithProperty.data.propertyId, "stay-02");
+  }
+
+  const validCampaign = {
+    id: "cmp-01",
+    slug: "black-friday-2026",
+    placement: "hero" as const,
+    badge: "BLACK FRIDAY",
+    title: "Black Friday Sale 2026",
+    subtitle: "Giảm đến 40% resort và khách sạn cao cấp",
+    highlightText: "Giảm thêm 250.000đ với mã LUXESTAY250",
+    periodLabel: "20/11 - 30/11/2026",
+    image: "https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=1200&q=80",
+    theme: "festive-night" as const,
+    ctaLabel: "Khám phá ưu đãi",
+    terms: ["Áp dụng cho kỳ nghỉ trước 31/12/2026"],
+    voucherCodes: ["LUXESTAY250"],
+    targetFilter: {
+      destinations: ["Đà Lạt", "Phú Quốc"],
+      categories: ["luxury-resort" as const],
+      propertyTypes: ["resort" as const],
+      flashDealOnly: true,
+    },
+    startsAt: "2026-11-20T00:00:00.000Z",
+    endsAt: "2026-11-30T23:59:59.000Z",
+  };
+
+  const validProperty = {
+    id: "stay-01",
+    title: "Pine Hill Boutique Villa Đà Lạt",
+    subtitle: "Biệt thự rừng thông view đồi đón bình minh",
+    propertyType: "resort" as const,
+    category: "luxury-resort" as const,
+    location: {
+      city: "Đà Lạt",
+      province: "Lâm Đồng",
+      address: "Đường Đống Đa, Phường 3",
+      distanceToCenter: "Cách trung tâm 2.5 km",
+    },
+    images: ["https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=1200&q=80"],
+    pricePerNight: 2_200_000,
+    rating: 4.9,
+    reviewCount: 42,
+    maxGuests: 6,
+    bedrooms: 3,
+    beds: 3,
+    bathrooms: 3,
+    resortAmenities: [],
+    description: "Biệt thự thiết kế gỗ thông tự nhiên với sân BBQ riêng và lò sưởi ấm cúng.",
+    host: {
+      name: "Minh Anh",
+      avatar: "https://images.unsplash.com/photo-1587061949409-02df41d5e562?auto=format&fit=crop&w=200&q=80",
+      joinedDate: "2023-01",
+      responseRate: "99%",
+      isSuperhost: true,
+    },
+    reviews: [],
+  };
+
+  const dealsHubResult = DealsHubSchema.safeParse({
+    expiryLabel: "Hết hạn 30/11/2026",
+    vouchers: [extendedVoucher],
+    campaigns: [validCampaign],
+  });
+  assert.equal(dealsHubResult.success, true);
+  if (dealsHubResult.success) {
+    assert.equal(dealsHubResult.data.campaigns[0]?.isActive, true);
+  }
+
+  const dealDetailResult = DealDetailSchema.safeParse({
+    campaign: validCampaign,
+    vouchers: [extendedVoucher],
+    properties: [validProperty],
+  });
+  assert.equal(dealDetailResult.success, true);
+
+  assert.equal(
+    DealsHubSchema.safeParse({
+      expiryLabel: "Hết hạn 30/11/2026",
+      vouchers: [extendedVoucher],
+      campaigns: [{ ...validCampaign, theme: "unknown-theme" }],
+    }).success,
+    false
+  );
+  assert.equal(
+    DealDetailSchema.safeParse({
+      campaign: { ...validCampaign, placement: "sidebar" },
+      vouchers: [extendedVoucher],
+      properties: [validProperty],
+    }).success,
+    false
+  );
+
+  assert.equal(API_ENDPOINTS.deals, "/api/v1/deals");
+  assert.equal(API_ENDPOINTS.dealBySlug(" black-friday-2026 "), "/api/v1/deals/black-friday-2026");
+  assert.equal(API_ENDPOINTS.dealBySlug("a/b c"), "/api/v1/deals/a%2Fb%20c");
 });

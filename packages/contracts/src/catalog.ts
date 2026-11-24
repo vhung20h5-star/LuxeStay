@@ -169,6 +169,10 @@ export const TestimonialItemSchema = z.object({
 
 export type TestimonialItem = z.infer<typeof TestimonialItemSchema>;
 
+export const VoucherAudienceSchema = z.enum(["all", "new-user", "member"]);
+
+export type VoucherAudience = z.infer<typeof VoucherAudienceSchema>;
+
 export const PromotionVoucherSchema = z.object({
   id: z.string().min(1),
   code: z.string().min(1),
@@ -181,6 +185,15 @@ export const PromotionVoucherSchema = z.object({
   expiresAt: z.string().min(1).default("2026-11-30T23:59:59.000Z"),
   isActive: z.boolean().default(true),
   memberOnly: z.boolean().default(false),
+  title: z.string().min(1).optional(),
+  subtitle: z.string().min(1).optional(),
+  badge: z.string().min(1).optional(),
+  iconName: z.string().min(1).optional(),
+  audience: VoucherAudienceSchema.default("all"),
+  newUserOnly: z.boolean().default(false),
+  applicablePropertyTypes: z.array(PropertyTypeSchema).optional(),
+  applicableCategories: z.array(CategoryIdSchema).optional(),
+  terms: z.array(z.string().min(1)).optional(),
 });
 
 export type PromotionVoucher = z.infer<typeof PromotionVoucherSchema>;
@@ -188,6 +201,7 @@ export type PromotionVoucher = z.infer<typeof PromotionVoucherSchema>;
 export const ValidateVoucherInputSchema = z.object({
   code: z.string().trim().min(1, "Vui lòng nhập mã giảm giá."),
   subtotal: z.number().nonnegative(),
+  propertyId: z.string().trim().min(1).optional(),
 });
 
 export type ValidateVoucherInput = z.infer<typeof ValidateVoucherInputSchema>;
