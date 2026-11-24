@@ -14,7 +14,11 @@ import type {
   AmenityFilterKey,
   AmenityPricingType,
   CategoryId,
+  PromotionCampaignPlacement,
+  PromotionCampaignTargetFilter,
+  PromotionCampaignTheme,
   PropertyType,
+  VoucherAudience,
 } from "@luxestay/contracts";
 
 export const categoriesTable = pgTable("categories", {
@@ -49,6 +53,36 @@ export const promotionsTable = pgTable("promotions", {
   expiresAt: text("expires_at").notNull().default("2026-11-30T23:59:59.000Z"),
   isActive: boolean("is_active").notNull().default(true),
   memberOnly: boolean("member_only").notNull().default(false),
+  title: text("title"),
+  subtitle: text("subtitle"),
+  badge: text("badge"),
+  iconName: text("icon_name"),
+  audience: text("audience").$type<VoucherAudience>().notNull().default("all"),
+  newUserOnly: boolean("new_user_only").notNull().default(false),
+  applicablePropertyTypes: jsonb("applicable_property_types").$type<PropertyType[]>(),
+  applicableCategories: jsonb("applicable_categories").$type<CategoryId[]>(),
+  terms: jsonb("terms").$type<string[]>(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const promotionCampaignsTable = pgTable("promotion_campaigns", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  placement: text("placement").$type<PromotionCampaignPlacement>().notNull(),
+  badge: text("badge").notNull(),
+  title: text("title").notNull(),
+  subtitle: text("subtitle").notNull(),
+  highlightText: text("highlight_text").notNull(),
+  periodLabel: text("period_label").notNull(),
+  image: text("image").notNull(),
+  theme: text("theme").$type<PromotionCampaignTheme>().notNull(),
+  ctaLabel: text("cta_label").notNull(),
+  terms: jsonb("terms").$type<string[]>().notNull().default([]),
+  voucherCodes: jsonb("voucher_codes").$type<string[]>().notNull().default([]),
+  targetFilter: jsonb("target_filter").$type<PromotionCampaignTargetFilter>().notNull().default({}),
+  startsAt: text("starts_at").notNull(),
+  endsAt: text("ends_at").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
 });
 

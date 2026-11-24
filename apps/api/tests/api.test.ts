@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   API_ENDPOINTS,
   ApiErrorResponseSchema,
@@ -17,18 +20,30 @@ import {
   OtpRequestResultSchema,
   PaymentGatewaySessionSchema,
   PaymentWebhookResultSchema,
+  PromotionVoucherSchema,
   PropertyAvailabilityDataSchema,
   PropertySchema,
   VoucherValidationResultSchema,
 } from "@luxestay/contracts";
-import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
-import { resolveDatabaseConfig } from "../dist/db/client.js";
-import { prepareDatabaseIfConfigured } from "../dist/db/vercelPrepare.js";
+import { resolveDatabaseConfig, type LuxeStayDb } from "../dist/db/client.js";
+import {
+  promotionCampaignsTable,
+  promotionsTable,
+  propertiesTable,
+} from "../dist/db/schema/index.js";
+import {
+  backfillPromotionsIfNeeded,
+  prepareDatabaseIfConfigured,
+} from "../dist/db/vercelPrepare.js";
 import { resetApiRuntimeForTests } from "../dist/runtime.js";
 import vercelServerApp from "../dist/server.js";
-import { mapPropertyRowToDomain } from "../dist/modules/catalog/postgresRepository.js";
+import {
+  mapPromotionVoucherRowToDomain,
+  mapPropertyRowToDomain,
+} from "../dist/modules/catalog/postgresRepository.js";
 import { createSeedCatalogRepository } from "../dist/modules/catalog/repository.js";
 import {
   signWebhookPayload,
@@ -74,7 +89,7 @@ test("GET /api/v1/catalog returns complete CatalogSnapshot validated against con
     assert.equal(parsed.data.data.categories.length, 9);
     assert.equal(parsed.data.data.destinations.length, 8);
     assert.equal(Object.keys(parsed.data.data.amenityCatalog).length, 51);
-    assert.equal(parsed.data.data.promotions.vouchers.length, 2);
+    assert.equal(parsed.data.data.promotions.vouchers.length, 6);
     assert.equal(parsed.data.data.testimonials.length, 3);
   }
 });
@@ -1333,4 +1348,204 @@ test("Vercel Hono entrypoint (server.ts) lazily boots runtime and CORS trusts Ve
     }),
     { status: "skipped" }
   );
+});
+
+test("Migration 0004, promotion voucher row mapper, and idempotent backfill preserve existing properties", async () => {
+  const migrationsDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/db/migrations"
+  );
+  const migration0004Path = path.join(migrationsDir, "0004_promotions_campaigns.sql");
+  assert.equal(existsSync(migration0004Path), true);
+
+  const migrationSql = readFileSync(migration0004Path, "utf8");
+  for (const columnName of [
+    "title",
+    "subtitle",
+    "badge",
+    "icon_name",
+    "audience",
+    "new_user_only",
+    "applicable_property_types",
+    "applicable_categories",
+    "terms",
+  ]) {
+    assert.match(
+      migrationSql,
+      new RegExp(`ALTER TABLE "promotions" ADD COLUMN IF NOT EXISTS "${columnName}"`),
+      `Expected migration 0004 to add promotions.${columnName}`
+    );
+  }
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS "promotion_campaigns"/);
+  assert.match(migrationSql, /UNIQUE\("slug"\)/);
+
+  const journalRaw = readFileSync(path.join(migrationsDir, "meta/_journal.json"), "utf8");
+  const journal = JSON.parse(journalRaw) as {
+    entries: Array<{ idx: number; version: string; when: number; tag: string; breakpoints: boolean }>;
+  };
+  const entry4 = journal.entries.find((e) => e.idx === 4);
+  assert.deepEqual(entry4, {
+    idx: 4,
+    version: "7",
+    when: 1795526400000,
+    tag: "0004_promotions_campaigns",
+    breakpoints: true,
+  });
+
+  const fullMapped = mapPromotionVoucherRowToDomain({
+    id: "voucher-homestay-10",
+    code: "HOMESTAY10",
+    description: "Giảm 10% tối đa 300.000đ Homestay, Villa & Glamping",
+    tone: "amber",
+    expiryLabel: "30/11/2026",
+    discountType: "percent",
+    discountValue: 10,
+    minOrderTotal: 700000,
+    maxDiscount: 300000,
+    expiresAt: "2026-12-31T23:59:59.000Z",
+    isActive: true,
+    memberOnly: false,
+    title: "Giảm 10% (tối đa 300K) cho Homestay & Glamping",
+    subtitle: "Dành cho lần đặt đầu từ 700.000đ",
+    badge: "Bạn mới",
+    iconName: "Tent",
+    audience: "new-user",
+    newUserOnly: true,
+    applicablePropertyTypes: ["homestay", "glamping", "villa"],
+    applicableCategories: ["mountain-view"],
+    terms: ["Điều khoản 1", "Điều khoản 2"],
+    sortOrder: 2,
+  });
+  assert.equal(PromotionVoucherSchema.safeParse(fullMapped).success, true);
+  assert.equal(fullMapped.audience, "new-user");
+  assert.equal(fullMapped.newUserOnly, true);
+  assert.equal(fullMapped.maxDiscount, 300000);
+  assert.deepEqual(fullMapped.applicablePropertyTypes, ["homestay", "glamping", "villa"]);
+  assert.deepEqual(fullMapped.applicableCategories, ["mountain-view"]);
+  assert.deepEqual(fullMapped.terms, ["Điều khoản 1", "Điều khoản 2"]);
+
+  const minimalMapped = mapPromotionVoucherRowToDomain({
+    id: "voucher-250",
+    code: "LUXESTAY250",
+    description: "Giảm 250.000đ cho đơn từ 1.5tr",
+    tone: "emerald",
+    expiryLabel: "30/11/2026",
+    discountType: "fixed",
+    discountValue: 250000,
+    minOrderTotal: 1500000,
+    maxDiscount: null,
+    expiresAt: "2026-11-30T23:59:59.000Z",
+    isActive: true,
+    memberOnly: false,
+    title: null,
+    subtitle: null,
+    badge: null,
+    iconName: null,
+    audience: "all",
+    newUserOnly: false,
+    applicablePropertyTypes: null,
+    applicableCategories: null,
+    terms: null,
+    sortOrder: 3,
+  });
+  assert.equal(PromotionVoucherSchema.safeParse(minimalMapped).success, true);
+  assert.equal(minimalMapped.title, undefined);
+  assert.equal(minimalMapped.maxDiscount, undefined);
+  assert.equal("title" in minimalMapped, false);
+  assert.equal("maxDiscount" in minimalMapped, false);
+  assert.equal(minimalMapped.audience, "all");
+  assert.equal(minimalMapped.newUserOnly, false);
+
+  const createStubDb = (existingCampaignRows: Array<{ id: string }>) => {
+    const selectTables: unknown[] = [];
+    const insertedRowsByTable = new Map<unknown, unknown[]>();
+    const otherWriteTables: unknown[] = [];
+
+    const db = {
+      select() {
+        return {
+          from(table: unknown) {
+            selectTables.push(table);
+            return {
+              async limit() {
+                return table === promotionCampaignsTable ? existingCampaignRows : [];
+              },
+            };
+          },
+        };
+      },
+      insert(table: unknown) {
+        return {
+          values(payload: unknown) {
+            const items = Array.isArray(payload) ? payload : [payload];
+            const record = async () => {
+              const rows = insertedRowsByTable.get(table) ?? [];
+              rows.push(...items);
+              insertedRowsByTable.set(table, rows);
+            };
+            return {
+              async onConflictDoUpdate() {
+                await record();
+              },
+              async onConflictDoNothing() {
+                await record();
+              },
+            };
+          },
+        };
+      },
+      update(table: unknown) {
+        otherWriteTables.push(table);
+        return {
+          set() {
+            return {
+              async where() {
+                return [];
+              },
+            };
+          },
+        };
+      },
+      delete(table: unknown) {
+        otherWriteTables.push(table);
+        return {
+          async where() {
+            return [];
+          },
+        };
+      },
+    };
+
+    return {
+      db: db as unknown as LuxeStayDb,
+      selectTables,
+      insertedRowsByTable,
+      otherWriteTables,
+    };
+  };
+
+  // Case 1: Empty promotion_campaigns triggers backfill of 6 vouchers + 5 campaigns, never touching propertiesTable
+  const emptyStub = createStubDb([]);
+  const emptyResult = await backfillPromotionsIfNeeded(emptyStub.db);
+  assert.deepEqual(emptyResult, { backfilled: true });
+  assert.deepEqual(emptyStub.selectTables, [promotionCampaignsTable]);
+  assert.equal(
+    emptyStub.insertedRowsByTable.get(promotionsTable)?.length,
+    SEED_CATALOG_SNAPSHOT.promotions.vouchers.length
+  );
+  assert.equal(emptyStub.insertedRowsByTable.get(promotionsTable)?.length, 6);
+  assert.equal(
+    emptyStub.insertedRowsByTable.get(promotionCampaignsTable)?.length,
+    PROMOTION_CAMPAIGNS.length
+  );
+  assert.equal(emptyStub.insertedRowsByTable.get(promotionCampaignsTable)?.length, 5);
+  assert.equal(emptyStub.insertedRowsByTable.get(propertiesTable), undefined);
+  assert.equal(emptyStub.otherWriteTables.length, 0);
+
+  // Case 2: Non-empty promotion_campaigns skips backfill without any writes
+  const populatedStub = createStubDb([{ id: "camp-black-friday-2026" }]);
+  const populatedResult = await backfillPromotionsIfNeeded(populatedStub.db);
+  assert.deepEqual(populatedResult, { backfilled: false });
+  assert.equal(populatedStub.insertedRowsByTable.size, 0);
+  assert.equal(populatedStub.otherWriteTables.length, 0);
 });
