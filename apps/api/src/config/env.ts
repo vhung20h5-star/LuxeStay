@@ -44,6 +44,17 @@ export interface ApiEnv {
   notificationWebhookUrl?: string;
 }
 
+function toVercelOrigin(rawHost: string | undefined): string | undefined {
+  const trimmed = rawHost?.trim();
+  if (!trimmed) return undefined;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProtocol).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export function loadApiEnv(rawEnv: Record<string, string | undefined> = process.env): ApiEnv {
   const parsed = ApiEnvSchema.safeParse({
     PORT: rawEnv.PORT || undefined,
@@ -62,9 +73,17 @@ export function loadApiEnv(rawEnv: Record<string, string | undefined> = process.
     throw new Error(`Invalid @luxestay/api environment configuration: ${details}`);
   }
 
-  const corsOrigins = parsed.data.CORS_ORIGINS.split(",")
+  const configuredOrigins = parsed.data.CORS_ORIGINS.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  const vercelOrigins = [
+    toVercelOrigin(rawEnv.VERCEL_URL),
+    toVercelOrigin(rawEnv.VERCEL_BRANCH_URL),
+    toVercelOrigin(rawEnv.VERCEL_PROJECT_PRODUCTION_URL),
+  ].filter((origin): origin is string => Boolean(origin));
+
+  const corsOrigins = [...new Set([...configuredOrigins, ...vercelOrigins])];
 
   const paymentSandboxEnabled =
     parsed.data.PAYMENT_SANDBOX_ENABLED !== undefined

@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const apiPort = Number(process.env.E2E_API_PORT ?? 4000);
+const webPort = Number(process.env.E2E_WEB_PORT ?? 3000);
+const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const webBaseUrl = `http://127.0.0.1:${webPort}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -12,7 +17,7 @@ export default defineConfig({
   },
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: webBaseUrl,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -25,27 +30,27 @@ export default defineConfig({
   webServer: [
     {
       command: "node apps/api/dist/index.js",
-      url: "http://127.0.0.1:4000/health",
-      reuseExistingServer: !process.env.CI,
+      url: `${apiBaseUrl}/health`,
+      reuseExistingServer: !process.env.CI && !process.env.E2E_API_PORT,
       timeout: 30_000,
       env: {
-        PORT: "4000",
+        PORT: String(apiPort),
         NODE_ENV: "development",
         STORAGE_DRIVER: "memory",
         PAYMENT_SANDBOX_ENABLED: "true",
-        CORS_ORIGINS: "http://127.0.0.1:3000,http://localhost:3000",
+        CORS_ORIGINS: `${webBaseUrl},http://localhost:${webPort}`,
       },
     },
     {
-      command: "npm run start --workspace=@luxestay/web",
-      url: "http://127.0.0.1:3000",
-      reuseExistingServer: !process.env.CI,
+      command: `npm run start --workspace=@luxestay/web -- --port ${webPort}`,
+      url: webBaseUrl,
+      reuseExistingServer: !process.env.CI && !process.env.E2E_WEB_PORT,
       timeout: 60_000,
       env: {
-        PORT: "3000",
+        PORT: String(webPort),
         NEXT_PUBLIC_DATA_MODE: "api",
-        NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:4000",
-        API_INTERNAL_BASE_URL: "http://127.0.0.1:4000",
+        NEXT_PUBLIC_API_BASE_URL: apiBaseUrl,
+        API_BASE_URL: apiBaseUrl,
       },
     },
   ],

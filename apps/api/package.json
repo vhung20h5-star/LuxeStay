@@ -18,6 +18,7 @@
     "@hono/node-server": "^1.14.1",
     "@luxestay/contracts": "*",
     "@luxestay/domain": "*",
+    "@vercel/functions": "^3.11.3",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.10",
     "pg": "^8.14.1",

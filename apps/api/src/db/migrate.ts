@@ -8,6 +8,7 @@ const migrationsFolder = path.resolve(__dirname, "migrations");
 
 async function main() {
   const databaseUrl =
+    process.env.DATABASE_URL_UNPOOLED ??
     process.env.DATABASE_URL ??
     "postgresql://postgres:postgres@localhost:5434/luxestay";
 

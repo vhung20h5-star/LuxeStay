@@ -55,7 +55,7 @@ export function createHttpCatalogRepository(
         throw new HttpApiError({
           status: 0,
           code: "NETWORK_ERROR",
-          message: `Không thể kết nối máy chủ LuxeStay API (${options.baseUrl}). Vui lòng kiểm tra dịch vụ Backend hoặc chuyển sang NEXT_PUBLIC_DATA_MODE=mock.`,
+          message: `Không thể kết nối máy chủ LuxeStay API (${options.baseUrl || "same-origin"}). Vui lòng kiểm tra dịch vụ Backend hoặc chuyển sang NEXT_PUBLIC_DATA_MODE=mock.`,
           details: err instanceof Error ? err.message : undefined,
         });
       }
@@ -135,7 +135,7 @@ export function createHttpCatalogRepository(
         throw new HttpApiError({
           status: 0,
           code: "NETWORK_ERROR",
-          message: `Không thể kết nối máy chủ LuxeStay API (${options.baseUrl}).`,
+          message: `Không thể kết nối máy chủ LuxeStay API (${options.baseUrl || "same-origin"}).`,
           details: err instanceof Error ? err.message : undefined,
         });
       }

@@ -147,10 +147,24 @@ export function createApiApp(options?: CreateApiAppOptions) {
   app.use(
     "*",
     cors({
-      origin: (origin) => {
+      origin: (origin, c) => {
         if (!origin) return corsOrigins[0] ?? "http://localhost:3000";
         if (corsOrigins.includes("*") || corsOrigins.includes(origin)) {
           return origin;
+        }
+        try {
+          const reqUrl = new URL(c.req.url);
+          const forwardedHost = c.req.header("x-forwarded-host") ?? c.req.header("host");
+          const forwardedProto =
+            c.req.header("x-forwarded-proto") ?? reqUrl.protocol.replace(/:$/, "");
+          const requestOrigin = forwardedHost
+            ? `${forwardedProto}://${forwardedHost}`
+            : reqUrl.origin;
+          if (origin === requestOrigin || origin === reqUrl.origin) {
+            return origin;
+          }
+        } catch {
+          // Ignore malformed request URL and fall back to strict deny
         }
         return "";
       },

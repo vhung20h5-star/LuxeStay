@@ -25,6 +25,8 @@ import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
 import { resolveDatabaseConfig } from "../dist/db/client.js";
+import { resetApiRuntimeForTests } from "../dist/runtime.js";
+import vercelServerApp from "../dist/server.js";
 import { mapPropertyRowToDomain } from "../dist/modules/catalog/postgresRepository.js";
 import { createSeedCatalogRepository } from "../dist/modules/catalog/repository.js";
 import {
@@ -1261,4 +1263,60 @@ test("Phase 3B RBAC & Host/Admin Portal: guards, property CRUD, availability ove
     body: JSON.stringify({ breakfastIncluded: true }),
   });
   assert.equal(adminPatchStay07.status, 200);
+});
+
+test("Vercel Hono entrypoint (server.ts) lazily boots runtime and CORS trusts Vercel & same-origin requests", async () => {
+  const vercelEnv = loadApiEnv({
+    CORS_ORIGINS: "http://localhost:3000",
+    VERCEL_URL: "luxestay-preview-123.vercel.app",
+    VERCEL_BRANCH_URL: "luxestay-git-main.vercel.app",
+    VERCEL_PROJECT_PRODUCTION_URL: "luxestay.vercel.app",
+  });
+  assert.deepEqual(vercelEnv.corsOrigins, [
+    "http://localhost:3000",
+    "https://luxestay-preview-123.vercel.app",
+    "https://luxestay-git-main.vercel.app",
+    "https://luxestay.vercel.app",
+  ]);
+
+  const { app } = createApiApp({ corsOrigins: ["http://localhost:3000"] });
+  const sameOriginRes = await app.request("https://luxestay.vercel.app/health", {
+    headers: {
+      Origin: "https://luxestay.vercel.app",
+      "X-Forwarded-Host": "luxestay.vercel.app",
+      "X-Forwarded-Proto": "https",
+    },
+  });
+  assert.equal(sameOriginRes.status, 200);
+  assert.equal(
+    sameOriginRes.headers.get("access-control-allow-origin"),
+    "https://luxestay.vercel.app"
+  );
+
+  const foreignRes = await app.request("https://luxestay.vercel.app/health", {
+    headers: {
+      Origin: "https://evil.example.com",
+      "X-Forwarded-Host": "luxestay.vercel.app",
+      "X-Forwarded-Proto": "https",
+    },
+  });
+  assert.equal(foreignRes.status, 200);
+  assert.equal(foreignRes.headers.get("access-control-allow-origin"), null);
+
+  await resetApiRuntimeForTests();
+  try {
+    const healthRes = await vercelServerApp.request("http://localhost/health");
+    assert.equal(healthRes.status, 200);
+    const parsedHealth = createApiSuccessSchema(HealthDataSchema).safeParse(await healthRes.json());
+    assert.equal(parsedHealth.success, true);
+
+    const catalogRes = await vercelServerApp.request("http://localhost/api/v1/catalog");
+    assert.equal(catalogRes.status, 200);
+    const parsedCatalog = createApiSuccessSchema(CatalogSnapshotSchema).safeParse(
+      await catalogRes.json()
+    );
+    assert.equal(parsedCatalog.success, true);
+  } finally {
+    await resetApiRuntimeForTests();
+  }
 });

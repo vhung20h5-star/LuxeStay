@@ -521,6 +521,59 @@ test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and
   });
   assert.equal(srvEnv.serverApiBaseUrl, "http://api-internal:4000");
   assert.equal(srvEnv.publicApiBaseUrl, "https://api.luxestay.vn");
+
+  // Same-origin browser mode ("/") + Vercel Service Binding (API_BASE_URL) / VERCEL_URL fallback
+  const sameOriginPublic = getPublicWebEnv({
+    NEXT_PUBLIC_DATA_MODE: "api",
+    NEXT_PUBLIC_API_BASE_URL: "/",
+  });
+  assert.equal(sameOriginPublic.publicApiBaseUrl, "");
+
+  const vercelBindingEnv = getServerWebEnv({
+    NEXT_PUBLIC_DATA_MODE: "api",
+    NEXT_PUBLIC_API_BASE_URL: "/",
+    API_BASE_URL: "https://backend-internal.vercel.internal/",
+  });
+  assert.equal(vercelBindingEnv.publicApiBaseUrl, "");
+  assert.equal(vercelBindingEnv.serverApiBaseUrl, "https://backend-internal.vercel.internal");
+
+  const vercelUrlFallbackEnv = getServerWebEnv({
+    NEXT_PUBLIC_DATA_MODE: "api",
+    NEXT_PUBLIC_API_BASE_URL: "same-origin",
+    VERCEL_URL: "luxestay-preview.vercel.app",
+  });
+  assert.equal(vercelUrlFallbackEnv.publicApiBaseUrl, "");
+  assert.equal(vercelUrlFallbackEnv.serverApiBaseUrl, "https://luxestay-preview.vercel.app");
+
+  assert.throws(
+    () =>
+      getServerWebEnv({
+        NEXT_PUBLIC_DATA_MODE: "api",
+        NEXT_PUBLIC_API_BASE_URL: "/",
+      }),
+    /API_BASE_URL is required/
+  );
+
+  // Relative same-origin HTTP catalog fetch hits /api/v1/catalog directly
+  const relativeCalls: string[] = [];
+  const relativeRepo = createHttpCatalogRepository({
+    baseUrl: "",
+    fetchImpl: async (input) => {
+      relativeCalls.push(String(input));
+      return new Response(
+        JSON.stringify(
+          buildApiSuccess(SEED_CATALOG_SNAPSHOT, {
+            requestId: "req-relative",
+            timestamp: "2026-11-24T00:00:00.000Z",
+          })
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    },
+  });
+  const relativeSnap = await relativeRepo.getSnapshot();
+  assert.equal(relativeSnap.properties.length, SEED_CATALOG_SNAPSHOT.properties.length);
+  assert.deepEqual(relativeCalls, ["/api/v1/catalog"]);
 });
 
 test("CatalogRepository.getPropertyById supports mock lookup, HTTP 200, HTTP 404 -> null, and CONTRACT_MISMATCH", async () => {

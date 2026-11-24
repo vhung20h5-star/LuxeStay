@@ -37,8 +37,8 @@ npm run dev
 docker compose up -d
 npm run db:migrate
 npm run db:seed
-# Đặt STORAGE_DRIVER=database và DATABASE_URL=postgresql://postgres:postgres@localhost:5434/luxestay trong apps/api/.env
-npm run dev
+# PowerShell:
+$env:STORAGE_DRIVER="database"; $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5434/luxestay"; npm run dev
 
 # 3c. Hoặc chạy riêng Frontend ở chế độ Mock độc lập (không cần bật apps/api):
 # PowerShell:
@@ -69,6 +69,7 @@ npm run test:e2e
 
 ## 📚 Tài liệu Quản trị & Mở rộng
 
+- Hướng dẫn vận hành Local & Triển khai Vercel Full-Stack: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)
 - Yêu cầu sản phẩm: [docs/PRD.md](./docs/PRD.md)
 - Kiến trúc hệ thống: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - Lộ trình bảo trì & mở rộng: [docs/PLAN.md](./docs/PLAN.md)
