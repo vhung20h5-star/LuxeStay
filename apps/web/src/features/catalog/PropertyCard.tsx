@@ -22,9 +22,15 @@ import { AmenityIcon } from "@/features/property/AmenityIcon";
 
 export interface PropertyCardProps {
   property: Property;
+  onSelectProperty?: (property: Property) => void;
+  onBookProperty?: (property: Property) => void;
 }
 
-export function PropertyCard({ property }: PropertyCardProps) {
+export function PropertyCard({
+  property,
+  onSelectProperty,
+  onBookProperty,
+}: PropertyCardProps) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const { setSelectedProperty, setCheckoutProperty } = useBookingSession();
   const { formatPrice, t } = useLocale();
@@ -56,7 +62,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
       viewport={{ once: true, margin: "-50px" }}
       transition={{ duration: 0.4 }}
       className="group relative flex flex-col bg-white rounded-3xl border border-slate-200/80 hover:border-emerald-300/80 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
-      onClick={() => setSelectedProperty(property)}
+      onClick={() => (onSelectProperty ?? setSelectedProperty)(property)}
     >
       {/* Image Carousel Container */}
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
@@ -242,7 +248,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setCheckoutProperty(property);
+              (onBookProperty ?? setCheckoutProperty)(property);
             }}
             className="w-full py-2.5 px-4 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow-md active:scale-[0.99] whitespace-nowrap"
           >

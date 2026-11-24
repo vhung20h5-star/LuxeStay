@@ -6,6 +6,7 @@ import {
   VoucherValidationResultSchema,
   createApiSuccessSchema,
   type PromotionVoucher,
+  type Property,
 } from "@luxestay/contracts";
 import { evaluatePromotionVoucher } from "@luxestay/domain";
 import { z } from "zod";
@@ -147,6 +148,7 @@ export function createHttpPaymentGatewayPort(options?: {
 
 export function createMockPaymentGatewayPort(options?: {
   vouchers?: readonly PromotionVoucher[];
+  properties?: readonly Property[];
 }): PaymentGatewayPort {
   return {
     async getGatewaySession(transactionId) {
@@ -164,10 +166,15 @@ export function createMockPaymentGatewayPort(options?: {
       });
     },
     async validateVoucher(input) {
+      const propertyId = input.propertyId?.trim();
+      const property = propertyId
+        ? options?.properties?.find((item) => item.id === propertyId)
+        : undefined;
       const evaluated = evaluatePromotionVoucher(
         input.code,
         input.subtotal,
-        options?.vouchers ?? []
+        options?.vouchers ?? [],
+        property ? { property } : undefined
       );
       if (!evaluated.ok) {
         return {
