@@ -312,7 +312,7 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
           email,
           note,
           paymentMethod,
-          promoCode: pricing.appliedPromoCode,
+          promoCode: pricing.appliedPromoCode ?? "",
         },
         controller.signal
       );

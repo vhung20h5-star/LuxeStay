@@ -6,6 +6,7 @@ import {
   deriveBookingQuote,
   processServerReservationIntent,
   startCheckoutSession,
+  submitBookingSession,
 } from "@luxestay/domain";
 import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { getPublicWebEnv, getServerWebEnv } from "@/shared/config/env";
@@ -1408,4 +1409,98 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
     if (prevApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
     else process.env.NEXT_PUBLIC_API_BASE_URL = prevApiUrl;
   }
+});
+
+test("submitBookingSession with explicit empty promoCode submits full-price booking even when session.promoCode is locally ineligible", async () => {
+  const session = startCheckoutSession(
+    createIdleBookingSession(),
+    stay02,
+    undefined,
+    baseDate,
+    "VIPRESORT1M"
+  );
+  assert.equal(session.promoCode, "VIPRESORT1M");
+
+  // Unauthenticated guest: VIPRESORT1M fails local eligibility so appliedPromoCode is undefined
+  const quote = deriveBookingQuote(session, baseDate, {
+    vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+    isAuthenticated: false,
+  })!;
+  assert.equal(quote.pricing.appliedPromoCode, undefined);
+  assert.equal(quote.pricing.discount, 0);
+
+  const capturedIntents: Record<string, unknown>[] = [];
+  const httpAdapter = createHttpReservationAdapter({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (_input, init) => {
+      const intent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      capturedIntents.push(intent);
+      const serverResult = processServerReservationIntent(
+        intent as Parameters<typeof processServerReservationIntent>[0],
+        PROPERTIES,
+        {
+          bookingId: "LX-NOPROMO1",
+          createdAt: "2026-11-24T15:00:00.000Z",
+          fallbackBaseDate: baseDate,
+          vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+          isAuthenticated: false,
+        }
+      );
+      if (!serverResult.ok) {
+        return new Response(
+          JSON.stringify(buildApiError("VALIDATION_ERROR", serverResult.error)),
+          { status: serverResult.status, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify(buildApiSuccess(serverResult.booking)), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  const result = await submitBookingSession(
+    session,
+    {
+      fullName: "Khách Không Đăng Nhập",
+      phone: "0912 345 678",
+      email: "guest@luxestay.vn",
+      paymentMethod: "momo",
+      promoCode: quote.pricing.appliedPromoCode ?? "",
+    },
+    httpAdapter,
+    {
+      fallbackBaseDate: baseDate,
+      vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+      isAuthenticated: false,
+    }
+  );
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.booking.pricing.discount, 0);
+  assert.equal(result.booking.pricing.appliedPromoCode, undefined);
+  assert.equal(capturedIntents.length, 1);
+  assert.equal("promoCode" in capturedIntents[0], false);
+
+  // Contrast: passing undefined instead of "" falls back to session.promoCode and rejects with 400
+  await assert.rejects(
+    submitBookingSession(
+      session,
+      {
+        fullName: "Khách Không Đăng Nhập",
+        phone: "0912 345 678",
+        email: "guest@luxestay.vn",
+        paymentMethod: "momo",
+        promoCode: undefined,
+      },
+      httpAdapter,
+      {
+        fallbackBaseDate: baseDate,
+        vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+        isAuthenticated: false,
+      }
+    ),
+    (err: unknown) => err instanceof HttpApiError && err.status === 400 && err.code === "VALIDATION_ERROR"
+  );
 });
