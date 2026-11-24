@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -9,6 +10,7 @@ import {
   Bed,
   Check,
   ChevronRight,
+  ExternalLink,
   Heart,
   LayoutGrid,
   MapPin,
@@ -89,7 +91,8 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
 
   const handleShare = () => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+      const shareUrl = `${window.location.origin}/stays/${property.id}`;
+      navigator.clipboard.writeText(shareUrl);
       setShowShareToast(true);
       setTimeout(() => setShowShareToast(false), 2000);
     }
@@ -133,6 +136,15 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
               </div>
 
               <div className="flex items-center gap-2">
+                <Link
+                  href={`/stays/${property.id}`}
+                  onClick={() => setSelectedProperty(null)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Trang chi tiết</span>
+                </Link>
+
                 <button
                   onClick={handleShare}
                   className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors relative"

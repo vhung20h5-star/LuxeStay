@@ -1,6 +1,6 @@
 # LuxeStay Domain Glossary
 
-Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.2.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
+Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.3.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
 
 ---
 
@@ -72,4 +72,16 @@ Module thuần `apps/web/src/shared/overlay/overlayStack.ts` kết hợp React h
 - **`Split Domain Contexts`**: `BookingProvider` (`apps/web/src/features/booking/BookingContext.tsx`) chia 3 context chuyên biệt (`useFavorites`, `useCatalog`, `useBookingSession`) để cô lập re-render, đồng thời giữ `useBooking()` làm facade tương thích ngược.
 
 ### App Ports (Cổng tích hợp ứng dụng)
-Gói seam I/O của `@luxestay/web` (`AppPorts`: `favorites`, `reservations`; cùng `CatalogRepository` cho read-side) được khởi tạo theo `DataMode` qua `createWebAppPorts` / `createCatalogRepositoryForMode` hoặc `createInMemoryAppPorts` (test).
+Gói seam I/O của `@luxestay/web` (`AppPorts`: `favorites`, `reservations`, `reservationManager`; cùng `CatalogRepository` cho read-side `getSnapshot` & `getPropertyById`) được khởi tạo theo `DataMode` qua `createWebAppPorts` / `createCatalogRepositoryForMode` hoặc `createInMemoryAppPorts` (test).
+
+### Reservation Manager Port (Seam tra cứu & hủy đơn)
+Seam tại `apps/web/src/shared/ports/persistencePort.ts` cung cấp `lookup(bookingId, contact)` và `cancel(bookingId, input)` đồng bộ qua 3 adapter:
+- **`HttpReservationManagerAdapter`**: Gọi `GET /api/v1/reservations/:bookingId?contact=...` và `PATCH /api/v1/reservations/:bookingId/cancel`, giữ nguyên mã lỗi `403 FORBIDDEN` / `404 NOT_FOUND` / `409 CONFLICT`.
+- **`BrowserReservationManagerAdapter`**: Tra cứu và cập nhật trạng thái đơn mock trong `localStorage` (`luxestay_mock_bookings`) dùng chung quy tắc thuần `matchesReservationContact` và `evaluateReservationCancellation` của `@luxestay/domain`.
+- **`InMemoryReservationManager`**: Adapter trong bộ nhớ cho kiểm thử tự động.
+
+### URL Catalog Sync (Đồng bộ truy vấn URL)
+Cặp hàm thuần `serializeCatalogQueryToSearchParams` & `parseCatalogQueryFromSearchParams` (`packages/domain/src/catalogQuery.ts`) kết hợp component `CatalogUrlSync` (`apps/web/src/features/catalog/CatalogUrlSync.tsx`) giúp đồng bộ 2 chiều giữa bộ lọc trang chủ `/` và query string URL (tự loại bỏ giá trị mặc định và sanitize tham số sai lệch).
+
+### Storage Driver (`memory` | `database`)
+Biến môi trường `STORAGE_DRIVER` trên `@luxestay/api` điều khiển lớp lưu trữ của Backend: `memory` chạy in-memory/seed (mặc định cho test & CI không cần Docker), còn `database` kích hoạt PostgreSQL 16 + Drizzle ORM (`apps/api/src/db/`) theo [ADR-0008](./docs/adr/0008-postgresql-drizzle-database-layer.md).

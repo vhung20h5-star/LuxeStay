@@ -3,4 +3,8 @@ export const API_ENDPOINTS = Object.freeze({
   catalog: "/api/v1/catalog",
   propertyById: (id: string) => `/api/v1/properties/${encodeURIComponent(id)}`,
   reservations: "/api/v1/reservations",
+  reservationById: (bookingId: string) =>
+    `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}`,
+  cancelReservation: (bookingId: string) =>
+    `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}/cancel`,
 });

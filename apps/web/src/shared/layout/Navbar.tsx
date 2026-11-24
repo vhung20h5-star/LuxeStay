@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Compass,
@@ -11,12 +13,15 @@ import {
   Sparkles,
   User,
   ShieldCheck,
+  Ticket,
 } from "lucide-react";
 import { useFavorites } from "@/features/booking/BookingContext";
 import { Button } from "@/shared/ui/Button";
 import { AuthModal } from "@/features/auth/AuthModal";
 
 export function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
   const { favorites, setFavoritesDrawerOpen } = useFavorites();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -32,6 +37,10 @@ export function Navbar() {
 
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
+    if (pathname !== "/") {
+      router.push(`/#${id}`);
+      return;
+    }
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: "smooth" });
@@ -41,7 +50,7 @@ export function Navbar() {
   return (
     <>
       <header
-        className={`sticky top-0 z-40 w-full transition-all duration-300 ${
+        className={`sticky top-0 z-40 w-full transition-all duration-300 print:hidden ${
           isScrolled
             ? "bg-white/85 backdrop-blur-md shadow-sm border-b border-slate-200/60 py-3"
             : "bg-white/95 backdrop-blur-sm border-b border-slate-100 py-4"
@@ -50,8 +59,13 @@ export function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             {/* Logo */}
-            <div
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            <Link
+              href="/"
+              onClick={() => {
+                if (pathname === "/") {
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
               className="flex items-center gap-2.5 cursor-pointer group select-none"
             >
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform">
@@ -62,10 +76,10 @@ export function Navbar() {
                   Luxe<span className="text-emerald-600">Stay</span>
                 </span>
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 -mt-1">
-                  Khách sạn & Homestay
+                  Khách sạn &amp; Homestay
                 </span>
               </div>
-            </div>
+            </Link>
 
             {/* Desktop Navigation Links */}
             <nav className="hidden md:flex items-center gap-1 lg:gap-2">
@@ -91,12 +105,17 @@ export function Navbar() {
                 </span>
                 Flash Deals
               </button>
-              <button
-                onClick={() => scrollToSection("testimonials-section")}
-                className="px-3.5 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
+              <Link
+                href="/bookings"
+                className={`px-3.5 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
+                  pathname.startsWith("/bookings")
+                    ? "text-emerald-700 bg-emerald-50 font-semibold"
+                    : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
+                }`}
               >
-                Đánh giá khách hàng
-              </button>
+                <Ticket className="w-4 h-4 text-emerald-600" />
+                Tra cứu đơn
+              </Link>
             </nav>
 
             {/* Right Action Icons & Controls */}
@@ -113,7 +132,9 @@ export function Navbar() {
                 className="relative p-2.5 text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 rounded-full transition-all duration-200"
                 aria-label="Danh sách yêu thích"
               >
-                <Heart className={`w-5 h-5 ${favorites.length > 0 ? "fill-rose-500 text-rose-500" : ""}`} />
+                <Heart
+                  className={`w-5 h-5 ${favorites.length > 0 ? "fill-rose-500 text-rose-500" : ""}`}
+                />
                 {favorites.length > 0 && (
                   <motion.span
                     initial={{ scale: 0 }}
@@ -180,6 +201,14 @@ export function Navbar() {
                 <span>Ưu đãi Flash Sale</span>
                 <Sparkles className="w-4 h-4 text-amber-600" />
               </button>
+              <Link
+                href="/bookings"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"
+              >
+                <span>Tra cứu &amp; Quản lý đơn</span>
+                <Ticket className="w-4 h-4 text-emerald-600" />
+              </Link>
               <button
                 onClick={() => scrollToSection("testimonials-section")}
                 className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"

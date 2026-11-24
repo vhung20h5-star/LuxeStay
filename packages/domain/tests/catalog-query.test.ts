@@ -29,6 +29,8 @@ import {
   applyQuickSearchTrend,
   removeActiveFilterChip,
   executeCatalogQuery,
+  serializeCatalogQueryToSearchParams,
+  parseCatalogQueryFromSearchParams,
 } from "../dist/index.js";
 
 test("destination filtering supports Vietnamese diacritic-insensitive matching across city, province, address, and title", () => {
@@ -237,4 +239,43 @@ test("getQuickDatePresets computes dynamic ISO ranges relative to baseDate and f
     ["stay-01", "stay-02"]
   );
   assert.deepEqual(resolveFavoriteProperties(PROPERTIES, []), []);
+});
+
+test("serializeCatalogQueryToSearchParams and parseCatalogQueryFromSearchParams round-trip cleanly and sanitize invalid URL params", () => {
+  // Default query serializes to completely clean empty search params
+  assert.equal(serializeCatalogQueryToSearchParams(createDefaultCatalogQuery()).toString(), "");
+
+  let query = createDefaultCatalogQuery();
+  query = setQueryDestination(query, "Phú Quốc");
+  query = setQueryDates(query, { checkIn: "2026-12-20", checkOut: "2026-12-23" });
+  query = adjustQueryGuests(query, "adults", 2);
+  query = adjustQueryGuests(query, "children", 1);
+  query = adjustQueryGuests(query, "rooms", 1);
+  query = setQueryCategory(query, "beachfront");
+  query = setQueryPriceRange(query, 1000000, 5000000);
+  query = toggleQueryPropertyType(query, "resort");
+  query = toggleQueryPropertyType(query, "villa");
+  query = setQueryMinRating(query, 4.8);
+  query = toggleQueryAmenity(query, "pool");
+  query = toggleQueryAmenity(query, "beach");
+  query = setQueryFreeCancellation(query, true);
+  query = setQuerySortBy(query, "price-asc");
+
+  const serialized = serializeCatalogQueryToSearchParams(query);
+  const restored = parseCatalogQueryFromSearchParams(serialized.toString());
+  assert.deepEqual(restored, query);
+
+  // Malformed/hostile URL params fall back safely without throwing
+  const sanitized = parseCatalogQueryFromSearchParams(
+    "?category=invalid&types=resort,bogus,resort&amenities=pool,fake&minPrice=abc&maxPrice=999999999&rating=99&adults=-5&sort=unknown&freeCancel=true"
+  );
+  assert.equal(sanitized.filters.category, "all");
+  assert.deepEqual(sanitized.filters.propertyTypes, ["resort"]);
+  assert.deepEqual(sanitized.filters.amenities, ["pool"]);
+  assert.equal(sanitized.filters.minPrice, DEFAULT_MIN_PRICE);
+  assert.equal(sanitized.filters.maxPrice, DEFAULT_MAX_PRICE);
+  assert.equal(sanitized.filters.minRating, 5);
+  assert.equal(sanitized.search.guests.adults, 1);
+  assert.equal(sanitized.filters.sortBy, "popular");
+  assert.equal(sanitized.filters.freeCancellationOnly, true);
 });

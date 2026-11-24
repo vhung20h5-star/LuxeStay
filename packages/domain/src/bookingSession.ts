@@ -584,11 +584,101 @@ export function processServerReservationIntent(
     paymentMethod,
     bookingId,
     createdAt,
+    status: "confirmed",
   });
 
   return {
     ok: true,
     booking,
+  };
+}
+
+export function normalizeContactPhone(input: string): string | null {
+  const digitsOnly = input.trim().replace(/[\s.-]/g, "");
+  if (!digitsOnly) return null;
+  if (digitsOnly.startsWith("+84")) {
+    return `0${digitsOnly.slice(3)}`;
+  }
+  if (digitsOnly.startsWith("84") && digitsOnly.length >= 10) {
+    return `0${digitsOnly.slice(2)}`;
+  }
+  return digitsOnly;
+}
+
+export function matchesReservationContact(
+  booking: Pick<BookingDetails, "guestInfo">,
+  contact: string
+): boolean {
+  const trimmed = contact.trim();
+  if (!trimmed) return false;
+
+  if (trimmed.includes("@")) {
+    return trimmed.toLowerCase() === booking.guestInfo.email.trim().toLowerCase();
+  }
+
+  const normalizedInput = normalizeContactPhone(trimmed);
+  const normalizedStored = normalizeContactPhone(booking.guestInfo.phone);
+  if (normalizedInput && normalizedStored && normalizedInput === normalizedStored) {
+    return true;
+  }
+
+  return trimmed.toLowerCase() === booking.guestInfo.email.trim().toLowerCase();
+}
+
+export function evaluateReservationCancellation(
+  booking: BookingDetails,
+  input: { contact: string; reason?: string },
+  options?: { cancelledAt?: string }
+):
+  | { ok: true; booking: BookingDetails }
+  | { ok: false; status: 403 | 409; code: "FORBIDDEN" | "CONFLICT"; error: string } {
+  if (!matchesReservationContact(booking, input.contact)) {
+    return {
+      ok: false,
+      status: 403,
+      code: "FORBIDDEN",
+      error: "Email hoặc số điện thoại không khớp với thông tin đặt phòng này.",
+    };
+  }
+
+  if (booking.status === "cancelled") {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error: "Đơn đặt phòng này đã được hủy trước đó.",
+    };
+  }
+
+  if (!booking.property.freeCancellation) {
+    return {
+      ok: false,
+      status: 409,
+      code: "CONFLICT",
+      error:
+        "Chỗ nghỉ này không áp dụng chính sách hủy miễn phí trực tuyến. Vui lòng liên hệ hỗ trợ LuxeStay.",
+    };
+  }
+
+  const cancelledAt = options?.cancelledAt ?? new Date().toISOString();
+  const reason = input.reason?.trim() || undefined;
+
+  const cancelledBooking: BookingDetails = Object.freeze({
+    ...booking,
+    guests: Object.freeze({ ...booking.guests }),
+    pricing: Object.freeze({ ...booking.pricing }),
+    selectedAmenities: Object.freeze(
+      booking.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ ...booking.guestInfo }),
+    status: "cancelled",
+    cancelledAt,
+    cancellationReason: reason,
+  });
+
+  return {
+    ok: true,
+    booking: cancelledBooking,
   };
 }
 

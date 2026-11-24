@@ -8,18 +8,24 @@ import {
   type ReservationSubmitter,
   type ServerReservationIntent,
 } from "@luxestay/contracts";
+import {
+  evaluateReservationCancellation,
+  matchesReservationContact,
+} from "@luxestay/domain";
 import type { DataMode } from "../config/env";
 import { HttpApiError, isAbortError } from "./errors";
 import type {
   AppPorts,
   FavoritesRepository,
   InMemoryReservationAdapter,
+  ReservationManagerPort,
   StorageEventLike,
   StorageEventTargetLike,
   StorageLike,
 } from "./types";
 
 export const FAVORITES_STORAGE_KEY = "travel_favorites";
+export const MOCK_RESERVATIONS_STORAGE_KEY = "luxestay_mock_bookings";
 export const DEFAULT_FAVORITE_IDS: readonly string[] = Object.freeze(["stay-01", "stay-02"]);
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 const DEFAULT_RESERVATION_DELAY_MS = 1200;
@@ -63,6 +69,7 @@ function snapshotReservationRequest(
 function freezeBookingDetails(details: BookingDetails): BookingDetails {
   return Object.freeze({
     ...details,
+    status: details.status ?? "confirmed",
     guests: Object.freeze({ ...details.guests }),
     pricing: Object.freeze({ ...details.pricing }),
     selectedAmenities: Object.freeze(
@@ -89,6 +96,7 @@ function buildBookingDetails(
     paymentMethod: request.paymentMethod,
     bookingId,
     createdAt,
+    status: "confirmed",
   });
 }
 
@@ -96,6 +104,62 @@ function resolveReservationEndpoint(options?: HttpReservationAdapterOptions): st
   if (options?.endpoint) return options.endpoint;
   const baseUrl = (options?.baseUrl ?? "http://localhost:4000").replace(/\/+$/, "");
   return `${baseUrl}${API_ENDPOINTS.reservations}`;
+}
+
+function readMockBookings(storage?: StorageLike | null): Map<string, BookingDetails> {
+  const map = new Map<string, BookingDetails>();
+  const target =
+    storage ??
+    (typeof window !== "undefined"
+      ? (() => {
+          try {
+            return window.localStorage ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : null);
+
+  if (!target) return map;
+  try {
+    const raw = target.getItem(MOCK_RESERVATIONS_STORAGE_KEY);
+    if (!raw) return map;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return map;
+    for (const item of parsed) {
+      const checked = BookingDetailsSchema.safeParse(item);
+      if (checked.success && checked.data.bookingId) {
+        map.set(checked.data.bookingId.toUpperCase(), freezeBookingDetails(checked.data));
+      }
+    }
+  } catch {
+    return map;
+  }
+  return map;
+}
+
+function writeMockBookings(
+  bookings: Map<string, BookingDetails>,
+  storage?: StorageLike | null
+): void {
+  const target =
+    storage ??
+    (typeof window !== "undefined"
+      ? (() => {
+          try {
+            return window.localStorage ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : null);
+
+  if (!target) return;
+  try {
+    target.setItem(MOCK_RESERVATIONS_STORAGE_KEY, JSON.stringify([...bookings.values()]));
+  } catch {
+    // Graceful degradation under private mode / QuotaExceededError
+  }
 }
 
 export function sanitizeFavoriteIds(
@@ -352,13 +416,14 @@ export function createInMemoryFavoritesAdapter(
 }
 
 export function createBrowserReservationAdapter(
-  delayMs = DEFAULT_RESERVATION_DELAY_MS
+  delayMs = DEFAULT_RESERVATION_DELAY_MS,
+  options?: { storage?: StorageLike }
 ): ReservationSubmitter {
   const safeDelayMs = sanitizeDelayMs(delayMs);
 
   return {
-    submit(request, options) {
-      const signal = options?.signal;
+    submit(request, submitOptions) {
+      const signal = submitOptions?.signal;
       if (signal?.aborted) {
         return Promise.reject(createAbortError());
       }
@@ -374,11 +439,72 @@ export function createBrowserReservationAdapter(
         const timerId = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
           const randomBookingId = `LX-${Math.floor(100000 + Math.random() * 900000)}`;
-          resolve(buildBookingDetails(capturedRequest, randomBookingId, new Date().toISOString()));
+          const booking = buildBookingDetails(
+            capturedRequest,
+            randomBookingId,
+            new Date().toISOString()
+          );
+          const stored = readMockBookings(options?.storage);
+          stored.set(randomBookingId, booking);
+          writeMockBookings(stored, options?.storage);
+          resolve(booking);
         }, safeDelayMs);
 
         signal?.addEventListener("abort", onAbort, { once: true });
       });
+    },
+  };
+}
+
+export function createBrowserReservationManagerAdapter(options?: {
+  storage?: StorageLike;
+}): ReservationManagerPort {
+  return {
+    async lookup(bookingId, contact, callOptions) {
+      if (callOptions?.signal?.aborted) throw createAbortError();
+      const normalizedId = bookingId.trim().toUpperCase();
+      const stored = readMockBookings(options?.storage);
+      const found = stored.get(normalizedId);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+        });
+      }
+      if (!matchesReservationContact(found, contact)) {
+        throw new HttpApiError({
+          status: 403,
+          code: "FORBIDDEN",
+          message: "Email hoặc số điện thoại không khớp với thông tin đặt phòng này.",
+        });
+      }
+      return found;
+    },
+
+    async cancel(bookingId, input, callOptions) {
+      if (callOptions?.signal?.aborted) throw createAbortError();
+      const normalizedId = bookingId.trim().toUpperCase();
+      const stored = readMockBookings(options?.storage);
+      const found = stored.get(normalizedId);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+        });
+      }
+      const evaluated = evaluateReservationCancellation(found, input);
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.error,
+        });
+      }
+      stored.set(normalizedId, evaluated.booking);
+      writeMockBookings(stored, options?.storage);
+      return evaluated.booking;
     },
   };
 }
@@ -406,10 +532,123 @@ export function createInMemoryReservationAdapter(overrides?: {
   };
 }
 
+export function createInMemoryReservationManager(
+  initialBookings: readonly BookingDetails[] = []
+): ReservationManagerPort & { upsert(booking: BookingDetails): void } {
+  const store = new Map<string, BookingDetails>();
+  for (const booking of initialBookings) {
+    if (booking.bookingId) {
+      store.set(booking.bookingId.trim().toUpperCase(), freezeBookingDetails(booking));
+    }
+  }
+
+  return {
+    upsert(booking: BookingDetails) {
+      if (booking.bookingId) {
+        store.set(booking.bookingId.trim().toUpperCase(), freezeBookingDetails(booking));
+      }
+    },
+    async lookup(bookingId, contact, options) {
+      if (options?.signal?.aborted) throw createAbortError();
+      const normalized = bookingId.trim().toUpperCase();
+      const found = store.get(normalized);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalized}.`,
+        });
+      }
+      if (!matchesReservationContact(found, contact)) {
+        throw new HttpApiError({
+          status: 403,
+          code: "FORBIDDEN",
+          message: "Email hoặc số điện thoại không khớp với thông tin đặt phòng này.",
+        });
+      }
+      return found;
+    },
+    async cancel(bookingId, input, options) {
+      if (options?.signal?.aborted) throw createAbortError();
+      const normalized = bookingId.trim().toUpperCase();
+      const found = store.get(normalized);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalized}.`,
+        });
+      }
+      const evaluated = evaluateReservationCancellation(found, input);
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.error,
+        });
+      }
+      store.set(normalized, evaluated.booking);
+      return evaluated.booking;
+    },
+  };
+}
+
 export interface HttpReservationAdapterOptions {
   baseUrl?: string;
   endpoint?: string;
   fetchImpl?: typeof fetch;
+}
+
+async function parseBookingApiResponse(
+  response: Response,
+  fallbackErrorMessage: string
+): Promise<BookingDetails> {
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new HttpApiError({
+      status: response.status,
+      code: "CONTRACT_MISMATCH",
+      message: "Phản hồi đặt phòng từ máy chủ không hợp lệ.",
+      requestId: response.headers.get("x-request-id") ?? undefined,
+    });
+  }
+
+  if (!response.ok) {
+    const parsedError = ApiErrorResponseSchema.safeParse(rawBody);
+    if (parsedError.success) {
+      throw new HttpApiError({
+        status: response.status,
+        code: parsedError.data.error.code,
+        message: parsedError.data.error.message,
+        details: parsedError.data.error.details,
+        requestId:
+          parsedError.data.meta?.requestId ??
+          response.headers.get("x-request-id") ??
+          undefined,
+      });
+    }
+    throw new HttpApiError({
+      status: response.status,
+      code: "INTERNAL_ERROR",
+      message: fallbackErrorMessage,
+      requestId: response.headers.get("x-request-id") ?? undefined,
+    });
+  }
+
+  const parsedSuccess = BookingApiSuccessSchema.safeParse(rawBody);
+  if (!parsedSuccess.success) {
+    throw new HttpApiError({
+      status: response.status,
+      code: "CONTRACT_MISMATCH",
+      message: "Dữ liệu vé xác nhận từ máy chủ không khớp hợp đồng @luxestay/contracts.",
+      details: parsedSuccess.error.issues,
+      requestId: response.headers.get("x-request-id") ?? undefined,
+    });
+  }
+
+  return freezeBookingDetails(parsedSuccess.data.data);
 }
 
 export function createHttpReservationAdapter(
@@ -464,52 +703,95 @@ export function createHttpReservationAdapter(
         });
       }
 
-      let rawBody: unknown;
+      return parseBookingApiResponse(
+        response,
+        "Không thể xác nhận đặt phòng từ máy chủ. Vui lòng thử lại!"
+      );
+    },
+  };
+}
+
+export function createHttpReservationManagerAdapter(options?: {
+  baseUrl?: string;
+  fetchImpl?: typeof fetch;
+}): ReservationManagerPort {
+  const baseUrl = (options?.baseUrl ?? "http://localhost:4000").replace(/\/+$/, "");
+
+  return {
+    async lookup(bookingId, contact, callOptions) {
+      const signal = callOptions?.signal;
+      if (signal?.aborted) throw createAbortError();
+
+      const fetchFn = options?.fetchImpl ?? (typeof fetch !== "undefined" ? fetch : undefined);
+      if (!fetchFn) {
+        throw new HttpApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Fetch API không khả dụng trong môi trường hiện tại.",
+        });
+      }
+
+      const url = `${baseUrl}${API_ENDPOINTS.reservationById(bookingId)}?contact=${encodeURIComponent(contact.trim())}`;
+      let response: Response;
       try {
-        rawBody = await response.json();
-      } catch {
+        response = await fetchFn(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+          signal,
+        });
+      } catch (err) {
+        if (isAbortError(err)) throw err;
         throw new HttpApiError({
-          status: response.status,
-          code: "CONTRACT_MISMATCH",
-          message: "Phản hồi xác nhận đặt phòng từ máy chủ không hợp lệ.",
-          requestId: response.headers.get("x-request-id") ?? undefined,
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Không thể kết nối máy chủ để tra cứu đơn đặt phòng.",
+          details: err instanceof Error ? err.message : undefined,
         });
       }
 
-      if (!response.ok) {
-        const parsedError = ApiErrorResponseSchema.safeParse(rawBody);
-        if (parsedError.success) {
-          throw new HttpApiError({
-            status: response.status,
-            code: parsedError.data.error.code,
-            message: parsedError.data.error.message,
-            details: parsedError.data.error.details,
-            requestId:
-              parsedError.data.meta?.requestId ??
-              response.headers.get("x-request-id") ??
-              undefined,
-          });
-        }
+      return parseBookingApiResponse(response, "Không thể tra cứu đơn đặt phòng từ máy chủ.");
+    },
+
+    async cancel(bookingId, input, callOptions) {
+      const signal = callOptions?.signal;
+      if (signal?.aborted) throw createAbortError();
+
+      const fetchFn = options?.fetchImpl ?? (typeof fetch !== "undefined" ? fetch : undefined);
+      if (!fetchFn) {
         throw new HttpApiError({
-          status: response.status,
-          code: "INTERNAL_ERROR",
-          message: "Không thể xác nhận đặt phòng từ máy chủ. Vui lòng thử lại!",
-          requestId: response.headers.get("x-request-id") ?? undefined,
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Fetch API không khả dụng trong môi trường hiện tại.",
         });
       }
 
-      const parsedSuccess = BookingApiSuccessSchema.safeParse(rawBody);
-      if (!parsedSuccess.success) {
+      const url = `${baseUrl}${API_ENDPOINTS.cancelReservation(bookingId)}`;
+      let response: Response;
+      try {
+        response = await fetchFn(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            contact: input.contact.trim(),
+            reason: input.reason?.trim() || undefined,
+          }),
+          signal,
+        });
+      } catch (err) {
+        if (isAbortError(err)) throw err;
         throw new HttpApiError({
-          status: response.status,
-          code: "CONTRACT_MISMATCH",
-          message: "Dữ liệu vé xác nhận từ máy chủ không khớp hợp đồng @luxestay/contracts.",
-          details: parsedSuccess.error.issues,
-          requestId: response.headers.get("x-request-id") ?? undefined,
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Không thể kết nối máy chủ để hủy đặt phòng.",
+          details: err instanceof Error ? err.message : undefined,
         });
       }
 
-      return freezeBookingDetails(parsedSuccess.data.data);
+      return parseBookingApiResponse(response, "Không thể hủy đặt phòng từ máy chủ.");
     },
   };
 }
@@ -535,7 +817,18 @@ export function createWebAppPorts(options: {
             baseUrl: options.apiBaseUrl,
             fetchImpl: options.fetchImpl,
           })
-        : createBrowserReservationAdapter(options.mockReservationDelayMs),
+        : createBrowserReservationAdapter(options.mockReservationDelayMs, {
+            storage: options.storage,
+          }),
+    reservationManager:
+      options.mode === "api"
+        ? createHttpReservationManagerAdapter({
+            baseUrl: options.apiBaseUrl,
+            fetchImpl: options.fetchImpl,
+          })
+        : createBrowserReservationManagerAdapter({
+            storage: options.storage,
+          }),
   };
 }
 
@@ -547,15 +840,31 @@ export function createInMemoryAppPorts(options?: {
 }): {
   favorites: FavoritesRepository;
   reservations: InMemoryReservationAdapter;
+  reservationManager: ReservationManagerPort;
 } {
+  const manager = createInMemoryReservationManager();
+  const baseReservations = createInMemoryReservationAdapter({
+    bookingId: options?.bookingId,
+    createdAt: options?.createdAt,
+  });
+
+  const reservations: InMemoryReservationAdapter = {
+    async submit(request, submitOptions) {
+      const booking = await baseReservations.submit(request, submitOptions);
+      manager.upsert(booking);
+      return booking;
+    },
+    getSubmittedBookings() {
+      return baseReservations.getSubmittedBookings();
+    },
+  };
+
   return {
     favorites: createInMemoryFavoritesAdapter({
       initialIds: options?.initialFavoriteIds,
       validPropertyIds: options?.validPropertyIds,
     }),
-    reservations: createInMemoryReservationAdapter({
-      bookingId: options?.bookingId,
-      createdAt: options?.createdAt,
-    }),
+    reservations,
+    reservationManager: manager,
   };
 }

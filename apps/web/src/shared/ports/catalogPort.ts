@@ -2,8 +2,10 @@ import {
   API_ENDPOINTS,
   ApiErrorResponseSchema,
   CatalogSnapshotSchema,
+  PropertySchema,
   createApiSuccessSchema,
   type CatalogSnapshot,
+  type Property,
 } from "@luxestay/contracts";
 import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { getServerWebEnv, type DataMode } from "../config/env";
@@ -11,6 +13,7 @@ import { HttpApiError, isAbortError } from "./errors";
 import type { CatalogRepository } from "./types";
 
 const CatalogApiSuccessSchema = createApiSuccessSchema(CatalogSnapshotSchema);
+const PropertyApiSuccessSchema = createApiSuccessSchema(PropertySchema);
 
 export interface HttpCatalogRepositoryOptions {
   baseUrl: string;
@@ -26,7 +29,7 @@ function joinUrl(baseUrl: string, path: string): string {
 export function createHttpCatalogRepository(
   options: HttpCatalogRepositoryOptions
 ): CatalogRepository {
-  const endpoint = joinUrl(options.baseUrl, API_ENDPOINTS.catalog);
+  const catalogEndpoint = joinUrl(options.baseUrl, API_ENDPOINTS.catalog);
 
   return {
     async getSnapshot(callOptions): Promise<CatalogSnapshot> {
@@ -41,7 +44,7 @@ export function createHttpCatalogRepository(
 
       let response: Response;
       try {
-        response = await fetchFn(endpoint, {
+        response = await fetchFn(catalogEndpoint, {
           method: "GET",
           headers: { Accept: "application/json" },
           cache: "no-store",
@@ -104,6 +107,90 @@ export function createHttpCatalogRepository(
 
       return parsedSuccess.data.data;
     },
+
+    async getPropertyById(id: string, callOptions): Promise<Property | null> {
+      const normalized = id.trim();
+      if (!normalized) return null;
+
+      const fetchFn = options.fetchImpl ?? (typeof fetch !== "undefined" ? fetch : undefined);
+      if (!fetchFn) {
+        throw new HttpApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Fetch API không khả dụng trong môi trường hiện tại.",
+        });
+      }
+
+      const endpoint = joinUrl(options.baseUrl, API_ENDPOINTS.propertyById(normalized));
+      let response: Response;
+      try {
+        response = await fetchFn(endpoint, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+          signal: callOptions?.signal,
+        });
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        throw new HttpApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: `Không thể kết nối máy chủ LuxeStay API (${options.baseUrl}).`,
+          details: err instanceof Error ? err.message : undefined,
+        });
+      }
+
+      if (response.status === 404) {
+        return null;
+      }
+
+      let rawBody: unknown;
+      try {
+        rawBody = await response.json();
+      } catch {
+        throw new HttpApiError({
+          status: response.status,
+          code: "CONTRACT_MISMATCH",
+          message: "Phản hồi thông tin chỗ nghỉ không đúng định dạng JSON.",
+          requestId: response.headers.get("x-request-id") ?? undefined,
+        });
+      }
+
+      if (!response.ok) {
+        const parsedError = ApiErrorResponseSchema.safeParse(rawBody);
+        if (parsedError.success) {
+          throw new HttpApiError({
+            status: response.status,
+            code: parsedError.data.error.code,
+            message: parsedError.data.error.message,
+            details: parsedError.data.error.details,
+            requestId:
+              parsedError.data.meta?.requestId ??
+              response.headers.get("x-request-id") ??
+              undefined,
+          });
+        }
+        throw new HttpApiError({
+          status: response.status,
+          code: "INTERNAL_ERROR",
+          message: `Máy chủ trả về lỗi HTTP ${response.status} khi tải chỗ nghỉ.`,
+          requestId: response.headers.get("x-request-id") ?? undefined,
+        });
+      }
+
+      const parsedSuccess = PropertyApiSuccessSchema.safeParse(rawBody);
+      if (!parsedSuccess.success) {
+        throw new HttpApiError({
+          status: response.status,
+          code: "CONTRACT_MISMATCH",
+          message: "Dữ liệu chỗ nghỉ không khớp hợp đồng @luxestay/contracts.",
+          details: parsedSuccess.error.issues,
+          requestId: response.headers.get("x-request-id") ?? undefined,
+        });
+      }
+
+      return parsedSuccess.data.data;
+    },
   };
 }
 
@@ -113,6 +200,10 @@ export function createMockCatalogRepository(
   return {
     async getSnapshot() {
       return snapshot;
+    },
+    async getPropertyById(id: string) {
+      const normalized = id.trim();
+      return snapshot.properties.find((property) => property.id === normalized) ?? null;
     },
   };
 }
@@ -147,4 +238,13 @@ export async function loadInitialCatalog(): Promise<{
     dataMode: env.dataMode,
     publicApiBaseUrl: env.publicApiBaseUrl,
   };
+}
+
+export async function loadPropertyById(id: string): Promise<Property | null> {
+  const env = getServerWebEnv();
+  const repo = createCatalogRepositoryForMode({
+    mode: env.dataMode,
+    apiBaseUrl: env.serverApiBaseUrl,
+  });
+  return repo.getPropertyById(id);
 }

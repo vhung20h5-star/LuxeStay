@@ -8,16 +8,17 @@
 | :--- | :--- | :--- |
 | `packages/contracts` | `@luxestay/contracts` | Nguồn chân lý duy nhất cho Zod schemas, DTOs, API envelope (`ApiSuccess`/`ApiError`) và `API_ENDPOINTS` |
 | `packages/domain` | `@luxestay/domain` | 4 deep module nghiệp vụ thuần (`bookingSession`, `catalogQuery`, `amenities`, `utils`) và seed data (`@luxestay/domain/seed`) |
-| `apps/api` | `@luxestay/api` | Backend API bằng **Hono** (Node.js + TS + Zod, port `4000`): `GET /health`, `GET /api/v1/catalog`, `GET /api/v1/properties/:id`, `POST /api/v1/reservations` |
-| `apps/web` | `@luxestay/web` | Frontend **Next.js 16** (App Router, Tailwind CSS v4, Framer Motion, port `3000`) tổ chức feature-based đối xứng với Backend |
+| `apps/api` | `@luxestay/api` | Backend API bằng **Hono** + **PostgreSQL 16 / Drizzle ORM** (port `4000`): `GET /health`, `GET /api/v1/catalog`, `GET /api/v1/properties/:id`, `POST /api/v1/reservations`, `GET /api/v1/reservations/:bookingId`, `PATCH /api/v1/reservations/:bookingId/cancel` |
+| `apps/web` | `@luxestay/web` | Frontend **Next.js 16** (App Router, Tailwind CSS v4, Framer Motion, port `3000`) với `/`, `/stays/[id]` (SEO/OG), `/bookings`, `/bookings/[bookingId]` & đồng bộ URL query |
 
 ## 🚀 Công nghệ sử dụng
 
-- **Monorepo & Toolchain**: `npm workspaces`, Turborepo, TypeScript 5 (`strict: true`), Node.js `>=22` (verified on `24.14.0`)
+- **Monorepo & Toolchain**: `npm workspaces`, Turborepo, TypeScript 5 (`strict: true`), Node.js `24` (`.nvmrc`)
 - **Frontend (`apps/web`)**: Next.js `16.4.6` (App Router), React `19.3.0`, Tailwind CSS v4, Framer Motion, Lucide React, Canvas Confetti
 - **Backend (`apps/api`)**: Hono `4`, `@hono/node-server`, `tsx`
+- **Database (`apps/api/src/db`)**: PostgreSQL 16 (`docker-compose.yml`) + Drizzle ORM (`drizzle-orm`, `pg`, `drizzle-kit`), hỗ trợ song song `STORAGE_DRIVER=memory|database`
 - **Contracts & Validation**: Zod `3`
-- **Testing & CI**: Node native `node:test` (60 tests / 4 tầng), ESLint 9 + import boundary rules, GitHub Actions CI
+- **Testing & CI**: Node native `node:test` (67 tests / 4 tầng), ESLint 9 + import boundary rules toàn repo, GitHub Actions CI
 
 ## 🛠️ Cài đặt & Khởi chạy
 
@@ -29,15 +30,22 @@ npm install
 #    - apps/api/.env   (tham khảo apps/api/.env.example)
 #    - apps/web/.env.local (tham khảo apps/web/.env.example)
 
-# 3. Chạy song song cả Backend (4000) & Frontend (3000) ở chế độ API thật
+# 3a. Chạy nhanh với in-memory/seed (không cần Docker):
 npm run dev
 
-# Hoặc chạy riêng Frontend ở chế độ Mock độc lập (không cần bật apps/api):
+# 3b. Hoặc chạy với PostgreSQL 16 (Docker Desktop):
+docker compose up -d
+npm run db:migrate
+npm run db:seed
+# Đặt STORAGE_DRIVER=database và DATABASE_URL=postgresql://postgres:postgres@localhost:5434/luxestay trong apps/api/.env
+npm run dev
+
+# 3c. Hoặc chạy riêng Frontend ở chế độ Mock độc lập (không cần bật apps/api):
 # PowerShell:
 $env:NEXT_PUBLIC_DATA_MODE="mock"; npm run dev:web
 ```
 
-- Frontend Web: [http://localhost:3000](http://localhost:3000)
+- Frontend Web: [http://localhost:3000](http://localhost:3000) (Trang chủ `/`, Chi tiết chỗ nghỉ `/stays/[id]`, Tra cứu đơn `/bookings`)
 - Backend API Health: [http://localhost:4000/health](http://localhost:4000/health)
 
 ## ✅ Kiểm chứng chất lượng (Quality Gates)
@@ -52,7 +60,7 @@ npm run typecheck
 # Kiểm tra ESLint & quy tắc ranh giới import FE/BE
 npm run lint
 
-# Chạy toàn bộ 60 bài kiểm thử tự động trên 4 tầng
+# Chạy toàn bộ 67 bài kiểm thử tự động trên 4 tầng
 npm run test
 ```
 

@@ -1,6 +1,6 @@
 # Engineering, Maintenance & Feature Expansion Plan — LuxeStay (`travel-service`)
 
-- **Phiên bản kế hoạch:** 2.0 (Monorepo Baseline v0.2.0)
+- **Phiên bản kế hoạch:** 2.1 (Phase 1 Completed — Baseline v0.3.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Trạng thái:** Active Roadmap
 - **Tài liệu liên quan:** [PRD.md](./PRD.md) | [ARCHITECTURE.md](./ARCHITECTURE.md) | [ADR Index](./adr/README.md) | [GLOSSARY.md](../GLOSSARY.md)
@@ -20,12 +20,13 @@
 | **M5 — Overlay Stack Coordinator** | `f467d47` | Deep module `overlayStack` + `OverlayContext`, `z-index` theo tier, 1 listener `Escape`, ref-counted scroll lock, ARIA | [ADR-0005](./adr/0005-centralized-overlay-stack-coordinator.md) |
 | **M6 — Persistence & Reservation Ports** | `0f26b7b` | `AppPorts`, `FavoritesRepository` với `useSyncExternalStore`, tách hoàn toàn I/O khỏi domain | [ADR-0006](./adr/0006-app-ports-persistence-and-split-domain-contexts.md) |
 | **M7 — Server API & Split Contexts** | `abedd20`, `eb4674e` | Tính giá chuẩn phía server, tách 3 domain contexts (`useFavorites`, `useCatalog`, `useBookingSession`), nâng Next.js `16.4.6` | [ADR-0002](./adr/0002-booking-session-and-authoritative-server-pricing.md), [ADR-0006](./adr/0006-app-ports-persistence-and-split-domain-contexts.md) |
-| **M8 — Monorepo v0.2.0 & Phase 0 Hardening** | `v0.2.0` | Chuyển đổi sang TypeScript Monorepo (`npm workspaces` + `Turborepo`): `@luxestay/contracts` (Zod), `@luxestay/domain`, `@luxestay/api` (Hono `:4000` + khung `src/db/` Phase 1), `@luxestay/web` (feature-based `:3000`), `NEXT_PUBLIC_DATA_MODE=api|mock` không fallback ngầm, Error Boundaries, `.nvmrc`, `apps/web/AGENTS.md` + `apps/api/AGENTS.md`, ESLint boundary toàn repo (`eslint.boundaries.mjs`), GitHub Actions CI, 61/61 tests | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) |
+| **M8 — Monorepo v0.2.0 & Phase 0 Hardening** | `bbcc2d6` (`v0.2.0`) | Chuyển đổi sang TypeScript Monorepo (`npm workspaces` + `Turborepo`): `@luxestay/contracts` (Zod), `@luxestay/domain`, `@luxestay/api` (Hono `:4000` + khung `src/db/`), `@luxestay/web` (feature-based `:3000`), `NEXT_PUBLIC_DATA_MODE=api|mock` không fallback ngầm, Error Boundaries, `.nvmrc`, `apps/web/AGENTS.md` + `apps/api/AGENTS.md`, ESLint boundary toàn repo (`eslint.boundaries.mjs`), GitHub Actions CI | [ADR-0007](./adr/0007-monorepo-hono-zod-contracts.md) |
+| **M9 — Phase 1: PostgreSQL/Drizzle, Booking Lifecycle & Shareable Routing** | `v0.3.0` | Tầng DB PostgreSQL 16 + Drizzle ORM (`docker-compose.yml`, 12 bảng chuẩn hóa, migration SQL, idempotent seed, `PostgresCatalogRepository`, `PostgresReservationRepository`, hỗ trợ song song `STORAGE_DRIVER=memory|database`); Tra cứu & hủy đơn đặt phòng (`GET /api/v1/reservations/:bookingId`, `PATCH .../cancel`, xác thực email/SĐT VN, kiểm tra `freeCancellation`, `/bookings`, `/bookings/[bookingId]`); Trang chi tiết chỗ nghỉ SSR + SEO/OpenGraph (`/stays/[id]`) và đồng bộ URL query trên trang chủ (`/`); 67/67 tests + 12/12 E2E smoke | [ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md) |
 
 ### 1.2. Hiện trạng kiểm chứng kỹ thuật
-- **Automated Tests (4 tầng):** `61/61` đạt (`contracts`: 3, `domain`: 37, `api`: 6, `web`: 15) qua `npm run test`.
+- **Automated Tests (4 tầng):** `67/67` đạt (`contracts`: 4, `domain`: 39, `api`: 7, `web`: 17) qua `npm run test`.
 - **Lint & Typecheck:** `npm run lint` (**ESLint 9 + Import Boundaries trên cả 4 workspaces, 0 errors, 0 warnings**) và `npm run typecheck` (6/6 tasks pass).
-- **Production Build & Live Smoke:** `npm run build` (4/4 workspaces pass); kiểm chứng sống cả `api` mode (online + offline strict error) lẫn `mock` mode độc lập.
+- **Production Build & Live Smoke:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`); kiểm chứng sống end-to-end 12/12 kiểm tra (homepage, URL filter query, `/stays/[id]` SEO/OpenGraph + 404, tạo đơn → tra cứu `403`/`200` với SĐT `+84` → hủy `200` → hủy lại `409 CONFLICT`).
 
 ---
 
@@ -38,23 +39,24 @@
 
 ---
 
-### Phase 1 — Backend Persistence & Shareable Routing (Tiếp theo — Nền tảng Production)
-**Mục tiêu:** Thay `InMemory` / `Seed` repository trong `apps/api` bằng cơ sở dữ liệu thật và mở khóa SEO + liên kết chia sẻ trực tiếp.
+### Phase 1 — Backend Persistence & Shareable Routing (ĐÃ HOÀN THÀNH ✅)
+**Mục tiêu:** Thay `InMemory` / `Seed` repository trong `apps/api` bằng cơ sở dữ liệu thật (giữ `STORAGE_DRIVER=memory` song song cho CI/test) và mở khóa SEO + quản lý đơn + liên kết chia sẻ trực tiếp.
 
-- [ ] **P1.1 — Database Schema & Repository Adapter trên `apps/api` (cần ADR-0008):**
-  - Chọn công nghệ DB/ORM (ví dụ PostgreSQL + Drizzle hoặc Prisma) và ghi `ADR-0008`.
-  - Tạo schema & migration cho `properties`, `amenity_catalog`, `property_amenities`, `reservations`, `reservation_amenities`, `reviews` kèm script seed từ `@luxestay/domain/seed`.
-  - Cài đặt `PostgresCatalogRepository` và `PostgresReservationRepository` thỏa các seam có sẵn (`ApiCatalogRepository`, `ApiReservationRepository`) trong `apps/api/src/modules/`.
-- [ ] **P1.2 — Tra cứu & Hủy Đơn đặt phòng:**
-  - Bổ sung hợp đồng Zod trong `@luxestay/contracts` và endpoint `GET /api/v1/reservations/:bookingId`, `PATCH /api/v1/reservations/:bookingId/cancel` (kiểm tra chính sách `freeCancellation`).
-  - Xây dựng trang `/bookings` và `/bookings/[bookingId]` trong `apps/web/src/app/(main)/`.
-- [ ] **P1.3 — Dynamic Property Pages & URL Query Sync:**
-  - Tạo route `/stays/[id]` (Server Component gọi `GET /api/v1/properties/:id` + `generateMetadata` cho SEO/OpenGraph).
-  - Thêm bộ chuyển đổi thuần `serializeCatalogQueryToParams` / `parseCatalogQueryFromParams` trong `packages/domain/src/catalogQuery.ts` để đồng bộ URL trang chủ.
+- [x] **P1.1 — Database Schema & Repository Adapter trên `apps/api` ([ADR-0008](./adr/0008-postgresql-drizzle-database-layer.md)):**
+  - Chọn **PostgreSQL 16 + Drizzle ORM** (`drizzle-orm`, `pg`, `drizzle-kit`) cô lập hoàn toàn trong `apps/api` kèm `docker-compose.yml` tại root.
+  - Tạo 12 bảng chuẩn hóa (`categories`, `destinations`, `promotions`, `testimonials`, `amenity_categories`, `amenity_filter_options`, `amenity_catalog`, `properties`, `property_amenities`, `reviews`, `reservations`, `reservation_amenities`), migration `0000_initial.sql`, `npm run db:migrate`, và `npm run db:seed` idempotent từ `@luxestay/domain/seed`.
+  - Cài đặt `createPostgresCatalogRepository` và `createPostgresReservationRepository` thỏa các seam `ApiCatalogRepository`, `ApiReservationRepository` khi `STORAGE_DRIVER=database`, tự đóng pool gọn khi `SIGINT`/`SIGTERM`.
+- [x] **P1.2 — Tra cứu & Hủy Đơn đặt phòng:**
+  - Bổ sung hợp đồng Zod trong `@luxestay/contracts` (`ReservationStatusSchema`, `ReservationLookupInputSchema`, `CancelReservationInputSchema`, `FORBIDDEN`, `CONFLICT`) và hàm thuần `matchesReservationContact`, `evaluateReservationCancellation` trong `@luxestay/domain`.
+  - Bổ sung `GET /api/v1/reservations/:bookingId?contact=...` và `PATCH /api/v1/reservations/:bookingId/cancel` (xác thực email không phân biệt hoa/thường hoặc SĐT VN `0`/`+84`/`84`, kiểm tra chính sách `freeCancellation` và chống hủy trùng bằng `409 CONFLICT`).
+  - Xây dựng `ReservationManagerPort` (HTTP / `localStorage` mock / in-memory), trang `/bookings`, `/bookings/[bookingId]`, nút **"Tra cứu đơn"** trên `Navbar` và nút **"Quản lý / Tra cứu đơn đặt phòng"** trên `BookingSuccessModal`.
+- [x] **P1.3 — Dynamic Property Pages & URL Query Sync:**
+  - Tạo route `/stays/[id]` (Server Component gọi `loadPropertyById`, `generateMetadata` cho SEO/OpenGraph, `notFound()` khi không tồn tại) + liên kết từ `PropertyCard` (crawlable title link) và `PropertyModal` (nút "Trang chi tiết" + nút Chia sẻ copy đúng `/stays/[id]`).
+  - Thêm bộ chuyển đổi thuần `serializeCatalogQueryToSearchParams` / `parseCatalogQueryFromSearchParams` trong `packages/domain/src/catalogQuery.ts` và component `CatalogUrlSync` đồng bộ 2 chiều URL trang chủ (`/`).
 
 ---
 
-### Phase 2 — Authentication, Dynamic Vouchers & Real Payments (Thương mại hóa)
+### Phase 2 — Authentication, Dynamic Vouchers & Real Payments (Tiếp theo — Thương mại hóa)
 **Mục tiêu:** Chuyển các luồng đang ở mức UI prototype sang tính năng thương mại đầy đủ.
 
 - [ ] **P2.1 — Xác thực Người dùng & Đồng bộ Wishlist (cần ADR mới):**

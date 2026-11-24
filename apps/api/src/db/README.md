@@ -1,26 +1,40 @@
-# Database Layer — `@luxestay/api` (Phase 1 Readiness)
+# Database Layer — `@luxestay/api` (PostgreSQL 16 + Drizzle ORM)
 
-Thư mục này là **vị trí chuẩn bị cho tầng cơ sở dữ liệu Phase 1** của dịch vụ Backend `@luxestay/api`.
+Quyết định kiến trúc: [ADR-0008](../../../../docs/adr/0008-postgresql-drizzle-database-layer.md).
 
-## Cấu trúc quy ước
+## Cấu trúc
 
 ```text
 apps/api/src/db/
-├── README.md        # Tài liệu quy ước tầng DB (tệp này)
-├── client.ts        # Cấu hình & điểm khởi tạo kết nối DB (seam chờ nối ORM ở Phase 1)
-├── schema/          # Định nghĩa bảng (Drizzle/Prisma schema): properties, amenities, reservations, reviews
-└── migrations/      # SQL migration files có kiểm soát phiên bản
+├── client.ts                  # pg.Pool + Drizzle ORM client handle
+├── migrate.ts                 # Drizzle SQL migration runner (npm run db:migrate)
+├── seed.ts                    # Idempotent seeder từ @luxestay/domain/seed (npm run db:seed)
+├── schema/
+│   ├── catalog.ts             # categories, destinations, promotions, testimonials, amenity_*, properties, property_amenities, reviews
+│   ├── reservations.ts        # reservations, reservation_amenities
+│   └── index.ts
+└── migrations/
+    ├── 0000_initial.sql
+    └── meta/_journal.json
 ```
 
-*(Ở Phase 1 sẽ bổ sung thêm `seed.ts` để đổ dữ liệu chuẩn từ `@luxestay/domain/seed` vào DB.)*
+## Khởi chạy PostgreSQL cục bộ (Docker Compose)
 
-## Quy trình kích hoạt Phase 1
+```bash
+# 1. Bật PostgreSQL 16 (host port 5434 -> container 5432, db=luxestay)
+docker compose up -d
 
-1. **Tạo ADR-0008** trong `docs/adr/` để chốt công nghệ DB + ORM (ví dụ PostgreSQL + Drizzle ORM hoặc Prisma).
-2. Cài đặt driver/ORM chỉ trong `apps/api/package.json` (không đưa dependency DB vào `@luxestay/contracts`, `@luxestay/domain` hay `@luxestay/web`).
-3. Định nghĩa schema trong `schema/` và sinh migration vào `migrations/` cho các bảng cốt lõi:
-   - `properties`, `amenity_catalog`, `property_amenities`
-   - `reservations`, `reservation_amenities`
-   - `reviews` (Phase 3)
-4. Cài đặt `PostgresCatalogRepository` và `PostgresReservationRepository` thỏa các seam đã có (`ApiCatalogRepository`, `ApiReservationRepository`) rồi chọn theo `env.storageDriver` (`memory` vs `database`) trong `apps/api/src/index.ts`.
-5. Đặt `STORAGE_DRIVER=database` và `DATABASE_URL=postgresql://...` trong `apps/api/.env`.
+# 2. Chạy SQL migrations
+npm run db:migrate
+
+# 3. Đổ dữ liệu mẫu chuẩn (an toàn chạy lặp nhiều lần)
+npm run db:seed
+
+# 4. Chạy API ở chế độ PostgreSQL thật
+# PowerShell:
+$env:STORAGE_DRIVER="database"
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:5434/luxestay"
+npm run dev
+```
+
+*Lưu ý: Chế độ `STORAGE_DRIVER=memory` (mặc định) vẫn hoạt động độc lập cho unit/integration tests và CI không cần Docker.*

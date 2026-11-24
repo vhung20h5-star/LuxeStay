@@ -101,6 +101,7 @@ export interface CatalogContextValue {
   setSortBy: (sortBy: SortOption) => void;
   applyQuickTrend: (trend: QuickSearchTrend) => void;
   removeFilterChip: (chip: ActiveFilterChip) => void;
+  replaceCatalogQuery: (next: StayCatalogQueryState) => void;
   resetFilters: () => void;
   filterModalOpen: boolean;
   setFilterModalOpen: (open: boolean) => void;
@@ -116,6 +117,10 @@ export interface BookingSessionContextValue {
   bookingSuccess: BookingDetails | null;
   setBookingSuccess: (details: BookingDetails | null) => void;
   proceedToCheckout: () => void;
+  startCheckoutWithDraft: (
+    property: Property,
+    draft: { nights: number; adults: number; selectedAmenityIds: readonly string[] }
+  ) => void;
   setDraftNights: (nights: number) => void;
   setDraftAdults: (adults: number) => void;
   toggleBookingAmenity: (amenityId: string) => void;
@@ -124,6 +129,16 @@ export interface BookingSessionContextValue {
     input: CheckoutGuestInput,
     signal?: AbortSignal
   ) => Promise<{ ok: true; booking: BookingDetails } | { ok: false; error: string }>;
+  lookupReservation: (
+    bookingId: string,
+    contact: string,
+    signal?: AbortSignal
+  ) => Promise<BookingDetails>;
+  cancelReservation: (
+    bookingId: string,
+    input: { contact: string; reason?: string },
+    signal?: AbortSignal
+  ) => Promise<BookingDetails>;
 }
 
 export type BookingContextType = FavoritesContextValue &
@@ -178,6 +193,7 @@ export function BookingProvider({
 
   const favoritesRepository = ports?.favorites ?? defaultPorts.favorites;
   const reservationSubmitter = ports?.reservations ?? defaultPorts.reservations;
+  const reservationManager = ports?.reservationManager ?? defaultPorts.reservationManager;
 
   // 1. Favorites Domain State
   const subscribeFavorites = useCallback(
@@ -311,6 +327,10 @@ export function BookingProvider({
     setCatalogQuery((prev) => removeActiveFilterChip(prev, chip));
   }, []);
 
+  const replaceCatalogQuery = useCallback((next: StayCatalogQueryState) => {
+    setCatalogQuery(next);
+  }, []);
+
   const resetFilters = useCallback(() => {
     setCatalogQuery(createDefaultCatalogQuery());
   }, []);
@@ -342,6 +362,7 @@ export function BookingProvider({
       setSortBy,
       applyQuickTrend,
       removeFilterChip,
+      replaceCatalogQuery,
       resetFilters,
       filterModalOpen,
       setFilterModalOpen,
@@ -372,6 +393,7 @@ export function BookingProvider({
       setSortBy,
       applyQuickTrend,
       removeFilterChip,
+      replaceCatalogQuery,
       resetFilters,
       filterModalOpen,
     ]
@@ -429,6 +451,25 @@ export function BookingProvider({
     );
   }, [searchCriteria]);
 
+  const startCheckoutWithDraft = useCallback(
+    (
+      property: Property,
+      draft: { nights: number; adults: number; selectedAmenityIds: readonly string[] }
+    ) => {
+      setBookingSession((prev) => {
+        let next = startCheckoutSession(prev, property, searchCriteria);
+        next = updateSessionNights(next, draft.nights);
+        next = updateSessionAdults(next, draft.adults);
+        next = { ...next, selectedAmenityIds: [] };
+        for (const amenityId of draft.selectedAmenityIds) {
+          next = toggleSessionAmenity(next, amenityId);
+        }
+        return next;
+      });
+    },
+    [searchCriteria]
+  );
+
   const setDraftNights = useCallback((nights: number) => {
     setBookingSession((prev) => updateSessionNights(prev, nights));
   }, []);
@@ -465,6 +506,20 @@ export function BookingProvider({
     [bookingSession, reservationSubmitter]
   );
 
+  const lookupReservation = useCallback(
+    (bookingId: string, contact: string, signal?: AbortSignal) => {
+      return reservationManager.lookup(bookingId, contact, { signal });
+    },
+    [reservationManager]
+  );
+
+  const cancelReservation = useCallback(
+    (bookingId: string, input: { contact: string; reason?: string }, signal?: AbortSignal) => {
+      return reservationManager.cancel(bookingId, input, { signal });
+    },
+    [reservationManager]
+  );
+
   const bookingSessionValue = useMemo<BookingSessionContextValue>(
     () => ({
       bookingSession,
@@ -476,11 +531,14 @@ export function BookingProvider({
       bookingSuccess,
       setBookingSuccess,
       proceedToCheckout,
+      startCheckoutWithDraft,
       setDraftNights,
       setDraftAdults,
       toggleBookingAmenity,
       removeBookingAmenity,
       submitCheckout,
+      lookupReservation,
+      cancelReservation,
     }),
     [
       bookingSession,
@@ -492,11 +550,14 @@ export function BookingProvider({
       bookingSuccess,
       setBookingSuccess,
       proceedToCheckout,
+      startCheckoutWithDraft,
       setDraftNights,
       setDraftAdults,
       toggleBookingAmenity,
       removeBookingAmenity,
       submitCheckout,
+      lookupReservation,
+      cancelReservation,
     ]
   );
 

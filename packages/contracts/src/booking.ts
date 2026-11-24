@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   AmenityCategoryIdSchema,
   PaymentMethodSchema,
+  ReservationStatusSchema,
   type BookingSessionStep,
   type PaymentMethod,
 } from "./common.js";
@@ -99,6 +100,34 @@ export const ServerReservationIntentSchema = z.object({
 
 export type ServerReservationIntent = z.infer<typeof ServerReservationIntentSchema>;
 
+export const ReservationLookupInputSchema = z.object({
+  bookingId: z
+    .string()
+    .trim()
+    .min(1, "Vui lòng nhập mã đặt phòng (ví dụ: LX-123456).")
+    .transform((val) => val.toUpperCase()),
+  contact: z
+    .string()
+    .trim()
+    .min(1, "Vui lòng nhập email hoặc số điện thoại đã dùng khi đặt phòng."),
+});
+
+export type ReservationLookupInput = z.infer<typeof ReservationLookupInputSchema>;
+
+export const CancelReservationInputSchema = z.object({
+  contact: z
+    .string()
+    .trim()
+    .min(1, "Vui lòng nhập email hoặc số điện thoại để xác nhận chủ đơn."),
+  reason: z
+    .string()
+    .max(500, "Lý do hủy không được vượt quá 500 ký tự.")
+    .optional()
+    .transform((val) => (val === undefined ? undefined : val.trim() || undefined)),
+});
+
+export type CancelReservationInput = z.infer<typeof CancelReservationInputSchema>;
+
 export const BookingDetailsSchema = z.object({
   property: PropertySchema,
   checkIn: z.string().min(1),
@@ -116,6 +145,9 @@ export const BookingDetailsSchema = z.object({
   paymentMethod: PaymentMethodSchema,
   bookingId: z.string().min(1).optional(),
   createdAt: z.string().min(1).optional(),
+  status: ReservationStatusSchema.default("confirmed"),
+  cancelledAt: z.string().min(1).optional(),
+  cancellationReason: z.string().min(1).optional(),
 });
 
 export type BookingDetails = z.infer<typeof BookingDetailsSchema>;

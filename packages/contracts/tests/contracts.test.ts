@@ -5,9 +5,11 @@ import {
   ApiErrorResponseSchema,
   buildApiError,
   buildApiSuccess,
+  CancelReservationInputSchema,
   createApiSuccessSchema,
   GuestInfoSchema,
   HealthDataSchema,
+  ReservationLookupInputSchema,
   ServerReservationIntentSchema,
 } from "../dist/index.js";
 
@@ -69,10 +71,45 @@ test("ServerReservationIntentSchema accepts valid intent, strips unknown fields,
   assert.equal(badEmail.success, false);
 });
 
-test("API_ENDPOINTS exposes versioned paths and encodes property IDs safely", () => {
+test("API_ENDPOINTS exposes versioned paths and encodes property & reservation IDs safely", () => {
   assert.equal(API_ENDPOINTS.health, "/health");
   assert.equal(API_ENDPOINTS.catalog, "/api/v1/catalog");
   assert.equal(API_ENDPOINTS.reservations, "/api/v1/reservations");
   assert.equal(API_ENDPOINTS.propertyById("stay-01"), "/api/v1/properties/stay-01");
   assert.equal(API_ENDPOINTS.propertyById("a/b c"), "/api/v1/properties/a%2Fb%20c");
+  assert.equal(API_ENDPOINTS.reservationById(" lx-ab1234 "), "/api/v1/reservations/LX-AB1234");
+  assert.equal(
+    API_ENDPOINTS.cancelReservation("lx-ab1234"),
+    "/api/v1/reservations/LX-AB1234/cancel"
+  );
+});
+
+test("ReservationLookupInputSchema and CancelReservationInputSchema normalize inputs and enforce required contact", () => {
+  const lookup = ReservationLookupInputSchema.safeParse({
+    bookingId: " lx-123abc ",
+    contact: " guest@luxestay.vn ",
+  });
+  assert.equal(lookup.success, true);
+  if (lookup.success) {
+    assert.equal(lookup.data.bookingId, "LX-123ABC");
+    assert.equal(lookup.data.contact, "guest@luxestay.vn");
+  }
+
+  assert.equal(
+    ReservationLookupInputSchema.safeParse({ bookingId: "", contact: "a@b.com" }).success,
+    false
+  );
+  assert.equal(
+    CancelReservationInputSchema.safeParse({ contact: "   " }).success,
+    false
+  );
+
+  const cancel = CancelReservationInputSchema.safeParse({
+    contact: "0912345678",
+    reason: "  Đổi lịch công tác  ",
+  });
+  assert.equal(cancel.success, true);
+  if (cancel.success) {
+    assert.equal(cancel.data.reason, "Đổi lịch công tác");
+  }
 });

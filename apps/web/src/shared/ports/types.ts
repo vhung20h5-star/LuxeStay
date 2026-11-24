@@ -1,6 +1,7 @@
 import type {
   BookingDetails,
   CatalogSnapshot,
+  Property,
   ReservationSubmitter,
 } from "@luxestay/contracts";
 
@@ -28,6 +29,20 @@ export interface FavoritesRepository {
 
 export interface CatalogRepository {
   getSnapshot(options?: { signal?: AbortSignal }): Promise<CatalogSnapshot>;
+  getPropertyById(id: string, options?: { signal?: AbortSignal }): Promise<Property | null>;
+}
+
+export interface ReservationManagerPort {
+  lookup(
+    bookingId: string,
+    contact: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<BookingDetails>;
+  cancel(
+    bookingId: string,
+    input: { contact: string; reason?: string },
+    options?: { signal?: AbortSignal }
+  ): Promise<BookingDetails>;
 }
 
 export interface InMemoryReservationAdapter extends ReservationSubmitter {
@@ -37,4 +52,5 @@ export interface InMemoryReservationAdapter extends ReservationSubmitter {
 export interface AppPorts {
   favorites: FavoritesRepository;
   reservations: ReservationSubmitter;
+  reservationManager: ReservationManagerPort;
 }

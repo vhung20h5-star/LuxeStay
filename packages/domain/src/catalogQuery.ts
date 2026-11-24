@@ -1,17 +1,21 @@
-import type {
-  ActiveFilterChip,
-  AmenityFilterKey,
-  AmenityFilterOption,
-  CatalogQueryResult,
-  Category,
-  CategoryId,
-  Destination,
-  PriceRangePreset,
-  Property,
-  PropertyType,
-  QuickSearchTrend,
-  SortOption,
-  StayCatalogQueryState,
+import {
+  AmenityFilterKeySchema,
+  CategoryIdSchema,
+  PropertyTypeSchema,
+  SortOptionSchema,
+  type ActiveFilterChip,
+  type AmenityFilterKey,
+  type AmenityFilterOption,
+  type CatalogQueryResult,
+  type Category,
+  type CategoryId,
+  type Destination,
+  type PriceRangePreset,
+  type Property,
+  type PropertyType,
+  type QuickSearchTrend,
+  type SortOption,
+  type StayCatalogQueryState,
 } from "@luxestay/contracts";
 import { propertyHasAmenityFilters } from "./amenities.js";
 import { AMENITY_FILTER_OPTIONS } from "./seed/amenities.js";
@@ -656,4 +660,159 @@ export function resolveFavoriteProperties(
   if (favoriteIds.length === 0) return [];
   const favoriteSet = new Set(favoriteIds);
   return properties.filter((property) => favoriteSet.has(property.id));
+}
+
+export type CatalogSearchParamsInput =
+  | URLSearchParams
+  | string
+  | Record<string, string | string[] | undefined>;
+
+function toURLSearchParams(input: CatalogSearchParamsInput): URLSearchParams {
+  if (input instanceof URLSearchParams) return input;
+  if (typeof input === "string") {
+    return new URLSearchParams(input.startsWith("?") ? input.slice(1) : input);
+  }
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) {
+    if (Array.isArray(value)) {
+      const first = value.find((entry) => typeof entry === "string");
+      if (first !== undefined) params.set(key, first);
+    } else if (typeof value === "string") {
+      params.set(key, value);
+    }
+  }
+  return params;
+}
+
+export function serializeCatalogQueryToSearchParams(
+  query: StayCatalogQueryState
+): URLSearchParams {
+  const params = new URLSearchParams();
+  const { search, filters } = query;
+
+  const dest = search.destination.trim();
+  if (dest) params.set("dest", dest);
+  if (search.checkIn.trim()) params.set("checkIn", search.checkIn.trim());
+  if (search.checkOut.trim()) params.set("checkOut", search.checkOut.trim());
+  if (search.guests.adults !== 2) params.set("adults", String(search.guests.adults));
+  if (search.guests.children > 0) params.set("children", String(search.guests.children));
+  if (search.guests.rooms !== 1) params.set("rooms", String(search.guests.rooms));
+
+  if (filters.category !== "all") params.set("category", filters.category);
+  if (filters.minPrice > DEFAULT_MIN_PRICE) params.set("minPrice", String(filters.minPrice));
+  if (filters.maxPrice < DEFAULT_MAX_PRICE) params.set("maxPrice", String(filters.maxPrice));
+  if (filters.propertyTypes.length > 0) {
+    params.set("types", [...new Set(filters.propertyTypes)].join(","));
+  }
+  if (filters.minRating > 0) params.set("rating", String(filters.minRating));
+  if (filters.amenities.length > 0) {
+    params.set("amenities", [...new Set(filters.amenities)].join(","));
+  }
+  if (filters.freeCancellationOnly) params.set("freeCancel", "1");
+  if (filters.sortBy !== "popular") params.set("sort", filters.sortBy);
+
+  return params;
+}
+
+export function parseCatalogQueryFromSearchParams(
+  input: CatalogSearchParamsInput
+): StayCatalogQueryState {
+  const params = toURLSearchParams(input);
+  let state = createDefaultCatalogQuery();
+
+  const dest = params.get("dest");
+  if (dest && dest.trim()) {
+    state = setQueryDestination(state, dest.trim());
+  }
+
+  const checkIn = params.get("checkIn") ?? undefined;
+  const checkOut = params.get("checkOut") ?? undefined;
+  if (checkIn || checkOut) {
+    state = setQueryDates(state, { checkIn, checkOut });
+  }
+
+  const parsePositiveInt = (raw: string | null): number | null => {
+    if (raw === null || raw.trim() === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  };
+
+  const adults = parsePositiveInt(params.get("adults"));
+  if (adults !== null) {
+    state = adjustQueryGuests(state, "adults", adults - state.search.guests.adults);
+  }
+  const children = parsePositiveInt(params.get("children"));
+  if (children !== null) {
+    state = adjustQueryGuests(state, "children", children - state.search.guests.children);
+  }
+  const rooms = parsePositiveInt(params.get("rooms"));
+  if (rooms !== null) {
+    state = adjustQueryGuests(state, "rooms", rooms - state.search.guests.rooms);
+  }
+
+  const rawCategory = params.get("category");
+  if (rawCategory) {
+    const parsedCat = CategoryIdSchema.safeParse(rawCategory);
+    if (parsedCat.success) {
+      state = setQueryCategory(state, parsedCat.data);
+    }
+  }
+
+  const rawMinPrice = params.get("minPrice");
+  const rawMaxPrice = params.get("maxPrice");
+  if (rawMinPrice !== null || rawMaxPrice !== null) {
+    const minVal =
+      rawMinPrice !== null && rawMinPrice.trim() !== ""
+        ? Number(rawMinPrice)
+        : DEFAULT_MIN_PRICE;
+    const maxVal =
+      rawMaxPrice !== null && rawMaxPrice.trim() !== ""
+        ? Number(rawMaxPrice)
+        : DEFAULT_MAX_PRICE;
+    state = setQueryPriceRange(state, minVal, maxVal);
+  }
+
+  const rawTypes = params.get("types");
+  if (rawTypes) {
+    const seenTypes = new Set<PropertyType>();
+    for (const token of rawTypes.split(",")) {
+      const parsedType = PropertyTypeSchema.safeParse(token.trim());
+      if (parsedType.success && !seenTypes.has(parsedType.data)) {
+        seenTypes.add(parsedType.data);
+        state = toggleQueryPropertyType(state, parsedType.data);
+      }
+    }
+  }
+
+  const rawRating = params.get("rating");
+  if (rawRating !== null && rawRating.trim() !== "") {
+    state = setQueryMinRating(state, Number(rawRating));
+  }
+
+  const rawAmenities = params.get("amenities");
+  if (rawAmenities) {
+    const seenAmenities = new Set<AmenityFilterKey>();
+    for (const token of rawAmenities.split(",")) {
+      const parsedAmenity = AmenityFilterKeySchema.safeParse(token.trim());
+      if (parsedAmenity.success && !seenAmenities.has(parsedAmenity.data)) {
+        seenAmenities.add(parsedAmenity.data);
+        state = toggleQueryAmenity(state, parsedAmenity.data);
+      }
+    }
+  }
+
+  const freeCancel = params.get("freeCancel");
+  if (freeCancel === "1" || freeCancel === "true") {
+    state = setQueryFreeCancellation(state, true);
+  }
+
+  const rawSort = params.get("sort");
+  if (rawSort) {
+    const parsedSort = SortOptionSchema.safeParse(rawSort);
+    if (parsedSort.success) {
+      state = setQuerySortBy(state, parsedSort.data);
+    }
+  }
+
+  return state;
 }

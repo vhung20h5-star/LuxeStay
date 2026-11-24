@@ -2,7 +2,9 @@ import { z } from "zod";
 
 export const ErrorCodeSchema = z.enum([
   "VALIDATION_ERROR",
+  "FORBIDDEN",
   "NOT_FOUND",
+  "CONFLICT",
   "UNPROCESSABLE_ENTITY",
   "INVALID_JSON",
   "INTERNAL_ERROR",
@@ -165,6 +167,10 @@ export const BookingSessionStepSchema = z.enum([
 ]);
 
 export type BookingSessionStep = z.infer<typeof BookingSessionStepSchema>;
+
+export const ReservationStatusSchema = z.enum(["confirmed", "cancelled"]);
+
+export type ReservationStatus = z.infer<typeof ReservationStatusSchema>;
 
 export const HealthDataSchema = z.object({
   status: z.literal("ok"),

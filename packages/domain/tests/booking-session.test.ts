@@ -20,6 +20,8 @@ import {
   deriveBookingQuote,
   validateCheckoutGuestInput,
   processServerReservationIntent,
+  matchesReservationContact,
+  evaluateReservationCancellation,
   submitBookingSession,
 } from "../dist/index.js";
 
@@ -48,6 +50,7 @@ function createTestSubmitter(overrides?: {
         paymentMethod: request.paymentMethod,
         bookingId: overrides?.bookingId ?? "LX-TEST01",
         createdAt: overrides?.createdAt ?? "2026-11-21T00:00:00.000Z",
+        status: "confirmed",
       });
       return details;
     },
@@ -428,5 +431,82 @@ test("processServerReservationIntent recalculates authoritative server pricing a
       res.booking.pricing.total,
       stay02.pricePerNight * 3 + 150000 + 650000 - 100000
     );
+  }
+});
+
+test("matchesReservationContact normalizes VN phones & case-insensitive email, and evaluateReservationCancellation enforces ownership and freeCancellation policy", () => {
+  const freeCancelProp = PROPERTIES.find((p) => p.freeCancellation)!;
+  const nonFreeProp = { ...freeCancelProp, id: "stay-non-free", freeCancellation: false };
+
+  const created = processServerReservationIntent(
+    {
+      propertyId: freeCancelProp.id,
+      checkInSeed: "2026-12-10",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Văn A",
+        phone: "0912 345 678",
+        email: "Guest@LuxeStay.vn",
+      },
+      paymentMethod: "momo",
+    },
+    PROPERTIES,
+    { bookingId: "LX-CAN01", createdAt: "2026-11-24T00:00:00.000Z", fallbackBaseDate: baseDate }
+  );
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  assert.equal(created.booking.status, "confirmed");
+  assert.equal(matchesReservationContact(created.booking, "guest@luxestay.vn"), true);
+  assert.equal(matchesReservationContact(created.booking, "+84 912-345-678"), true);
+  assert.equal(matchesReservationContact(created.booking, "84912345678"), true);
+  assert.equal(matchesReservationContact(created.booking, "other@luxestay.vn"), false);
+  assert.equal(matchesReservationContact(created.booking, "0988888888"), false);
+
+  // Wrong contact -> 403 FORBIDDEN
+  const wrongContact = evaluateReservationCancellation(created.booking, {
+    contact: "intruder@example.com",
+  });
+  assert.equal(wrongContact.ok, false);
+  if (!wrongContact.ok) {
+    assert.equal(wrongContact.status, 403);
+    assert.equal(wrongContact.code, "FORBIDDEN");
+  }
+
+  // Non-free cancellation property -> 409 CONFLICT
+  const strictBooking = { ...created.booking, property: nonFreeProp };
+  const blockedByPolicy = evaluateReservationCancellation(strictBooking, {
+    contact: "guest@luxestay.vn",
+  });
+  assert.equal(blockedByPolicy.ok, false);
+  if (!blockedByPolicy.ok) {
+    assert.equal(blockedByPolicy.status, 409);
+    assert.equal(blockedByPolicy.code, "CONFLICT");
+  }
+
+  // Valid cancellation -> frozen cancelled booking
+  const cancelled = evaluateReservationCancellation(
+    created.booking,
+    { contact: "+84912345678", reason: "Đổi lịch công tác" },
+    { cancelledAt: "2026-11-24T12:00:00.000Z" }
+  );
+  assert.equal(cancelled.ok, true);
+  if (cancelled.ok) {
+    assert.equal(cancelled.booking.status, "cancelled");
+    assert.equal(cancelled.booking.cancelledAt, "2026-11-24T12:00:00.000Z");
+    assert.equal(cancelled.booking.cancellationReason, "Đổi lịch công tác");
+    assert.equal(Object.isFrozen(cancelled.booking), true);
+
+    // Double cancellation -> 409 CONFLICT
+    const doubleCancel = evaluateReservationCancellation(cancelled.booking, {
+      contact: "guest@luxestay.vn",
+    });
+    assert.equal(doubleCancel.ok, false);
+    if (!doubleCancel.ok) {
+      assert.equal(doubleCancel.status, 409);
+      assert.equal(doubleCancel.code, "CONFLICT");
+    }
   }
 });

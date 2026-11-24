@@ -7,11 +7,13 @@ import {
   CheckCircle2,
   MapPin,
   Download,
+  ExternalLink,
   X,
   PhoneCall,
   Sparkles,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useBookingSession } from "@/features/booking/BookingContext";
 import { useOverlayLayer } from "@/shared/overlay/OverlayContext";
 import { describeSelectedAmenity, formatAmenitiesFeeSummary } from "@luxestay/domain";
@@ -222,22 +224,34 @@ export function BookingSuccessModal() {
             </div>
 
             {/* Actions */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 justify-center"
-                onClick={handlePrint}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Lưu vé xác nhận PDF
-              </Button>
-              <Button
-                variant="primary"
-                className="flex-1 justify-center"
-                onClick={() => setBookingSuccess(null)}
-              >
-                Hoàn tất
-              </Button>
+            <div className="space-y-3">
+              {bookingId && (
+                <Link
+                  href={`/bookings/${encodeURIComponent(bookingId)}?contact=${encodeURIComponent(guestInfo.email)}`}
+                  onClick={() => setBookingSuccess(null)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-sm font-semibold transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Quản lý / Tra cứu đơn đặt phòng
+                </Link>
+              )}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 justify-center"
+                  onClick={handlePrint}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Lưu vé xác nhận PDF
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1 justify-center"
+                  onClick={() => setBookingSuccess(null)}
+                >
+                  Hoàn tất
+                </Button>
+              </div>
             </div>
           </div>
         </motion.div>

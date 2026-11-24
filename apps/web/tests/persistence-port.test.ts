@@ -22,7 +22,9 @@ import {
   createBrowserFavoritesAdapter,
   createInMemoryFavoritesAdapter,
   createBrowserReservationAdapter,
+  createBrowserReservationManagerAdapter,
   createHttpReservationAdapter,
+  createHttpReservationManagerAdapter,
   createInMemoryReservationAdapter,
   createWebAppPorts,
   createInMemoryAppPorts,
@@ -509,4 +511,205 @@ test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and
   });
   assert.equal(srvEnv.serverApiBaseUrl, "http://api-internal:4000");
   assert.equal(srvEnv.publicApiBaseUrl, "https://api.luxestay.vn");
+});
+
+test("CatalogRepository.getPropertyById supports mock lookup, HTTP 200, HTTP 404 -> null, and CONTRACT_MISMATCH", async () => {
+  const mockRepo = createCatalogRepositoryForMode({
+    mode: "mock",
+    apiBaseUrl: "http://localhost:4000",
+  });
+  const mockFound = await mockRepo.getPropertyById("stay-01");
+  assert.equal(mockFound?.id, "stay-01");
+  const mockMissing = await mockRepo.getPropertyById("does-not-exist");
+  assert.equal(mockMissing, null);
+
+  const httpRepo = createHttpCatalogRepository({
+    baseUrl: "http://localhost:4000/",
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url === "http://localhost:4000/api/v1/properties/stay-02") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess(stay02, {
+              requestId: "req-prop-200",
+              timestamp: "2026-11-24T00:00:00.000Z",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url === "http://localhost:4000/api/v1/properties/unknown-stay") {
+        return new Response(
+          JSON.stringify(
+            buildApiError("NOT_FOUND", "Không tìm thấy chỗ nghỉ.", undefined, {
+              requestId: "req-prop-404",
+              timestamp: "2026-11-24T00:00:00.000Z",
+            })
+          ),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, data: { invalid: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  const found = await httpRepo.getPropertyById("stay-02");
+  assert.equal(found?.id, "stay-02");
+  assert.equal(found?.title, stay02.title);
+
+  const missing = await httpRepo.getPropertyById("unknown-stay");
+  assert.equal(missing, null);
+
+  await assert.rejects(
+    httpRepo.getPropertyById("corrupted-stay"),
+    (err: unknown) => err instanceof HttpApiError && err.code === "CONTRACT_MISMATCH"
+  );
+});
+
+test("ReservationManagerPort supports browser localStorage persistence, in-memory auto-sync, and HTTP lookup/cancel error envelopes", async () => {
+  const quote = deriveBookingQuote(
+    startCheckoutSession(createIdleBookingSession(), stay02, undefined, baseDate),
+    baseDate
+  )!;
+  const request = {
+    quote,
+    guestInfo: {
+      fullName: "Trần Minh Quân",
+      phone: "0912 345 678",
+      email: "quan.tran@example.com",
+    },
+    paymentMethod: "vnpay" as const,
+  };
+
+  // 1. Browser mock adapter + manager share StorageLike persistence
+  const fakeStorage = createFakeStorage();
+  const browserSubmitter = createBrowserReservationAdapter(0, { storage: fakeStorage.storage });
+  const browserManager = createBrowserReservationManagerAdapter({ storage: fakeStorage.storage });
+
+  const created = await browserSubmitter.submit(request);
+  assert.ok(created.bookingId);
+  assert.equal(created.status, "confirmed");
+
+  // Lookup by case-insensitive email & normalized +84 phone
+  const foundByEmail = await browserManager.lookup(
+    created.bookingId.toLowerCase(),
+    "QUAN.TRAN@EXAMPLE.COM"
+  );
+  assert.equal(foundByEmail.bookingId, created.bookingId);
+
+  const foundByPhone = await browserManager.lookup(created.bookingId, "+84 912-345-678");
+  assert.equal(foundByPhone.bookingId, created.bookingId);
+
+  // Wrong contact -> 403 FORBIDDEN
+  await assert.rejects(
+    browserManager.lookup(created.bookingId, "wrong@example.com"),
+    (err: unknown) => err instanceof HttpApiError && err.status === 403 && err.code === "FORBIDDEN"
+  );
+
+  // Unknown booking -> 404 NOT_FOUND
+  await assert.rejects(
+    browserManager.lookup("LX-999999", "quan.tran@example.com"),
+    (err: unknown) => err instanceof HttpApiError && err.status === 404 && err.code === "NOT_FOUND"
+  );
+
+  // Cancel persists cancelled status and blocks double-cancel with 409 CONFLICT
+  const cancelled = await browserManager.cancel(created.bookingId, {
+    contact: "0912345678",
+    reason: "Thay đổi lịch trình công tác",
+  });
+  assert.equal(cancelled.status, "cancelled");
+  assert.ok(cancelled.cancelledAt);
+  assert.equal(cancelled.cancellationReason, "Thay đổi lịch trình công tác");
+
+  const reFetched = await browserManager.lookup(created.bookingId, "quan.tran@example.com");
+  assert.equal(reFetched.status, "cancelled");
+
+  await assert.rejects(
+    browserManager.cancel(created.bookingId, { contact: "quan.tran@example.com" }),
+    (err: unknown) => err instanceof HttpApiError && err.status === 409 && err.code === "CONFLICT"
+  );
+
+  // 2. In-memory AppPorts auto-registers submitted bookings in reservationManager
+  const memPorts = createInMemoryAppPorts({
+    validPropertyIds: VALID_IDS,
+    bookingId: "LX-MEM001",
+    createdAt: "2026-11-24T08:00:00.000Z",
+  });
+  await memPorts.reservations.submit(request);
+  const memFound = await memPorts.reservationManager.lookup("lx-mem001", "quan.tran@example.com");
+  assert.equal(memFound.bookingId, "LX-MEM001");
+  const memCancelled = await memPorts.reservationManager.cancel("LX-MEM001", {
+    contact: "0912345678",
+  });
+  assert.equal(memCancelled.status, "cancelled");
+
+  // 3. HTTP ReservationManagerAdapter sends correct URL/method and propagates 403/409 errors
+  const httpManager = createHttpReservationManagerAdapter({
+    baseUrl: "http://localhost:4000/",
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (init?.method === "GET") {
+        assert.equal(
+          url,
+          "http://localhost:4000/api/v1/reservations/LX-HTTP99?contact=quan.tran%40example.com"
+        );
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess(created, {
+              requestId: "req-lookup-1",
+              timestamp: "2026-11-24T09:00:00.000Z",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (init?.method === "PATCH") {
+        assert.equal(url, "http://localhost:4000/api/v1/reservations/LX-HTTP99/cancel");
+        const body = JSON.parse(String(init.body));
+        if (body.contact === "already-cancelled@example.com") {
+          return new Response(
+            JSON.stringify(
+              buildApiError("CONFLICT", "Đơn đặt phòng này đã được hủy trước đó.", undefined, {
+                requestId: "req-cancel-409",
+                timestamp: "2026-11-24T09:01:00.000Z",
+              })
+            ),
+            { status: 409, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess(cancelled, {
+              requestId: "req-cancel-200",
+              timestamp: "2026-11-24T09:02:00.000Z",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected request: ${init?.method} ${url}`);
+    },
+  });
+
+  const httpFound = await httpManager.lookup("LX-HTTP99", "quan.tran@example.com");
+  assert.equal(httpFound.bookingId, created.bookingId);
+  assert.equal(Object.isFrozen(httpFound), true);
+
+  const httpCancelled = await httpManager.cancel("LX-HTTP99", {
+    contact: "quan.tran@example.com",
+    reason: "Đổi kế hoạch",
+  });
+  assert.equal(httpCancelled.status, "cancelled");
+
+  await assert.rejects(
+    httpManager.cancel("LX-HTTP99", { contact: "already-cancelled@example.com" }),
+    (err: unknown) =>
+      err instanceof HttpApiError &&
+      err.status === 409 &&
+      err.code === "CONFLICT" &&
+      err.requestId === "req-cancel-409"
+  );
 });

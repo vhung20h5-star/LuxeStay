@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { CatalogUrlSync } from "@/features/catalog/CatalogUrlSync";
 import { CategoryBar } from "@/features/catalog/CategoryBar";
 import { HeroSection } from "@/features/catalog/HeroSection";
 import { PromotionBanner } from "@/features/catalog/PromotionBanner";
@@ -8,6 +10,10 @@ import { TrendingDestinations } from "@/features/catalog/TrendingDestinations";
 export default function HomePage() {
   return (
     <div className="flex flex-col min-h-screen">
+      <Suspense fallback={null}>
+        <CatalogUrlSync />
+      </Suspense>
+
       {/* 1. Hero Section with dynamic Search Bar */}
       <HeroSection />
 

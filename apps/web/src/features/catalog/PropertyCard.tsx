@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Heart,
@@ -159,7 +160,13 @@ export function PropertyCard({ property }: PropertyCardProps) {
 
           {/* Title */}
           <h3 className="font-bold text-base text-slate-900 group-hover:text-emerald-700 transition-colors line-clamp-1 leading-snug">
-            {property.title}
+            <Link
+              href={`/stays/${property.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="hover:underline focus:outline-none focus-visible:underline"
+            >
+              {property.title}
+            </Link>
           </h3>
 
           {/* Subtitle / Key Highlight */}

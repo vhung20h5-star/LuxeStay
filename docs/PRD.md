@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD) — LuxeStay (`travel-service`)
 
-- **Phiên bản tài liệu:** 1.1 (Monorepo Baseline v0.2.0)
+- **Phiên bản tài liệu:** 1.2 (Phase 1 Completed — Baseline v0.3.0)
 - **Ngày cập nhật:** 2026-11-24
 - **Trạng thái:** Living Document (Active)
 - **Tài liệu liên quan:**
@@ -17,25 +17,27 @@
 **LuxeStay** là nền tảng web khám phá và đặt phòng khách sạn, resort ven biển, villa biệt thự, homestay và glamping nghỉ dưỡng tại Việt Nam. Sản phẩm hướng tới trải nghiệm hiện đại, minh bạch chi phí ngay từ bước xem phòng và làm nổi bật hệ thống **tiện ích & dịch vụ khu nghỉ dưỡng (Resort Amenities)** — thứ thường bị ẩn hoặc mô tả sơ sài ở các nền tảng OTA thông thường.
 
 ### 1.2. Đề xuất giá trị cốt lõi (Core Value Proposition)
-1. **Tìm kiếm thông minh cho người dùng Việt:** Hỗ trợ tìm điểm đến không dấu tiếng Việt, chọn nhanh xu hướng du lịch, gợi ý ngày cuối tuần/lễ và lọc kết hợp nhiều tiêu chí mà không làm mất ngữ cảnh.
+1. **Tìm kiếm thông minh cho người dùng Việt:** Hỗ trợ tìm điểm đến không dấu tiếng Việt, chọn nhanh xu hướng du lịch, gợi ý ngày cuối tuần/lễ, đồng bộ URL chia sẻ và lọc kết hợp nhiều tiêu chí mà không làm mất ngữ cảnh.
 2. **Minh bạch tiện ích & dịch vụ đi kèm:** Chuẩn hóa 51 tiện ích theo 7 nhóm khoa học, phân rõ 3 nhóm chi phí (`Miễn phí bao gồm sẵn`, `Miễn phí cần đặt trước`, `Có phụ phí`) và đồng bộ 1-click trực tiếp vào báo giá đặt phòng.
-3. **Báo giá nhất quán từ tìm kiếm đến vé điện tử:** Lịch trình và số khách từ thanh tìm kiếm được chuyển tiếp tự động sang chi tiết chỗ nghỉ, bước thanh toán và tính lại độc lập trên server khi xác nhận đơn.
+3. **Báo giá nhất quán từ tìm kiếm đến vé điện tử & quản lý đơn:** Lịch trình và số khách từ thanh tìm kiếm được chuyển tiếp tự động sang trang chi tiết chỗ nghỉ (`/stays/[id]`), bước thanh toán, tính lại độc lập trên server, lưu xuống PostgreSQL và hỗ trợ tra cứu/hủy đơn tại `/bookings`.
 4. **Trải nghiệm mượt mà trên mọi thiết bị:** Giao diện Glassmorphism, điều phối ngăn xếp hộp thoại nhất quán (phím `Escape`, khóa cuộn nền, hỗ trợ màn hình di động).
 
-### 1.3. Ma trận phạm vi hiện trạng (Baseline v0.1.0)
+### 1.3. Ma trận phạm vi hiện trạng (Baseline v0.3.0)
 
 | Nhóm tính năng | Trạng thái hiện tại | Ghi chú kiểm soát |
 | :--- | :--- | :--- |
-| Tìm kiếm, lọc đa tiêu chí, sắp xếp, thẻ lọc nhanh | **Đã triển khai đầy đủ** | 12 chỗ nghỉ, 8 thành phố, 5 loại hình, giá 790k–6.5tr VNĐ/đêm |
+| Tìm kiếm, lọc đa tiêu chí, sắp xếp, thẻ lọc nhanh & URL Query Sync | **Đã triển khai đầy đủ** | 12 chỗ nghỉ, 8 thành phố, 5 loại hình, giá 790k–6.5tr VNĐ/đêm; đồng bộ 2 chiều query string trên `/` |
+| Trang chi tiết chỗ nghỉ riêng (`/stays/[id]`) & SEO/OpenGraph | **Đã triển khai đầy đủ** | SSR gọi `GET /api/v1/properties/:id`, `generateMetadata`, liên kết từ `PropertyCard` & `PropertyModal`, `404` khi không tồn tại |
 | Danh sách yêu thích (Wishlist Drawer) | **Đã triển khai đầy đủ** | Lưu `localStorage` (`travel_favorites`), đồng bộ đa tab, an toàn SSR |
 | Hệ thống Tiện ích khu nghỉ dưỡng (51 mục / 7 nhóm) | **Đã triển khai đầy đủ** | Master–Detail Explorer + đồng bộ dịch vụ chọn thêm vào báo giá |
-| Phiên đặt phòng, báo giá & Backend Hono API (`/api/v1/*`) | **Đã triển khai (In-memory Repo)** | Tách dịch vụ `@luxestay/api` (port `4000`) đồng bộ Zod contract (`@luxestay/contracts`), chế độ `api|mock` tường minh; chưa nối Database thật |
-| Vé điện tử & In/Lưu PDF | **Đã triển khai (Client Print)** | Hiển thị vé + hiệu ứng pháo hoa + `window.print()` |
+| Phiên đặt phòng, báo giá, Backend Hono API & PostgreSQL/Drizzle | **Đã triển khai đầy đủ** | `@luxestay/api` (`:4000`) đồng bộ Zod contract (`@luxestay/contracts`), 12 bảng PostgreSQL 16 + Drizzle ORM (`STORAGE_DRIVER=database|memory`), `NEXT_PUBLIC_DATA_MODE=api|mock` tường minh |
+| Tra cứu & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`) | **Đã triển khai đầy đủ** | Xác thực theo `bookingId` + email/SĐT VN chuẩn hóa (`+84`/`0`), tuân thủ `freeCancellation`, chống hủy trùng (`409 CONFLICT`), hỗ trợ in/lưu vé PDF |
+| Vé điện tử & In/Lưu PDF | **Đã triển khai (Client Print)** | Hiển thị vé + hiệu ứng pháo hoa + nút mở trang quản lý đơn + `window.print()` |
 | Điều phối lớp phủ (7 Modal/Drawer) & ARIA Dialog | **Đã triển khai đầy đủ** | Quản lý `z-index`, `Escape`, scroll lock tập trung |
-| Đăng nhập / Tài khoản (`AuthModal`) | **Prototype UI-only** | Chỉ hiển thị modal chào mừng; chưa có phiên đăng nhập thật |
-| Mã giảm giá (`PromotionBanner`) | **Prototype UI-only** | Sao chép mã `LUXESTAY250`, `SUMMERVIBE`; chưa trừ động vào báo giá (đang áp cố định giảm `100.000đ`) |
-| Thanh toán (`MoMo`, `VNPAY`, `Card`, `Tại chỗ nghỉ`) | **Mô phỏng lựa chọn** | Chưa kết nối cổng thanh toán / webhook thật |
-| Đa ngôn ngữ / Đa tiền tệ (`Navbar`) | **Tĩnh (VNĐ • Tiếng Việt)** | Chưa có bộ chuyển đổi i18n/currency |
+| Đăng nhập / Tài khoản (`AuthModal`) | **Prototype UI-only** | Chỉ hiển thị modal chào mừng; chưa có phiên đăng nhập thật (mục tiêu **Phase 2**) |
+| Mã giảm giá (`PromotionBanner`) | **Prototype UI-only** | Sao chép mã `LUXESTAY250`, `SUMMERVIBE`; chưa trừ động vào báo giá (đang áp cố định giảm `100.000đ` — mục tiêu **Phase 2**) |
+| Thanh toán (`MoMo`, `VNPAY`, `Card`, `Tại chỗ nghỉ`) | **Mô phỏng lựa chọn** | Chưa kết nối cổng thanh toán / webhook thật (mục tiêu **Phase 2**) |
+| Đa ngôn ngữ / Đa tiền tệ (`Navbar`) | **Tĩnh (VNĐ • Tiếng Việt)** | Chưa có bộ chuyển đổi i18n/currency (mục tiêu **Phase 3**) |
 
 ---
 
@@ -122,6 +124,22 @@
   - Khóa cuộn nền (`body overflow: hidden`) khi có ít nhất 1 lớp phủ mở và khôi phục chính xác khi lớp cuối cùng đóng.
   - Đầy đủ thuộc tính trợ năng `role="dialog"`, `aria-modal="true"`, `aria-label`.
 
+### FR-09: Tra cứu & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`)
+- **Mục đích:** Cho phép khách đã đặt phòng chủ động tra cứu vé điện tử, in/lưu PDF và hủy phòng theo đúng chính sách hủy của chỗ nghỉ mà chưa cần đăng nhập tài khoản.
+- **Hành vi chuẩn:**
+  - Người dùng mở **"Tra cứu đơn"** trên `Navbar` (`/bookings`) hoặc bấm **"Quản lý / Tra cứu đơn đặt phòng"** ngay sau khi đặt thành công trong `BookingSuccessModal`.
+  - Bắt buộc cung cấp đồng thời **Mã đặt phòng** (`LX-XXXXXX`, không phân biệt hoa/thường) và **Email hoặc SĐT đặt phòng** (email không phân biệt hoa/thường; SĐT VN tự chuẩn hóa `0...` / `84...` / `+84...`). Sai thông tin liên hệ trả lỗi `403 FORBIDDEN`; không tồn tại mã trả `404 NOT_FOUND`.
+  - Màn hình `/bookings/[bookingId]` hiển thị trạng thái đơn (`confirmed` / `cancelled`), chi tiết chỗ nghỉ, lịch nhận/trả phòng, tiện ích đã đăng ký, cấu thành giá và hỗ trợ in vé PDF.
+  - Khi đơn ở trạng thái `confirmed` và chỗ nghỉ hỗ trợ `freeCancellation`, khách có thể hủy đơn (kèm lý do tùy chọn) qua `PATCH /api/v1/reservations/:bookingId/cancel`; hệ thống cập nhật bền vững `status = "cancelled"`, `cancelledAt`, `cancellationReason`. Nếu chỗ nghỉ không hỗ trợ hủy miễn phí hoặc đơn đã hủy trước đó, API trả `409 CONFLICT`.
+
+### FR-10: Trang Chi tiết Chỗ nghỉ độc lập (`/stays/[id]`) & Đồng bộ URL Tìm kiếm
+- **Mục đích:** Mở khóa SEO, chia sẻ liên kết trực tiếp cho từng chỗ nghỉ và từng trạng thái lọc/tìm kiếm trên trang chủ.
+- **Hành vi chuẩn:**
+  - Route `/stays/[id]` render SSR từ `GET /api/v1/properties/:id` (hoặc seed ở `mock` mode), tạo metadata SEO/OpenGraph động (`title`, `description`, `og:image`), trả trang `404` khi mã chỗ nghỉ không tồn tại.
+  - Giao diện `/stays/[id]` hiển thị đầy đủ thư viện ảnh, thông số, chủ nhà, đánh giá, danh mục tiện ích tích hợp chọn thêm add-on, bảng tính giá trực tiếp và nút đặt phòng chuyển thẳng sang `BookingCheckoutModal`.
+  - `PropertyCard` có liên kết trực tiếp trên tiêu đề dẫn tới `/stays/[id]`; `PropertyModal` có nút **"Trang chi tiết"** và nút **"Chia sẻ"** sao chép URL `/stays/[id]`.
+  - Trang chủ `/` đồng bộ 2 chiều trạng thái `StayCatalogQueryState` với URL query string (`dest`, `in`, `out`, `adults`, `children`, `rooms`, `cat`, `min`, `max`, `types`, `rating`, `amenities`, `freeCancel`, `sort`), bỏ qua giá trị mặc định để URL gọn và tự sanitize mọi tham số không hợp lệ.
+
 ---
 
 ## 4. Yêu cầu phi chức năng (Non-Functional Requirements)
@@ -131,22 +149,22 @@
 | **Hiệu năng UI** | Chia tách domain context (`Favorites`, `Catalog`, `BookingSession`) để giảm re-render chéo; cache bản chiếu tiện ích theo tham chiếu (`WeakMap`); dùng `next/image` với `remotePatterns` kiểm soát domain ảnh (`images.unsplash.com`, `plus.unsplash.com`). |
 | **Toàn vẹn giá & Dữ liệu** | Server không bao giờ tin tưởng `pricing` gửi từ trình duyệt; toàn bộ dữ liệu đọc từ `localStorage` phải được sanitize (lọc kiểu, trùng lặp, ID không tồn tại). |
 | **An toàn SSR / Hydration** | Không đọc trực tiếp `window.localStorage` trong render/useState initializer; sử dụng `useSyncExternalStore` với `getServerSnapshot` nhất quán. |
-| **Khả năng kiểm thử** | Toàn bộ logic miền cốt lõi nằm trong module TypeScript thuần (`src/lib/*`), có thể kiểm thử tự động trong `< 1 giây` bằng Node test runner không cần trình duyệt. |
+| **Khả năng kiểm thử** | Toàn bộ logic miền cốt lõi nằm trong `@luxestay/domain` thuần, có thể kiểm thử tự động 4 tầng (`contracts`, `domain`, `api`, `web`) bằng Node test runner không cần trình duyệt hay Docker. |
 | **Responsive & UX** | Hoạt động trơn tru trên mobile (`< 640px`), tablet và desktop; ngôn ngữ giao diện `vi-VN`, đơn vị tiền tệ `VNĐ`. |
-| **Chất lượng mã nguồn** | TypeScript `strict: true`, tuân thủ ESLint Next.js Core Web Vitals + TypeScript, giữ kiến trúc Deep Module và thuật ngữ nhất quán với [GLOSSARY.md](../GLOSSARY.md). |
+| **Chất lượng mã nguồn** | TypeScript `strict: true`, tuân thủ ESLint 9 + quy tắc import boundaries toàn repo (`eslint.boundaries.mjs`), giữ kiến trúc Deep Module và thuật ngữ nhất quán với [GLOSSARY.md](../GLOSSARY.md). |
 
 ---
 
 ## 5. Danh mục Tính năng Mở rộng (Future Product Epics)
 
-Chi tiết phân kỳ triển khai xem tại [PLAN.md](./PLAN.md). Tóm tắt các nhóm tính năng mở rộng dự kiến:
+Chi tiết phân kỳ triển khai xem tại [PLAN.md](./PLAN.md). Tóm tắt trạng thái các nhóm tính năng mở rộng:
 
-1. **Epic 1 — Lưu trữ Cơ sở dữ liệu & Quản lý Đơn đặt phòng:** Chuyển danh mục chỗ nghỉ, tiện ích và đơn đặt phòng sang Database thật; thêm trang tra cứu/quản lý/hủy đặt phòng.
-2. **Epic 2 — Đường dẫn Chỗ nghỉ riêng & Đồng bộ URL (SEO & Deep-linking):** Thêm trang `/stays/[id]` hỗ trợ SEO/OpenGraph và đồng bộ trạng thái tìm kiếm/lọc lên query string để chia sẻ liên kết.
-3. **Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị:** Hoàn thiện `AuthModal` thành hệ thống đăng nhập thật (Google OAuth / OTP) và đồng bộ Wishlist từ `localStorage` lên tài khoản.
-4. **Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine):** Cho phép nhập/áp mã `LUXESTAY250`, `SUMMERVIBE` tại checkout, kiểm tra điều kiện đơn tối thiểu, trần giảm giá và hạn dùng ở cả client lẫn server.
-5. **Epic 5 — Tích hợp Thanh toán & Thông báo thực tế:** Nối cổng thanh toán (VNPAY, MoMo, thẻ quốc tế) với luồng webhook cập nhật trạng thái đơn và gửi vé xác nhận qua Email/Zalo.
-6. **Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà:** Kiểm soát phòng trống theo ngày chống đặt trùng, cho phép khách đã lưu trú gửi đánh giá, và cổng quản trị cho chủ nhà/vận hành.
+1. ~~**Epic 1 — Lưu trữ Cơ sở dữ liệu & Quản lý Đơn đặt phòng:**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — PostgreSQL 16 + Drizzle ORM, tra cứu & hủy đơn tại `/bookings` & `/bookings/[bookingId]`.
+2. ~~**Epic 2 — Đường dẫn Chỗ nghỉ riêng & Đồng bộ URL (SEO & Deep-linking):**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — `/stays/[id]` SSR + OpenGraph & URL query sync trên `/`.
+3. **Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị (Phase 2):** Hoàn thiện `AuthModal` thành hệ thống đăng nhập thật (Google OAuth / OTP) và đồng bộ Wishlist từ `localStorage` lên tài khoản.
+4. **Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine — Phase 2):** Cho phép nhập/áp mã `LUXESTAY250`, `SUMMERVIBE` tại checkout, kiểm tra điều kiện đơn tối thiểu, trần giảm giá và hạn dùng ở cả client lẫn server.
+5. **Epic 5 — Tích hợp Thanh toán & Thông báo thực tế (Phase 2):** Nối cổng thanh toán (VNPAY, MoMo, thẻ quốc tế) với luồng webhook cập nhật trạng thái đơn và gửi vé xác nhận qua Email/Zalo.
+6. **Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà (Phase 3):** Kiểm soát phòng trống theo ngày chống đặt trùng, cho phép khách đã lưu trú gửi đánh giá, và cổng quản trị cho chủ nhà/vận hành.
 
 ---
 
