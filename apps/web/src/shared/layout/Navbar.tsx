@@ -119,16 +119,21 @@ export function Navbar() {
             >
               {t("nav.destinations")}
             </button>
-            <button
-              onClick={() => scrollToSection("deals-section")}
-              className="px-3 py-2 text-sm font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-50/80 rounded-xl transition-colors flex items-center gap-1.5 font-semibold"
+            <Link
+              href="/deals"
+              data-testid="nav-deals-link"
+              className={`px-3 py-2 text-sm rounded-xl transition-colors flex items-center gap-1.5 font-semibold ${
+                pathname.startsWith("/deals")
+                  ? "text-amber-800 bg-amber-50"
+                  : "text-amber-700 hover:text-amber-800 hover:bg-amber-50/80"
+              }`}
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
               {t("nav.deals")}
-            </button>
+            </Link>
             <Link
               href="/bookings"
               className={`px-3 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
@@ -320,6 +325,26 @@ export function Navbar() {
               <span>{t("nav.destinations")}</span>
               <Globe className="w-4 h-4 text-emerald-600" />
             </button>
+            <Link
+              href="/deals"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`w-full text-left px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-between transition-colors ${
+                pathname.startsWith("/deals")
+                  ? "text-amber-800 bg-amber-100/80"
+                  : "text-amber-700 bg-amber-50/70 hover:bg-amber-100/70"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                {t("nav.deals")}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
+                Hot
+              </span>
+            </Link>
             <Link
               href="/bookings"
               onClick={() => setMobileMenuOpen(false)}
