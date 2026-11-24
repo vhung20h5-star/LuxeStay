@@ -1,0 +1,31 @@
+# Architecture Decision Records (ADR) — LuxeStay (`travel-service`)
+
+Thư mục này lưu trữ toàn bộ **Architecture Decision Records (ADR)** của dự án **LuxeStay (`travel-service`)**. Mỗi ADR ghi lại **bối cảnh**, **các phương án đã cân nhắc**, **quyết định được chọn** và **hệ quả** cho một quyết định kiến trúc quan trọng, giúp chủ dự án, kỹ sư và AI agent hiểu rõ *tại sao* hệ thống được thiết kế như hiện tại trước khi thay đổi hoặc mở rộng.
+
+---
+
+## 1. Mục lục ADR (Decision Log)
+
+| ID | Tiêu đề | Trạng thái | Ngày quyết định | Liên kết Commit / Spec |
+| :---: | :--- | :---: | :---: | :--- |
+| [0001](./0001-deep-module-architecture-and-domain-seams.md) | Kiến trúc Deep Modules thuần trong `src/lib` & Seams tường minh | **Accepted** | 2026-11-21 | `61cf2d6`..`0f26b7b`, [codebase-design](../../.agents/skills/codebase-design/SKILL.md) |
+| [0002](./0002-booking-session-and-authoritative-server-pricing.md) | Vòng đời `BookingSession`, Seeding một chiều & Tính giá chuẩn trên Server (`/api/reservations`) | **Accepted** | 2026-11-24 | `61cf2d6`, `abedd20`, [Spec](../superpowers/specs/2026-11-21-booking-session-deepening-design.md) |
+| [0003](./0003-stay-catalog-query-single-source-of-truth.md) | `StayCatalogQuery` làm nguồn chân lý duy nhất cho tìm kiếm, lọc và sắp xếp | **Accepted** | 2026-11-21 | `0476330`, `abedd20`, [Spec](../superpowers/specs/2026-11-21-stay-catalog-query-design.md) |
+| [0004](./0004-amenity-projection-explorer-and-pricing-descriptors.md) | `PropertyAmenityProjection` cache `WeakMap`, Master–Detail Explorer & Pricing Descriptors | **Accepted** | 2026-11-21 | `96a3216`, `dc9d3a7`, [Spec](../superpowers/specs/2026-11-21-amenity-projection-explorer-design.md) |
+| [0005](./0005-centralized-overlay-stack-coordinator.md) | Điều phối ngăn xếp lớp phủ tập trung (`OverlayStack` & `OverlayContext`) | **Accepted** | 2026-11-21 | `f467d47`, [Spec](../superpowers/specs/2026-11-21-overlay-stack-coordinator-design.md) |
+| [0006](./0006-app-ports-persistence-and-split-domain-contexts.md) | Cô lập I/O qua `AppPorts` (`useSyncExternalStore`) & Tách Domain Contexts | **Accepted** | 2026-11-24 | `0f26b7b`, `abedd20`, [Spec](../superpowers/specs/2026-11-21-persistence-reservation-port-design.md) |
+| [0007](./0007-monorepo-hono-zod-contracts.md) | Tái cấu trúc sang TypeScript Monorepo (`npm workspaces` + `Turborepo`), Hono API & Zod Contracts | **Accepted** | 2026-11-24 | Monorepo v0.2.0, [ARCHITECTURE](../ARCHITECTURE.md) |
+
+---
+
+## 2. Quy tắc tạo & cập nhật ADR
+
+1. **Đánh số tăng dần 4 chữ số:** `NNNN-short-kebab-title.md` (ví dụ `0007-postgresql-drizzle-persistence.md`).
+2. **Sử dụng template chuẩn:** Sao chép từ [0000-template.md](./0000-template.md).
+3. **Vòng đời trạng thái:**
+   - `Proposed`: Đang đề xuất, chờ rà soát.
+   - `Accepted`: Đã phê duyệt và đang áp dụng trong mã nguồn.
+   - `Deprecated`: Không còn áp dụng do tính năng bị gỡ bỏ.
+   - `Superseded by ADR-XXXX`: Đã được thay thế bởi quyết định mới hơn.
+4. **Bất biến lịch sử (Immutable History):** Không xóa hoặc viết đè nội dung quyết định cũ khi đổi hướng kiến trúc. Thay vào đó, tạo ADR mới (ghi `Supersedes ADR-XXXX`) và cập nhật trường `Status` của ADR cũ thành `Superseded by ADR-YYYY`.
+5. **Đồng bộ mục lục:** Khi thêm hoặc đổi trạng thái ADR, cập nhật bảng Mục lục ở mục `1` của tệp này và liên kết chéo từ [ARCHITECTURE.md](../ARCHITECTURE.md) / [PLAN.md](../PLAN.md) nếu cần.

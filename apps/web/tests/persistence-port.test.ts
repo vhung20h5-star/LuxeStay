@@ -1,0 +1,512 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildApiError, buildApiSuccess } from "@luxestay/contracts";
+import {
+  createIdleBookingSession,
+  deriveBookingQuote,
+  processServerReservationIntent,
+  startCheckoutSession,
+} from "@luxestay/domain";
+import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { getPublicWebEnv, getServerWebEnv } from "@/shared/config/env";
+import {
+  createCatalogRepositoryForMode,
+  createHttpCatalogRepository,
+} from "@/shared/ports/catalogPort";
+import { HttpApiError } from "@/shared/ports/errors";
+import {
+  DEFAULT_FAVORITE_IDS,
+  FAVORITES_STORAGE_KEY,
+  sanitizeFavoriteIds,
+  toggleFavoriteId,
+  createBrowserFavoritesAdapter,
+  createInMemoryFavoritesAdapter,
+  createBrowserReservationAdapter,
+  createHttpReservationAdapter,
+  createInMemoryReservationAdapter,
+  createWebAppPorts,
+  createInMemoryAppPorts,
+} from "@/shared/ports/persistencePort";
+import type {
+  StorageEventLike,
+  StorageEventTargetLike,
+  StorageLike,
+} from "@/shared/ports/types";
+
+const VALID_IDS = new Set(PROPERTIES.map((p) => p.id));
+const stay02 = PROPERTIES.find((p) => p.id === "stay-02")!;
+const baseDate = new Date(2026, 10, 20);
+
+function createFakeStorage(initial?: Record<string, string>) {
+  const map = new Map<string, string>(Object.entries(initial ?? {}));
+  let throwOnGet = false;
+  let throwOnSet = false;
+  let setCalls = 0;
+
+  const storage: StorageLike = {
+    getItem(key: string) {
+      if (throwOnGet) throw new Error("SecurityError: storage read blocked");
+      return map.has(key) ? map.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      setCalls += 1;
+      if (throwOnSet) throw new Error("QuotaExceededError: storage write blocked");
+      map.set(key, value);
+    },
+  };
+
+  return {
+    storage,
+    map,
+    setThrowOnGet(val: boolean) {
+      throwOnGet = val;
+    },
+    setThrowOnSet(val: boolean) {
+      throwOnSet = val;
+    },
+    getSetCalls() {
+      return setCalls;
+    },
+  };
+}
+
+function createFakeEventTarget() {
+  const listeners = new Set<(event: StorageEventLike) => void>();
+  const target: StorageEventTargetLike = {
+    addEventListener(_type, listener) {
+      listeners.add(listener);
+    },
+    removeEventListener(_type, listener) {
+      listeners.delete(listener);
+    },
+  };
+
+  return {
+    target,
+    dispatch(key: string | null) {
+      for (const listener of [...listeners]) {
+        listener({ key });
+      }
+    },
+    listenerCount() {
+      return listeners.size;
+    },
+  };
+}
+
+test("sanitizeFavoriteIds rejects non-arrays, deduplicates, trims, and filters invalid property IDs", () => {
+  assert.equal(sanitizeFavoriteIds(null, VALID_IDS), null);
+  assert.equal(sanitizeFavoriteIds({}, VALID_IDS), null);
+  assert.equal(sanitizeFavoriteIds("stay-01", VALID_IDS), null);
+  assert.equal(sanitizeFavoriteIds(42, VALID_IDS), null);
+  assert.deepEqual(sanitizeFavoriteIds([], VALID_IDS), []);
+
+  const cleaned = sanitizeFavoriteIds(
+    [" stay-03 ", 123, "", "   ", "unknown-stay", "stay-01", "stay-03", null],
+    VALID_IDS
+  );
+  assert.deepEqual(cleaned, ["stay-03", "stay-01"]);
+  assert.equal(Object.isFrozen(cleaned), true);
+});
+
+test("toggleFavoriteId adds valid IDs, removes existing IDs, and no-ops on unknown or blank IDs", () => {
+  const initial = Object.freeze(["stay-01"]);
+  assert.equal(toggleFavoriteId(initial, "unknown-stay", VALID_IDS), initial);
+  assert.equal(toggleFavoriteId(initial, "   ", VALID_IDS), initial);
+
+  const added = toggleFavoriteId(initial, " stay-02 ", VALID_IDS);
+  assert.deepEqual(added, ["stay-01", "stay-02"]);
+  assert.equal(Object.isFrozen(added), true);
+
+  const removed = toggleFavoriteId(added, "stay-01", VALID_IDS);
+  assert.deepEqual(removed, ["stay-02"]);
+});
+
+test("createBrowserFavoritesAdapter distinguishes absent vs explicit empty, handles corrupted JSON, and keeps snapshot referentially stable", () => {
+  const fake = createFakeStorage();
+  const repo = createBrowserFavoritesAdapter({
+    storage: fake.storage,
+    validPropertyIds: VALID_IDS,
+  });
+
+  assert.deepEqual(repo.getServerSnapshot(), DEFAULT_FAVORITE_IDS);
+  assert.equal(repo.getServerSnapshot(), repo.getServerSnapshot());
+
+  const firstSnap = repo.getSnapshot();
+  assert.deepEqual(firstSnap, DEFAULT_FAVORITE_IDS);
+  assert.equal(repo.getSnapshot(), firstSnap);
+
+  fake.map.set(FAVORITES_STORAGE_KEY, "[]");
+  const emptySnap = repo.getSnapshot();
+  assert.deepEqual(emptySnap, []);
+  assert.equal(repo.getSnapshot(), emptySnap);
+
+  fake.map.set(FAVORITES_STORAGE_KEY, "{broken-json");
+  const brokenSnap = repo.getSnapshot();
+  assert.deepEqual(brokenSnap, DEFAULT_FAVORITE_IDS);
+  assert.equal(repo.getSnapshot(), brokenSnap);
+
+  fake.map.set(FAVORITES_STORAGE_KEY, JSON.stringify({ not: "an-array" }));
+  const nonArraySnap = repo.getSnapshot();
+  assert.deepEqual(nonArraySnap, DEFAULT_FAVORITE_IDS);
+  assert.equal(repo.getSnapshot(), nonArraySnap);
+
+  fake.map.set(FAVORITES_STORAGE_KEY, JSON.stringify(["stay-05", "ghost-id", "stay-05", "stay-02"]));
+  const sanitizedSnap = repo.getSnapshot();
+  assert.deepEqual(sanitizedSnap, ["stay-05", "stay-02"]);
+  assert.equal(repo.getSnapshot(), sanitizedSnap);
+
+  const customRepo = createBrowserFavoritesAdapter({
+    storage: createFakeStorage().storage,
+    validPropertyIds: VALID_IDS,
+    defaultIds: ["stay-04", "unknown", "stay-04"],
+  });
+  assert.deepEqual(customRepo.getServerSnapshot(), ["stay-04"]);
+  assert.deepEqual(customRepo.getSnapshot(), ["stay-04"]);
+
+  const emptyDefaultRepo = createBrowserFavoritesAdapter({
+    storage: createFakeStorage().storage,
+    validPropertyIds: VALID_IDS,
+    defaultIds: [],
+  });
+  assert.deepEqual(emptyDefaultRepo.getServerSnapshot(), []);
+  assert.deepEqual(emptyDefaultRepo.getSnapshot(), []);
+
+  const prePopulated = createFakeStorage({
+    [FAVORITES_STORAGE_KEY]: JSON.stringify(["stay-03"]),
+  });
+  const lazyRepo = createBrowserFavoritesAdapter({
+    storage: prePopulated.storage,
+    validPropertyIds: VALID_IDS,
+  });
+  assert.deepEqual(lazyRepo.toggle("stay-05"), ["stay-03", "stay-05"]);
+});
+
+test("createBrowserFavoritesAdapter persists toggle/setAll, degrades gracefully on storage errors, and syncs cross-tab storage events", () => {
+  const fake = createFakeStorage();
+  const events = createFakeEventTarget();
+  const repo = createBrowserFavoritesAdapter({
+    storage: fake.storage,
+    validPropertyIds: VALID_IDS,
+    eventTarget: events.target,
+  });
+
+  let notifications = 0;
+  const unsub = repo.subscribe(() => {
+    notifications += 1;
+  });
+  assert.equal(events.listenerCount(), 1);
+
+  const afterRemove = repo.toggle("stay-01");
+  assert.deepEqual(afterRemove, ["stay-02"]);
+  assert.equal(fake.map.get(FAVORITES_STORAGE_KEY), JSON.stringify(["stay-02"]));
+  assert.equal(notifications, 1);
+
+  const prevSetCalls = fake.getSetCalls();
+  repo.toggle("non-existent-stay");
+  repo.setAll(["stay-02"]);
+  assert.equal(fake.getSetCalls(), prevSetCalls);
+  assert.equal(notifications, 1);
+
+  events.dispatch("other_key");
+  assert.equal(notifications, 1);
+
+  fake.map.set(FAVORITES_STORAGE_KEY, JSON.stringify(["stay-04", "stay-08"]));
+  events.dispatch(FAVORITES_STORAGE_KEY);
+  assert.equal(notifications, 2);
+  assert.deepEqual(repo.getSnapshot(), ["stay-04", "stay-08"]);
+
+  fake.setThrowOnSet(true);
+  const afterRestrictedToggle = repo.toggle("stay-03");
+  assert.deepEqual(afterRestrictedToggle, ["stay-04", "stay-08", "stay-03"]);
+  assert.equal(repo.getSnapshot(), afterRestrictedToggle);
+  assert.equal(notifications, 3);
+
+  fake.setThrowOnGet(true);
+  assert.equal(repo.getSnapshot(), afterRestrictedToggle);
+  events.dispatch(FAVORITES_STORAGE_KEY);
+  assert.equal(repo.getSnapshot(), afterRestrictedToggle);
+
+  fake.setThrowOnGet(false);
+  fake.setThrowOnSet(false);
+  events.dispatch(FAVORITES_STORAGE_KEY);
+  assert.deepEqual(repo.getSnapshot(), ["stay-04", "stay-08"]);
+  assert.equal(notifications, 4);
+
+  fake.map.clear();
+  events.dispatch(null);
+  assert.deepEqual(repo.getSnapshot(), DEFAULT_FAVORITE_IDS);
+  assert.equal(notifications, 5);
+
+  let secondNotifications = 0;
+  const unsubSecond = repo.subscribe(() => {
+    secondNotifications += 1;
+  });
+  assert.equal(events.listenerCount(), 1);
+  unsub();
+  assert.equal(events.listenerCount(), 1);
+  unsub();
+  assert.equal(events.listenerCount(), 1);
+  repo.toggle("stay-01");
+  assert.equal(secondNotifications, 1);
+
+  unsubSecond();
+  assert.equal(events.listenerCount(), 0);
+  unsubSecond();
+  assert.equal(events.listenerCount(), 0);
+});
+
+test("createInMemoryFavoritesAdapter supports deterministic toggle, setAll, and subscription", () => {
+  const repo = createInMemoryFavoritesAdapter({
+    initialIds: ["stay-01", "invalid", "stay-01"],
+    validPropertyIds: VALID_IDS,
+  });
+
+  assert.deepEqual(repo.getSnapshot(), ["stay-01"]);
+  assert.deepEqual(repo.getServerSnapshot(), ["stay-01"]);
+
+  let calls = 0;
+  const unsub = repo.subscribe(() => {
+    calls += 1;
+  });
+
+  repo.toggle("stay-05");
+  assert.deepEqual(repo.getSnapshot(), ["stay-01", "stay-05"]);
+  assert.equal(calls, 1);
+
+  repo.setAll(["stay-02", "stay-02", "unknown"]);
+  assert.deepEqual(repo.getSnapshot(), ["stay-02"]);
+  assert.equal(calls, 2);
+
+  unsub();
+  repo.toggle("stay-02");
+  assert.deepEqual(repo.getSnapshot(), []);
+  assert.equal(calls, 2);
+});
+
+test("Reservation adapters and AppPorts factories support browser, in-memory, and strict HTTP contract envelopes", async () => {
+  const quote = deriveBookingQuote(
+    startCheckoutSession(createIdleBookingSession(), stay02, undefined, baseDate),
+    baseDate
+  )!;
+  const request = {
+    quote,
+    guestInfo: {
+      fullName: "Nguyễn Văn A",
+      phone: "0912 345 678",
+      email: "a@example.com",
+    },
+    paymentMethod: "momo" as const,
+  };
+
+  const memPorts = createInMemoryAppPorts({
+    initialFavoriteIds: ["stay-02"],
+    validPropertyIds: VALID_IDS,
+    bookingId: "LX-PORT01",
+    createdAt: "2026-11-21T10:00:00.000Z",
+  });
+  assert.deepEqual(memPorts.favorites.getSnapshot(), ["stay-02"]);
+
+  const booking = await memPorts.reservations.submit(request);
+  assert.equal(booking.bookingId, "LX-PORT01");
+  assert.equal(memPorts.reservations.getSubmittedBookings().length, 1);
+  assert.equal(Object.isFrozen(booking), true);
+  assert.equal(Object.isFrozen(booking.guests), true);
+  assert.equal(Object.isFrozen(booking.pricing), true);
+  assert.equal(Object.isFrozen(booking.selectedAmenities), true);
+  assert.equal(Object.isFrozen(booking.guestInfo), true);
+  request.guestInfo.fullName = "MUTATED";
+  assert.equal(memPorts.reservations.getSubmittedBookings()[0].guestInfo.fullName, "Nguyễn Văn A");
+  request.guestInfo.fullName = "Nguyễn Văn A";
+
+  // Browser reservation adapter completion & AbortSignal cancellation
+  const browserAdapter = createBrowserReservationAdapter(-50);
+  const completed = await browserAdapter.submit(request);
+  assert.ok(completed.bookingId?.startsWith("LX-"));
+  assert.equal(Object.isFrozen(completed), true);
+
+  const slowAdapter = createBrowserReservationAdapter(500);
+  const controller = new AbortController();
+  const abortedPromise = slowAdapter.submit(request, { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(abortedPromise, (err: unknown) => err instanceof Error && err.name === "AbortError");
+
+  // Pre-aborted signal on in-memory adapter
+  const preAborted = new AbortController();
+  preAborted.abort();
+  await assert.rejects(
+    createInMemoryReservationAdapter().submit(request, { signal: preAborted.signal }),
+    (err: unknown) => err instanceof Error && err.name === "AbortError"
+  );
+
+  // HTTP reservation adapter sends ServerReservationIntent & parses ApiSuccess<BookingDetails>
+  const httpAdapter = createHttpReservationAdapter({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (input, init) => {
+      assert.equal(String(input), "http://localhost:4000/api/v1/reservations");
+      const intent = JSON.parse(String(init?.body));
+      assert.equal("pricing" in intent, false);
+      const serverResult = processServerReservationIntent(intent, PROPERTIES, {
+        bookingId: "LX-HTTP01",
+        createdAt: "2026-11-22T12:00:00.000Z",
+        fallbackBaseDate: baseDate,
+      });
+      if (!serverResult.ok) {
+        return new Response(
+          JSON.stringify(buildApiError("VALIDATION_ERROR", serverResult.error)),
+          { status: serverResult.status, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify(
+          buildApiSuccess(serverResult.booking, {
+            requestId: "req-http-1",
+            timestamp: "2026-11-22T12:00:00.000Z",
+          })
+        ),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+    },
+  });
+
+  const tamperedRequest = {
+    ...request,
+    quote: {
+      ...request.quote,
+      pricing: { ...request.quote.pricing, total: 0 },
+    },
+  };
+  const httpBooking = await httpAdapter.submit(tamperedRequest);
+  assert.equal(httpBooking.bookingId, "LX-HTTP01");
+  assert.equal(httpBooking.pricing.total, request.quote.pricing.total);
+  assert.equal(Object.isFrozen(httpBooking), true);
+  assert.equal(Object.isFrozen(httpBooking.pricing), true);
+});
+
+test("createWebAppPorts enforces strict api mode errors (never silently falls back on 4xx/5xx or network failure) and supports explicit mock mode", async () => {
+  const quote = deriveBookingQuote(
+    startCheckoutSession(createIdleBookingSession(), stay02, undefined, baseDate),
+    baseDate
+  )!;
+  const request = {
+    quote,
+    guestInfo: {
+      fullName: "Nguyễn Văn A",
+      phone: "0912 345 678",
+      email: "a@example.com",
+    },
+    paymentMethod: "momo" as const,
+  };
+
+  // 1. Server 400 VALIDATION_ERROR surfaces as HttpApiError (no fallback)
+  const validationPorts = createWebAppPorts({
+    mode: "api",
+    apiBaseUrl: "http://localhost:4000",
+    validPropertyIds: VALID_IDS,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify(
+          buildApiError("VALIDATION_ERROR", "Số điện thoại chưa đúng định dạng.", undefined, {
+            requestId: "req-400",
+            timestamp: "2026-11-24T00:00:00.000Z",
+          })
+        ),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      ),
+  });
+
+  await assert.rejects(
+    validationPorts.reservations.submit(request),
+    (err: unknown) =>
+      err instanceof HttpApiError &&
+      err.status === 400 &&
+      err.code === "VALIDATION_ERROR" &&
+      err.requestId === "req-400" &&
+      err.message.includes("Số điện thoại")
+  );
+
+  // 2. Network offline throws HttpApiError(NETWORK_ERROR) (no fallback)
+  const offlinePorts = createWebAppPorts({
+    mode: "api",
+    apiBaseUrl: "http://localhost:4000",
+    validPropertyIds: VALID_IDS,
+    fetchImpl: async () => {
+      throw new TypeError("fetch failed");
+    },
+  });
+
+  await assert.rejects(
+    offlinePorts.reservations.submit(request),
+    (err: unknown) => err instanceof HttpApiError && err.code === "NETWORK_ERROR" && err.status === 0
+  );
+
+  // 3. Explicit mock mode works offline without fetch
+  const mockPorts = createWebAppPorts({
+    mode: "mock",
+    apiBaseUrl: "http://localhost:4000",
+    validPropertyIds: VALID_IDS,
+    mockReservationDelayMs: 0,
+  });
+  const mockBooking = await mockPorts.reservations.submit(request);
+  assert.ok(mockBooking.bookingId?.startsWith("LX-"));
+});
+
+test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and switches cleanly between api and mock modes", async () => {
+  // Mock mode reads seed snapshot
+  const mockRepo = createCatalogRepositoryForMode({
+    mode: "mock",
+    apiBaseUrl: "http://localhost:4000",
+  });
+  const mockSnapshot = await mockRepo.getSnapshot();
+  assert.equal(mockSnapshot.properties.length, 12);
+
+  // API mode validates CatalogSnapshotSchema
+  const apiRepo = createHttpCatalogRepository({
+    baseUrl: "http://localhost:4000/",
+    fetchImpl: async (input) => {
+      assert.equal(String(input), "http://localhost:4000/api/v1/catalog");
+      return new Response(
+        JSON.stringify(
+          buildApiSuccess(SEED_CATALOG_SNAPSHOT, {
+            requestId: "req-cat-1",
+            timestamp: "2026-11-24T00:00:00.000Z",
+          })
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    },
+  });
+  const apiSnapshot = await apiRepo.getSnapshot();
+  assert.equal(apiSnapshot.properties.length, 12);
+  assert.equal(apiSnapshot.promotions.vouchers.length, 2);
+
+  // Malformed response triggers CONTRACT_MISMATCH
+  const brokenRepo = createHttpCatalogRepository({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ ok: true, data: { broken: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
+  await assert.rejects(
+    brokenRepo.getSnapshot(),
+    (err: unknown) => err instanceof HttpApiError && err.code === "CONTRACT_MISMATCH"
+  );
+
+  // Env helpers normalize trailing slashes and defaults
+  const pubEnv = getPublicWebEnv({
+    NEXT_PUBLIC_DATA_MODE: "mock",
+    NEXT_PUBLIC_API_BASE_URL: "http://localhost:4000///",
+  });
+  assert.equal(pubEnv.dataMode, "mock");
+  assert.equal(pubEnv.publicApiBaseUrl, "http://localhost:4000");
+
+  const srvEnv = getServerWebEnv({
+    NEXT_PUBLIC_DATA_MODE: "api",
+    NEXT_PUBLIC_API_BASE_URL: "https://api.luxestay.vn/",
+    API_BASE_URL: "http://api-internal:4000/",
+  });
+  assert.equal(srvEnv.serverApiBaseUrl, "http://api-internal:4000");
+  assert.equal(srvEnv.publicApiBaseUrl, "https://api.luxestay.vn");
+});

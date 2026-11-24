@@ -1,0 +1,658 @@
+import {
+  EMAIL_REGEX,
+  VN_PHONE_REGEX,
+  type BookingDetails,
+  type BookingQuote,
+  type BookingSessionState,
+  type CheckoutGuestInput,
+  type Property,
+  type ReservationSubmitter,
+  type ResolvedPropertyAmenity,
+  type SearchCriteria,
+  type SelectedBookingAmenity,
+  type ServerReservationIntent,
+} from "@luxestay/contracts";
+import { projectPropertyAmenities } from "./amenities.js";
+
+export const CLEANING_FEE = 150000;
+export const SERVICE_DISCOUNT = 100000;
+const DEFAULT_NIGHTS = 2;
+const MAX_NIGHTS = 30;
+const MS_PER_DAY = 86_400_000;
+
+interface ParsedDateResult {
+  date: Date;
+  yearInferred: boolean;
+}
+
+function clampNights(nights: number): number {
+  if (!Number.isFinite(nights)) return 1;
+  return Math.min(MAX_NIGHTS, Math.max(1, Math.floor(nights)));
+}
+
+function clampAdults(adults: number, maxGuests: number): number {
+  const safeMax = Math.max(1, Math.floor(maxGuests));
+  if (!Number.isFinite(adults)) return 1;
+  return Math.min(safeMax, Math.max(1, Math.floor(adults)));
+}
+
+function buildValidatedLocalDate(
+  year: number,
+  monthIndex: number,
+  day: number
+): Date | null {
+  const parsed = new Date(year, monthIndex, day);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== monthIndex ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
+function parseDateInput(
+  dateStr: string | undefined,
+  defaultYear: number
+): ParsedDateResult | null {
+  if (!dateStr) return null;
+  const trimmed = dateStr.trim();
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  if (isoMatch) {
+    const date = buildValidatedLocalDate(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]) - 1,
+      Number(isoMatch[3])
+    );
+    return date ? { date, yearInferred: false } : null;
+  }
+
+  const dmyMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (dmyMatch) {
+    const date = buildValidatedLocalDate(
+      Number(dmyMatch[3]),
+      Number(dmyMatch[2]) - 1,
+      Number(dmyMatch[1])
+    );
+    return date ? { date, yearInferred: false } : null;
+  }
+
+  const dmMatch = /^(\d{1,2})\/(\d{1,2})$/.exec(trimmed);
+  if (dmMatch) {
+    const date = buildValidatedLocalDate(
+      defaultYear,
+      Number(dmMatch[2]) - 1,
+      Number(dmMatch[1])
+    );
+    return date ? { date, yearInferred: true } : null;
+  }
+
+  return null;
+}
+
+function diffDaysUTC(start: Date, end: Date): number {
+  const startUTC = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUTC = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endUTC - startUTC) / MS_PER_DAY);
+}
+
+function formatDDMMYYYY(date: Date): string {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function computeStayDates(
+  nights: number,
+  checkInSeed?: string,
+  fallbackBaseDate: Date = new Date()
+): { checkIn: string; checkOut: string } {
+  const safeNights = clampNights(nights);
+  const parsed = parseDateInput(checkInSeed, fallbackBaseDate.getFullYear());
+
+  const checkInDate = parsed
+    ? new Date(parsed.date.getFullYear(), parsed.date.getMonth(), parsed.date.getDate())
+    : new Date(
+        fallbackBaseDate.getFullYear(),
+        fallbackBaseDate.getMonth(),
+        fallbackBaseDate.getDate() + 1
+      );
+
+  const checkOutDate = new Date(
+    checkInDate.getFullYear(),
+    checkInDate.getMonth(),
+    checkInDate.getDate() + safeNights
+  );
+
+  return {
+    checkIn: formatDDMMYYYY(checkInDate),
+    checkOut: formatDDMMYYYY(checkOutDate),
+  };
+}
+
+function deriveSeedNights(
+  searchCriteria: SearchCriteria | undefined,
+  fallbackBaseDate: Date
+): number {
+  if (!searchCriteria?.checkIn || !searchCriteria?.checkOut) {
+    return DEFAULT_NIGHTS;
+  }
+
+  const defaultYear = fallbackBaseDate.getFullYear();
+  const parsedIn = parseDateInput(searchCriteria.checkIn, defaultYear);
+  const parsedOut = parseDateInput(searchCriteria.checkOut, defaultYear);
+  if (!parsedIn || !parsedOut) {
+    return DEFAULT_NIGHTS;
+  }
+
+  let checkOutDate = parsedOut.date;
+  if (parsedOut.yearInferred && diffDaysUTC(parsedIn.date, checkOutDate) <= 0) {
+    const nextYearOut = buildValidatedLocalDate(
+      parsedIn.date.getFullYear() + 1,
+      parsedOut.date.getMonth(),
+      parsedOut.date.getDate()
+    );
+    if (nextYearOut && diffDaysUTC(parsedIn.date, nextYearOut) <= MAX_NIGHTS) {
+      checkOutDate = nextYearOut;
+    }
+  }
+
+  const diff = diffDaysUTC(parsedIn.date, checkOutDate);
+  if (diff < 1) {
+    return DEFAULT_NIGHTS;
+  }
+
+  return clampNights(diff);
+}
+
+function buildSearchSeedKey(searchCriteria?: SearchCriteria): string {
+  if (!searchCriteria) return "";
+  return [
+    searchCriteria.checkIn.trim(),
+    searchCriteria.checkOut.trim(),
+    searchCriteria.guests.adults,
+    searchCriteria.guests.children,
+    searchCriteria.guests.rooms,
+  ].join("|");
+}
+
+function buildSelectedBookingAmenities(
+  amenities: ResolvedPropertyAmenity[],
+  selectedIds: string[]
+): SelectedBookingAmenity[] {
+  const selectedSet = new Set(selectedIds);
+  const result: SelectedBookingAmenity[] = [];
+
+  for (const item of amenities) {
+    if (!selectedSet.has(item.id)) continue;
+    if (item.pricingType !== "paid" && item.pricingType !== "free-reservation") continue;
+
+    result.push({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      pricingType: item.pricingType,
+      price: item.pricingType === "paid" ? (item.price ?? 0) : 0,
+      priceUnit: item.pricingType === "paid" ? item.priceUnit : undefined,
+    });
+  }
+
+  return result;
+}
+
+function calculateBookingPricing(
+  pricePerNight: number,
+  nights: number,
+  selectedAmenities: SelectedBookingAmenity[]
+): BookingQuote["pricing"] {
+  const safeNights = clampNights(nights);
+  const nightsTotal = pricePerNight * safeNights;
+  const amenitiesFee = selectedAmenities.reduce(
+    (sum, item) => sum + (item.pricingType === "paid" ? item.price : 0),
+    0
+  );
+  const total = Math.max(0, nightsTotal + CLEANING_FEE + amenitiesFee - SERVICE_DISCOUNT);
+
+  return {
+    basePrice: pricePerNight,
+    nightsTotal,
+    cleaningFee: CLEANING_FEE,
+    serviceFee: 0,
+    amenitiesFee,
+    discount: SERVICE_DISCOUNT,
+    total,
+  };
+}
+
+function seedSessionForProperty(
+  property: Property,
+  step: "previewing" | "checking-out",
+  searchCriteria?: SearchCriteria,
+  fallbackBaseDate: Date = new Date()
+): BookingSessionState {
+  const defaultYear = fallbackBaseDate.getFullYear();
+  const parsedIn = parseDateInput(searchCriteria?.checkIn, defaultYear);
+  const validCheckInSeed = parsedIn ? (searchCriteria?.checkIn?.trim() ?? "") : "";
+  const nights = deriveSeedNights(searchCriteria, fallbackBaseDate);
+  const seededAdults = searchCriteria?.guests.adults ?? 2;
+  const seededChildren = Math.max(0, Math.floor(searchCriteria?.guests.children ?? 0));
+  const seededRooms = Math.max(1, Math.floor(searchCriteria?.guests.rooms ?? 1));
+
+  return {
+    step,
+    property,
+    searchSeedKey: buildSearchSeedKey(searchCriteria),
+    checkInSeed: validCheckInSeed,
+    nights,
+    guests: {
+      adults: clampAdults(seededAdults, property.maxGuests),
+      children: seededChildren,
+      rooms: seededRooms,
+    },
+    selectedAmenityIds: [],
+    confirmedBooking: null,
+  };
+}
+
+export function createIdleBookingSession(): BookingSessionState {
+  return {
+    step: "idle",
+    property: null,
+    searchSeedKey: "",
+    checkInSeed: "",
+    nights: DEFAULT_NIGHTS,
+    guests: {
+      adults: 2,
+      children: 0,
+      rooms: 1,
+    },
+    selectedAmenityIds: [],
+    confirmedBooking: null,
+  };
+}
+
+export function openPropertySession(
+  current: BookingSessionState,
+  property: Property,
+  searchCriteria?: SearchCriteria,
+  fallbackBaseDate: Date = new Date()
+): BookingSessionState {
+  const incomingSeedKey = buildSearchSeedKey(searchCriteria);
+  const sameProperty = current.property?.id === property.id;
+  const searchUnchanged = current.searchSeedKey === incomingSeedKey;
+
+  if (sameProperty && searchUnchanged) {
+    return {
+      ...current,
+      step: "previewing",
+      property,
+      nights: clampNights(current.nights),
+      guests: {
+        ...current.guests,
+        adults: clampAdults(current.guests.adults, property.maxGuests),
+      },
+      confirmedBooking: null,
+    };
+  }
+
+  return seedSessionForProperty(property, "previewing", searchCriteria, fallbackBaseDate);
+}
+
+export function startCheckoutSession(
+  current: BookingSessionState,
+  property: Property,
+  searchCriteria?: SearchCriteria,
+  fallbackBaseDate: Date = new Date()
+): BookingSessionState {
+  const incomingSeedKey = buildSearchSeedKey(searchCriteria);
+  const sameProperty = current.property?.id === property.id;
+  const preserveFromActiveFlow =
+    current.step === "previewing" || current.searchSeedKey === incomingSeedKey;
+
+  if (sameProperty && preserveFromActiveFlow) {
+    return {
+      ...current,
+      step: "checking-out",
+      property,
+      nights: clampNights(current.nights),
+      guests: {
+        ...current.guests,
+        adults: clampAdults(current.guests.adults, property.maxGuests),
+      },
+      confirmedBooking: null,
+    };
+  }
+
+  return seedSessionForProperty(property, "checking-out", searchCriteria, fallbackBaseDate);
+}
+
+export function closePreviewSession(current: BookingSessionState): BookingSessionState {
+  if (current.step !== "previewing") return current;
+  return {
+    ...current,
+    step: "idle",
+  };
+}
+
+export function closeCheckoutSession(current: BookingSessionState): BookingSessionState {
+  if (current.step !== "checking-out") return current;
+  return {
+    ...current,
+    step: "idle",
+  };
+}
+
+export function dismissConfirmedBooking(current: BookingSessionState): BookingSessionState {
+  if (!current.confirmedBooking && current.step !== "confirmed") return current;
+  return createIdleBookingSession();
+}
+
+export function updateSessionNights(
+  current: BookingSessionState,
+  nights: number
+): BookingSessionState {
+  return {
+    ...current,
+    nights: clampNights(nights),
+  };
+}
+
+export function updateSessionAdults(
+  current: BookingSessionState,
+  adults: number
+): BookingSessionState {
+  const maxGuests = current.property?.maxGuests ?? 10;
+  return {
+    ...current,
+    guests: {
+      ...current.guests,
+      adults: clampAdults(adults, maxGuests),
+    },
+  };
+}
+
+export function toggleSessionAmenity(
+  current: BookingSessionState,
+  amenityId: string
+): BookingSessionState {
+  if (!current.property) return current;
+  const target = projectPropertyAmenities(current.property).byId.get(amenityId);
+  if (!target || target.pricingType === "included") {
+    return current;
+  }
+
+  const exists = current.selectedAmenityIds.includes(amenityId);
+  const nextIds = exists
+    ? current.selectedAmenityIds.filter((id) => id !== amenityId)
+    : [...current.selectedAmenityIds, amenityId];
+
+  return {
+    ...current,
+    selectedAmenityIds: nextIds,
+  };
+}
+
+export function removeSessionAmenity(
+  current: BookingSessionState,
+  amenityId: string
+): BookingSessionState {
+  if (!current.selectedAmenityIds.includes(amenityId)) return current;
+  return {
+    ...current,
+    selectedAmenityIds: current.selectedAmenityIds.filter((id) => id !== amenityId),
+  };
+}
+
+export function deriveBookingQuote(
+  session: BookingSessionState,
+  fallbackBaseDate: Date = new Date()
+): BookingQuote | null {
+  if (!session.property) return null;
+
+  const property = session.property;
+  const nights = clampNights(session.nights);
+  const adults = clampAdults(session.guests.adults, property.maxGuests);
+  const { checkIn, checkOut } = computeStayDates(nights, session.checkInSeed, fallbackBaseDate);
+  const resolvedAmenities = [...projectPropertyAmenities(property).all];
+  const selectedAmenities = buildSelectedBookingAmenities(
+    resolvedAmenities,
+    session.selectedAmenityIds
+  );
+  const pricing = calculateBookingPricing(property.pricePerNight, nights, selectedAmenities);
+
+  return {
+    property,
+    nights,
+    checkIn,
+    checkOut,
+    guests: {
+      adults,
+      children: Math.max(0, Math.floor(session.guests.children)),
+      rooms: Math.max(1, Math.floor(session.guests.rooms)),
+    },
+    resolvedAmenities,
+    selectedAmenityIds: selectedAmenities.map((item) => item.id),
+    selectedAmenities,
+    pricing,
+  };
+}
+
+export function validateCheckoutGuestInput(
+  input: CheckoutGuestInput
+): { ok: true; value: CheckoutGuestInput } | { ok: false; error: string } {
+  const fullName = input.fullName.trim();
+  const phone = input.phone.trim();
+  const email = input.email.trim();
+  const note = input.note?.trim() || undefined;
+
+  if (!fullName || !phone || !email) {
+    return {
+      ok: false,
+      error: "Vui lòng điền đầy đủ họ tên, số điện thoại và email!",
+    };
+  }
+
+  const normalizedPhoneDigits = phone.replace(/[\s.-]/g, "");
+  if (!VN_PHONE_REGEX.test(normalizedPhoneDigits)) {
+    return {
+      ok: false,
+      error: "Số điện thoại chưa đúng định dạng. Vui lòng kiểm tra lại!",
+    };
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    return {
+      ok: false,
+      error: "Địa chỉ email chưa đúng định dạng. Vui lòng kiểm tra lại!",
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      fullName,
+      phone,
+      email,
+      note,
+      paymentMethod: input.paymentMethod,
+    },
+  };
+}
+
+export function processServerReservationIntent(
+  intent: ServerReservationIntent,
+  properties: readonly Property[],
+  options?: {
+    bookingId?: string;
+    createdAt?: string;
+    fallbackBaseDate?: Date;
+  }
+):
+  | { ok: true; booking: BookingDetails }
+  | { ok: false; error: string; status: 400 | 404 | 422 } {
+  if (!intent || typeof intent.propertyId !== "string" || !intent.propertyId.trim()) {
+    return {
+      ok: false,
+      error: "Thiếu mã chỗ nghỉ cần đặt phòng.",
+      status: 400,
+    };
+  }
+
+  const property = properties.find((item) => item.id === intent.propertyId.trim());
+  if (!property) {
+    return {
+      ok: false,
+      error: "Chỗ nghỉ không tồn tại hoặc đã ngừng nhận đặt phòng.",
+      status: 404,
+    };
+  }
+
+  const validPaymentMethods = new Set(["momo", "vnpay", "card", "hotel"]);
+  if (!validPaymentMethods.has(intent.paymentMethod)) {
+    return {
+      ok: false,
+      error: "Phương thức thanh toán không hợp lệ.",
+      status: 400,
+    };
+  }
+
+  const validation = validateCheckoutGuestInput({
+    fullName: intent.guestInfo?.fullName ?? "",
+    phone: intent.guestInfo?.phone ?? "",
+    email: intent.guestInfo?.email ?? "",
+    note: intent.guestInfo?.note,
+    paymentMethod: intent.paymentMethod,
+  });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: validation.error,
+      status: 400,
+    };
+  }
+
+  const fallbackBaseDate = options?.fallbackBaseDate ?? new Date();
+  const parsedIn = parseDateInput(intent.checkInSeed, fallbackBaseDate.getFullYear());
+  const validCheckInSeed = parsedIn ? (intent.checkInSeed?.trim() ?? "") : "";
+
+  const serverSession: BookingSessionState = {
+    step: "checking-out",
+    property,
+    searchSeedKey: "",
+    checkInSeed: validCheckInSeed,
+    nights: clampNights(intent.nights),
+    guests: {
+      adults: clampAdults(intent.guests?.adults ?? 1, property.maxGuests),
+      children: Math.max(0, Math.floor(intent.guests?.children ?? 0)),
+      rooms: Math.max(1, Math.floor(intent.guests?.rooms ?? 1)),
+    },
+    selectedAmenityIds: Array.isArray(intent.selectedAmenityIds)
+      ? intent.selectedAmenityIds.filter((id): id is string => typeof id === "string")
+      : [],
+    confirmedBooking: null,
+  };
+
+  const serverQuote = deriveBookingQuote(serverSession, fallbackBaseDate);
+  if (!serverQuote) {
+    return {
+      ok: false,
+      error: "Không thể tính báo giá cho chỗ nghỉ này.",
+      status: 422,
+    };
+  }
+
+  const bookingId =
+    options?.bookingId ?? `LX-${Math.floor(100000 + Math.random() * 900000)}`;
+  const createdAt = options?.createdAt ?? new Date().toISOString();
+  const { fullName, phone, email, note, paymentMethod } = validation.value;
+
+  const booking: BookingDetails = Object.freeze({
+    property: serverQuote.property,
+    checkIn: serverQuote.checkIn,
+    checkOut: serverQuote.checkOut,
+    nights: serverQuote.nights,
+    guests: Object.freeze({ ...serverQuote.guests }),
+    pricing: Object.freeze({ ...serverQuote.pricing }),
+    selectedAmenities: Object.freeze(
+      serverQuote.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    guestInfo: Object.freeze({ fullName, phone, email, note }),
+    paymentMethod,
+    bookingId,
+    createdAt,
+  });
+
+  return {
+    ok: true,
+    booking,
+  };
+}
+
+function createAbortError(): Error {
+  const error = new Error("Reservation submission aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+export async function submitBookingSession(
+  session: BookingSessionState,
+  input: CheckoutGuestInput,
+  submitter: ReservationSubmitter,
+  options?: { signal?: AbortSignal; fallbackBaseDate?: Date }
+): Promise<
+  | { ok: true; booking: BookingDetails; nextSession: BookingSessionState }
+  | { ok: false; error: string }
+> {
+  if (options?.signal?.aborted) {
+    throw createAbortError();
+  }
+
+  if (session.step !== "checking-out") {
+    return {
+      ok: false,
+      error: "Phiên đặt phòng đã đóng. Vui lòng mở lại chỗ nghỉ để xác nhận.",
+    };
+  }
+
+  const quote = deriveBookingQuote(session, options?.fallbackBaseDate);
+  if (!quote) {
+    return {
+      ok: false,
+      error: "Không tìm thấy chỗ nghỉ đang chọn để xác nhận đặt phòng.",
+    };
+  }
+
+  const validation = validateCheckoutGuestInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const { fullName, phone, email, note, paymentMethod } = validation.value;
+  const booking = await submitter.submit(
+    {
+      quote,
+      guestInfo: { fullName, phone, email, note },
+      paymentMethod,
+    },
+    { signal: options?.signal }
+  );
+
+  if (options?.signal?.aborted) {
+    throw createAbortError();
+  }
+
+  const resetSession = createIdleBookingSession();
+  return {
+    ok: true,
+    booking,
+    nextSession: {
+      ...resetSession,
+      step: "confirmed",
+      confirmedBooking: booking,
+    },
+  };
+}

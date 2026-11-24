@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,12 +13,14 @@
 
 # testing
 /coverage
+**/coverage
 
-# next.js
-/.next/
+# build & caches
+/.turbo
+**/.turbo
+**/dist
+**/.next
 /out/
-
-# production
 /build
 
 # misc
@@ -30,12 +33,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (keep *.example committed)
 .env*
+!.env.example
+!**/.env.example
 
 # vercel
 .vercel
 
 # typescript
-*.tsbuildinfo
-next-env.d.ts
+**/*.tsbuildinfo
+**/next-env.d.ts
