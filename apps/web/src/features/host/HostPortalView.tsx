@@ -1010,9 +1010,9 @@ export function HostPortalView({ dataMode, apiBaseUrl }: HostPortalViewProps) {
                       <h3 className="text-sm font-bold text-slate-900 line-clamp-1 mt-0.5">
                         {prop.title}
                       </h3>
-                      <div className="text-base font-black text-slate-900 mt-1">
-                        {formatPrice(prop.pricePerNight)}
-                        <span className="text-xs font-normal text-slate-400">
+                      <div className="text-base font-black text-slate-900 mt-1 flex items-baseline gap-1 whitespace-nowrap">
+                        <span>{formatPrice(prop.pricePerNight)}</span>
+                        <span className="text-xs font-normal text-slate-400 whitespace-nowrap shrink-0">
                           {t("catalog.perNight")}
                         </span>
                       </div>

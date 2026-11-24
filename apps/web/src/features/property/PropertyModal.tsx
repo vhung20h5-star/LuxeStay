@@ -524,15 +524,15 @@ function PropertyModalContent({ quote }: { quote: BookingQuote }) {
                 <div className="lg:col-span-5 sticky top-24">
                   <div className="p-6 rounded-3xl bg-white border-2 border-slate-200 shadow-xl space-y-5">
                     {/* Price Header */}
-                    <div className="flex items-baseline justify-between">
-                      <div>
-                        <span className="text-2xl font-black text-slate-900">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex items-baseline gap-1 whitespace-nowrap">
+                        <span className="text-2xl font-black text-slate-900 whitespace-nowrap">
                           {formatVND(property.pricePerNight)}
                         </span>
-                        <span className="text-xs text-slate-500 font-normal"> /đêm</span>
+                        <span className="text-xs text-slate-500 font-normal whitespace-nowrap shrink-0">/đêm</span>
                       </div>
                       {property.originalPrice && (
-                        <span className="text-xs text-slate-400 line-through">
+                        <span className="text-xs text-slate-400 line-through whitespace-nowrap shrink-0">
                           {formatVND(property.originalPrice)}
                         </span>
                       )}

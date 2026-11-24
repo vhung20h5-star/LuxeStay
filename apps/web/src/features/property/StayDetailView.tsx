@@ -430,16 +430,18 @@ export function StayDetailView({ property }: { property: Property }) {
           <aside className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24">
             <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl p-6 space-y-5">
               <div className="flex items-baseline justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   {property.originalPrice && (
-                    <span className="text-xs text-slate-400 line-through block">
-                      {formatVND(property.originalPrice)} / đêm
+                    <span className="text-xs text-slate-400 line-through block whitespace-nowrap">
+                      {formatVND(property.originalPrice)} /đêm
                     </span>
                   )}
-                  <span className="text-2xl font-black text-emerald-700">
-                    {formatVND(property.pricePerNight)}
-                  </span>
-                  <span className="text-xs text-slate-500"> / đêm</span>
+                  <div className="flex items-baseline gap-1 whitespace-nowrap">
+                    <span className="text-2xl font-black text-emerald-700 whitespace-nowrap">
+                      {formatVND(property.pricePerNight)}
+                    </span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap shrink-0">/đêm</span>
+                  </div>
                 </div>
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-800">
                   <Star className="w-4 h-4 fill-amber-400 text-amber-400" />

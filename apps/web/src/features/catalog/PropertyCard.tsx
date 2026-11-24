@@ -218,19 +218,22 @@ export function PropertyCard({ property }: PropertyCardProps) {
         </div>
 
         {/* Pricing & CTA */}
-        <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between">
-          <div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-lg font-black text-slate-900" data-testid="property-card-price">
+        <div className="pt-3.5 mt-3 border-t border-slate-100 flex flex-col gap-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1 whitespace-nowrap">
+              <span
+                className="text-lg font-black text-slate-900 tracking-tight whitespace-nowrap"
+                data-testid="property-card-price"
+              >
                 {formatPrice(property.pricePerNight)}
               </span>
-              <span className="text-xs text-slate-500 font-normal">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap shrink-0">
                 {t("catalog.perNight")}
               </span>
             </div>
-            {property.originalPrice && (
-              <span className="text-xs text-slate-400 line-through">
-                {formatPrice(property.originalPrice)}
+            {Boolean(property.originalPrice && property.originalPrice > property.pricePerNight) && (
+              <span className="text-xs text-slate-400 line-through whitespace-nowrap shrink-0">
+                {formatPrice(property.originalPrice!)}
               </span>
             )}
           </div>
@@ -241,7 +244,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
               e.stopPropagation();
               setCheckoutProperty(property);
             }}
-            className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors hover:scale-105"
+            className="w-full py-2.5 px-4 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all hover:shadow-md active:scale-[0.99] whitespace-nowrap"
           >
             {t("catalog.bookNow")}
           </button>

@@ -29,8 +29,10 @@ description: >-
   - Secret: `PAYMENT_WEBHOOK_SECRET` (distinct >=32-char secrets per environment) + Marketplace Neon vars (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`).
 - **Migrations & Seed on Neon:**
   - Vercel builds run `npm run db:prepare --workspace=@luxestay/api` (`apps/api/src/db/vercelPrepare.ts`) using injected Neon Secrets (`DATABASE_URL_UNPOOLED` first) to migrate idempotently and seed only when `properties` is empty.
+  - If a retired external seed URL (e.g., Unsplash 404) is replaced after Neon is already seeded, update `packages/domain/src/seed/*` AND add a targeted conditional update in `vercelPrepare.ts` matching `(id, oldBrokenUrl)` so live Neon rows update without overwriting host edits.
   - Note: `npx vercel env pull` writes `"[SENSITIVE]"` for Neon Secrets; for manual local runs against Neon, copy `DATABASE_URL_UNPOOLED` from Vercel Storage / Neon Console instead. Running `vercel pull` may also append `.env*` to `.gitignore`—ensure `!.env.example` stays below any `.env*` rule.
 - **Debugging live deploys:**
   - Build logs: `npx vercel inspect <deployment-url> --wait --logs`
   - Hobby runtime logs (30m retention): `npx vercel logs --deployment <deployment-url> --limit 50 --json`
   - Smoke checks: verify `200 OK` on `/health`, `/api/v1/catalog`, `/`, `/stays/stay-01`, and same-origin login (`/api/v1/auth/login`).
+  - Live media & browser check: SSR HTML `200` does not catch broken images or `/_next/image` `404`s; verify in headless Chromium that all `<img>` tags load (`complete && naturalWidth > 0`, `nextProxy === 0`, zero `status >= 400` image responses) and audit seed image URLs with HTTP status checks before pushing.

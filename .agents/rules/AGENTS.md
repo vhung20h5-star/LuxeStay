@@ -15,9 +15,10 @@
 ## Data, Auth & Persistence Invariants
 - In `NEXT_PUBLIC_DATA_MODE=api`, never silently fall back to mock/seed data on API or network failures; surface structured errors cleanly.
 - Support both explicit API URLs (`http://localhost:4000`) and same-origin mode (`NEXT_PUBLIC_API_BASE_URL=/` normalized to `""`) alongside server-side `API_BASE_URL` binding.
-- Keep reservation creation atomic (`SELECT ... FOR UPDATE` in Postgres / per-property lock in memory), server-authoritative for pricing/vouchers, and idempotent in DB migrations/seeds (`db:prepare` must not overwrite existing catalog data).
+- Keep reservation creation atomic (`SELECT ... FOR UPDATE` in Postgres / per-property lock in memory), server-authoritative for pricing/vouchers, and idempotent in DB migrations/seeds (`db:prepare` must never blind-overwrite existing catalog rows; repair retired seed fields via narrow conditional updates matching the old broken value).
 
 ## Deployment & Repo Hygiene
 - Do not make `vercel.json` `services.backend.buildCommand` leave `apps/api/dist` in place (otherwise `@vercel/backends` loads `dist/app.js` as CommonJS instead of bundling `src/server.ts` as `.mjs`).
+- Keep `images.unoptimized: true` in `apps/web/next.config.ts` while deploying with Vercel Services (Beta), because `/_next/image` returns `404` under service rewrites.
 - Never commit `.env*` secrets or `.vercel/`; keep `!.env.example` and `!**/.env.example` exceptions intact at the bottom of `.gitignore`.
 - Before claiming workspace changes are done, verify `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run test`.
