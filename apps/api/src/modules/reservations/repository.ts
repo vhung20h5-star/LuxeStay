@@ -3,7 +3,7 @@ import type {
   ErrorCode,
   PropertyAvailabilityOverride,
 } from "@luxestay/contracts";
-import type { ReservationOccupancyLike } from "@luxestay/domain";
+import { hasPriorSuccessfulBookings, type ReservationOccupancyLike } from "@luxestay/domain";
 import type { ApiAvailabilityRepository } from "../availability/repository.js";
 
 export type LockedReservationPreparation =
@@ -14,16 +14,34 @@ export interface ApiReservationRepository {
   save(booking: BookingDetails): Promise<BookingDetails>;
   findById(bookingId: string): Promise<BookingDetails | null>;
   findByUserId(userId: string): Promise<readonly BookingDetails[]>;
+  hasSuccessfulBookingByUserId(userId: string): Promise<boolean>;
   findActiveByPropertyId(propertyId: string): Promise<readonly ReservationOccupancyLike[]>;
   createWithPropertyLock(
     propertyId: string,
     prepare: (context: {
       existingReservations: readonly ReservationOccupancyLike[];
       dailyOverrides: readonly PropertyAvailabilityOverride[];
-    }) => LockedReservationPreparation
+      hasPriorSuccessfulBookings: boolean;
+    }) => LockedReservationPreparation,
+    lockOptions?: { userId?: string }
   ): Promise<LockedReservationPreparation>;
   update(booking: BookingDetails): Promise<BookingDetails>;
   listAll(): Promise<readonly BookingDetails[]>;
+}
+
+function hasSuccessfulUserBookingInStore(
+  store: ReadonlyMap<string, BookingDetails>,
+  userId: string | undefined
+): boolean {
+  const normalized = userId?.trim();
+  if (!normalized) return false;
+  const userBookings: BookingDetails[] = [];
+  for (const booking of store.values()) {
+    if (booking.userId === normalized) {
+      userBookings.push(booking);
+    }
+  }
+  return hasPriorSuccessfulBookings(userBookings);
 }
 
 export function createInMemoryReservationRepository(deps?: {
@@ -70,6 +88,9 @@ export function createInMemoryReservationRepository(deps?: {
         .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
       return Object.freeze(matching);
     },
+    async hasSuccessfulBookingByUserId(userId: string) {
+      return hasSuccessfulUserBookingInStore(store, userId);
+    },
     async findActiveByPropertyId(propertyId: string) {
       const normalized = propertyId.trim();
       const matching = [...store.values()].filter(
@@ -79,7 +100,7 @@ export function createInMemoryReservationRepository(deps?: {
       );
       return Object.freeze(matching);
     },
-    async createWithPropertyLock(propertyId, prepare) {
+    async createWithPropertyLock(propertyId, prepare, lockOptions) {
       return withPropertyMutex(propertyId, async () => {
         const normalized = propertyId.trim();
         const existingReservations = [...store.values()].filter(
@@ -90,10 +111,14 @@ export function createInMemoryReservationRepository(deps?: {
         const dailyOverrides = deps?.availabilityRepository
           ? await deps.availabilityRepository.listOverrides(normalized)
           : Object.freeze([]);
+        const hasPriorSuccessful = lockOptions?.userId
+          ? hasSuccessfulUserBookingInStore(store, lockOptions.userId)
+          : false;
 
         const prepared = prepare({
           existingReservations,
           dailyOverrides,
+          hasPriorSuccessfulBookings: hasPriorSuccessful,
         });
         if (!prepared.ok) {
           return prepared;

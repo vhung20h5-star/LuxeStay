@@ -8,9 +8,13 @@ import {
 import { evaluatePromotionVoucher } from "@luxestay/domain";
 import { buildMeta } from "../../middleware/errorHandler.js";
 import type { ApiEnvBindings } from "../../types.js";
+import type { ApiReservationRepository } from "../reservations/repository.js";
 import type { CatalogService } from "./service.js";
 
-export function createCatalogRoutes(catalogService: CatalogService) {
+export function createCatalogRoutes(
+  catalogService: CatalogService,
+  deps?: { reservationRepository?: ApiReservationRepository }
+) {
   const routes = new Hono<ApiEnvBindings>();
 
   routes.get(API_ENDPOINTS.catalog, async (c) => {
@@ -60,12 +64,38 @@ export function createCatalogRoutes(catalogService: CatalogService) {
       );
     }
 
-    const snapshot = await catalogService.getCatalogSnapshot();
+    const authUser = c.get("authUser");
+    const [snapshot, property, priorSuccessful] = await Promise.all([
+      catalogService.getCatalogSnapshot(),
+      parsed.data.propertyId
+        ? catalogService.getPropertyById(parsed.data.propertyId)
+        : Promise.resolve(null),
+      authUser && deps?.reservationRepository
+        ? deps.reservationRepository.hasSuccessfulBookingByUserId(authUser.id)
+        : Promise.resolve(undefined),
+    ]);
+
+    if (parsed.data.propertyId && !property) {
+      return c.json(
+        buildApiError(
+          "NOT_FOUND",
+          "Không tìm thấy chỗ nghỉ theo mã yêu cầu.",
+          { propertyId: parsed.data.propertyId },
+          buildMeta(c)
+        ),
+        404
+      );
+    }
+
     const evaluation = evaluatePromotionVoucher(
       parsed.data.code,
       parsed.data.subtotal,
       snapshot.promotions.vouchers,
-      { isAuthenticated: Boolean(c.get("authUser")) }
+      {
+        isAuthenticated: Boolean(authUser),
+        hasPriorSuccessfulBookings: priorSuccessful,
+        ...(property ? { property } : {}),
+      }
     );
 
     if (!evaluation.ok) {

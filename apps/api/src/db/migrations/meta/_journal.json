@@ -29,6 +29,13 @@
       "when": 1795443600000,
       "tag": "0003_phase3b_rbac_host_portal",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795526400000,
+      "tag": "0004_promotions_campaigns",
+      "breakpoints": true
     }
   ]
 }

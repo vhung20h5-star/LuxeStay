@@ -4,6 +4,8 @@ import type {
   CatalogSnapshot,
   CreateReviewInput,
   CreateReviewResult,
+  DealDetail,
+  DealsHub,
   LoginInput,
   NotificationLog,
   OtpRequestInput,
@@ -45,6 +47,11 @@ export interface FavoritesRepository {
 export interface CatalogRepository {
   getSnapshot(options?: { signal?: AbortSignal }): Promise<CatalogSnapshot>;
   getPropertyById(id: string, options?: { signal?: AbortSignal }): Promise<Property | null>;
+}
+
+export interface DealsRepository {
+  getDealsHub(options?: { signal?: AbortSignal }): Promise<DealsHub>;
+  getDealBySlug(slug: string, options?: { signal?: AbortSignal }): Promise<DealDetail | null>;
 }
 
 export interface ReservationManagerPort {

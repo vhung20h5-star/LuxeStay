@@ -17,7 +17,11 @@ export {
 } from "./amenities.js";
 export { CATEGORIES } from "./categories.js";
 export { DESTINATIONS } from "./destinations.js";
-export { PROMOTION_EXPIRY_LABEL, PROMOTION_VOUCHERS } from "./promotions.js";
+export {
+  PROMOTION_CAMPAIGNS,
+  PROMOTION_EXPIRY_LABEL,
+  PROMOTION_VOUCHERS,
+} from "./promotions.js";
 export { PROPERTIES } from "./properties.js";
 export { TESTIMONIALS } from "./testimonials.js";
 

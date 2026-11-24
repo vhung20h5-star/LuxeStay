@@ -3,9 +3,13 @@ import { fileURLToPath } from "node:url";
 import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { createDbClient } from "./client.js";
-import { destinationsTable, propertiesTable } from "./schema/index.js";
-import { seedDatabase } from "./seed.js";
+import { createDbClient, type LuxeStayDb } from "./client.js";
+import {
+  destinationsTable,
+  promotionCampaignsTable,
+  propertiesTable,
+} from "./schema/index.js";
+import { seedDatabase, seedPromotionsAndCampaigns } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(__dirname, "migrations");
@@ -31,6 +35,24 @@ function resolveValidDatabaseUrl(
     }
   }
   return undefined;
+}
+
+export async function backfillPromotionsIfNeeded(
+  db: LuxeStayDb
+): Promise<{ backfilled: boolean }> {
+  const existing = await db
+    .select({ id: promotionCampaignsTable.id })
+    .from(promotionCampaignsTable)
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { backfilled: false };
+  }
+
+  await db.transaction(async (tx) => {
+    await seedPromotionsAndCampaigns(tx);
+  });
+  return { backfilled: true };
 }
 
 export async function prepareDatabaseIfConfigured(
@@ -82,6 +104,11 @@ export async function prepareDatabaseIfConfigured(
             )
           )
         );
+    }
+
+    const { backfilled } = await backfillPromotionsIfNeeded(client.db);
+    if (backfilled) {
+      console.log("[luxestay-api] Backfilled promotions and promotion campaigns.");
     }
 
     console.log("[luxestay-api] Migrations up to date; properties already seeded (skipping overwrite).");

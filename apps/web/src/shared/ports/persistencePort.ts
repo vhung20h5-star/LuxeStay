@@ -1049,6 +1049,7 @@ export function createWebAppPorts(options: {
           })
         : createMockPaymentGatewayPort({
             vouchers: options.vouchers,
+            properties: options.properties,
           }),
     propertyExperience:
       options.mode === "api"
@@ -1101,7 +1102,10 @@ export function createInMemoryAppPorts(options?: {
     }),
     reservations,
     reservationManager: manager,
-    paymentGateway: createMockPaymentGatewayPort({ vouchers: options?.vouchers }),
+    paymentGateway: createMockPaymentGatewayPort({
+      vouchers: options?.vouchers,
+      properties: options?.properties,
+    }),
     propertyExperience: createMockPropertyExperiencePort({
       properties: options?.properties,
       getBookings: () => reservations.getSubmittedBookings(),

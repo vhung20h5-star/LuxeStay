@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   API_ENDPOINTS,
   ApiErrorResponseSchema,
@@ -7,6 +10,8 @@ import {
   BookingDetailsSchema,
   CatalogSnapshotSchema,
   CreateReviewResultSchema,
+  DealDetailSchema,
+  DealsHubSchema,
   createApiSuccessSchema,
   FavoritesListDataSchema,
   HealthDataSchema,
@@ -17,24 +22,48 @@ import {
   OtpRequestResultSchema,
   PaymentGatewaySessionSchema,
   PaymentWebhookResultSchema,
+  PromotionCampaignSchema,
+  PromotionVoucherSchema,
   PropertyAvailabilityDataSchema,
   PropertySchema,
   VoucherValidationResultSchema,
 } from "@luxestay/contracts";
-import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
-import { resolveDatabaseConfig } from "../dist/db/client.js";
-import { prepareDatabaseIfConfigured } from "../dist/db/vercelPrepare.js";
+import { resolveDatabaseConfig, type LuxeStayDb } from "../dist/db/client.js";
+import {
+  promotionCampaignsTable,
+  promotionsTable,
+  propertiesTable,
+  propertyAvailabilityTable,
+  reservationsTable,
+} from "../dist/db/schema/index.js";
+import {
+  backfillPromotionsIfNeeded,
+  prepareDatabaseIfConfigured,
+} from "../dist/db/vercelPrepare.js";
 import { resetApiRuntimeForTests } from "../dist/runtime.js";
 import vercelServerApp from "../dist/server.js";
-import { mapPropertyRowToDomain } from "../dist/modules/catalog/postgresRepository.js";
+import {
+  mapPromotionVoucherRowToDomain,
+  mapPropertyRowToDomain,
+} from "../dist/modules/catalog/postgresRepository.js";
 import { createSeedCatalogRepository } from "../dist/modules/catalog/repository.js";
+import {
+  createPostgresDealsRepository,
+  mapCampaignRowToDomain,
+} from "../dist/modules/deals/postgresRepository.js";
+import { createInMemoryDealsRepository } from "../dist/modules/deals/repository.js";
 import {
   signWebhookPayload,
   WEBHOOK_SIGNATURE_HEADER,
 } from "../dist/modules/payments/signature.js";
-import { mapReservationRowsToBookingDetails } from "../dist/modules/reservations/postgresRepository.js";
+import {
+  createPostgresReservationRepository,
+  mapReservationRowsToBookingDetails,
+} from "../dist/modules/reservations/postgresRepository.js";
+import { createInMemoryReservationRepository } from "../dist/modules/reservations/repository.js";
 import { z } from "zod";
 
 function extractCookieHeader(response: Response): string {
@@ -74,7 +103,7 @@ test("GET /api/v1/catalog returns complete CatalogSnapshot validated against con
     assert.equal(parsed.data.data.categories.length, 9);
     assert.equal(parsed.data.data.destinations.length, 8);
     assert.equal(Object.keys(parsed.data.data.amenityCatalog).length, 51);
-    assert.equal(parsed.data.data.promotions.vouchers.length, 2);
+    assert.equal(parsed.data.data.promotions.vouchers.length, 6);
     assert.equal(parsed.data.data.testimonials.length, 3);
   }
 });
@@ -1333,4 +1362,909 @@ test("Vercel Hono entrypoint (server.ts) lazily boots runtime and CORS trusts Ve
     }),
     { status: "skipped" }
   );
+});
+
+test("Migration 0004, promotion voucher row mapper, and idempotent backfill preserve existing properties", async () => {
+  const migrationsDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/db/migrations"
+  );
+  const migration0004Path = path.join(migrationsDir, "0004_promotions_campaigns.sql");
+  assert.equal(existsSync(migration0004Path), true);
+
+  const migrationSql = readFileSync(migration0004Path, "utf8");
+  for (const columnName of [
+    "title",
+    "subtitle",
+    "badge",
+    "icon_name",
+    "audience",
+    "new_user_only",
+    "applicable_property_types",
+    "applicable_categories",
+    "terms",
+  ]) {
+    assert.match(
+      migrationSql,
+      new RegExp(`ALTER TABLE "promotions" ADD COLUMN IF NOT EXISTS "${columnName}"`),
+      `Expected migration 0004 to add promotions.${columnName}`
+    );
+  }
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS "promotion_campaigns"/);
+  assert.match(migrationSql, /UNIQUE\("slug"\)/);
+
+  const journalRaw = readFileSync(path.join(migrationsDir, "meta/_journal.json"), "utf8");
+  const journal = JSON.parse(journalRaw) as {
+    entries: Array<{ idx: number; version: string; when: number; tag: string; breakpoints: boolean }>;
+  };
+  const entry4 = journal.entries.find((e) => e.idx === 4);
+  assert.deepEqual(entry4, {
+    idx: 4,
+    version: "7",
+    when: 1795526400000,
+    tag: "0004_promotions_campaigns",
+    breakpoints: true,
+  });
+
+  const fullMapped = mapPromotionVoucherRowToDomain({
+    id: "voucher-homestay-10",
+    code: "HOMESTAY10",
+    description: "Giảm 10% tối đa 300.000đ Homestay, Villa & Glamping",
+    tone: "amber",
+    expiryLabel: "30/11/2026",
+    discountType: "percent",
+    discountValue: 10,
+    minOrderTotal: 700000,
+    maxDiscount: 300000,
+    expiresAt: "2026-12-31T23:59:59.000Z",
+    isActive: true,
+    memberOnly: false,
+    title: "Giảm 10% (tối đa 300K) cho Homestay & Glamping",
+    subtitle: "Dành cho lần đặt đầu từ 700.000đ",
+    badge: "Bạn mới",
+    iconName: "Tent",
+    audience: "new-user",
+    newUserOnly: true,
+    applicablePropertyTypes: ["homestay", "glamping", "villa"],
+    applicableCategories: ["mountain-view"],
+    terms: ["Điều khoản 1", "Điều khoản 2"],
+    sortOrder: 2,
+  });
+  assert.equal(PromotionVoucherSchema.safeParse(fullMapped).success, true);
+  assert.equal(fullMapped.audience, "new-user");
+  assert.equal(fullMapped.newUserOnly, true);
+  assert.equal(fullMapped.maxDiscount, 300000);
+  assert.deepEqual(fullMapped.applicablePropertyTypes, ["homestay", "glamping", "villa"]);
+  assert.deepEqual(fullMapped.applicableCategories, ["mountain-view"]);
+  assert.deepEqual(fullMapped.terms, ["Điều khoản 1", "Điều khoản 2"]);
+
+  const minimalMapped = mapPromotionVoucherRowToDomain({
+    id: "voucher-250",
+    code: "LUXESTAY250",
+    description: "Giảm 250.000đ cho đơn từ 1.5tr",
+    tone: "emerald",
+    expiryLabel: "30/11/2026",
+    discountType: "fixed",
+    discountValue: 250000,
+    minOrderTotal: 1500000,
+    maxDiscount: null,
+    expiresAt: "2026-11-30T23:59:59.000Z",
+    isActive: true,
+    memberOnly: false,
+    title: null,
+    subtitle: null,
+    badge: null,
+    iconName: null,
+    audience: "all",
+    newUserOnly: false,
+    applicablePropertyTypes: null,
+    applicableCategories: null,
+    terms: null,
+    sortOrder: 3,
+  });
+  assert.equal(PromotionVoucherSchema.safeParse(minimalMapped).success, true);
+  assert.equal(minimalMapped.title, undefined);
+  assert.equal(minimalMapped.maxDiscount, undefined);
+  assert.equal("title" in minimalMapped, false);
+  assert.equal("maxDiscount" in minimalMapped, false);
+  assert.equal(minimalMapped.audience, "all");
+  assert.equal(minimalMapped.newUserOnly, false);
+
+  const createStubDb = (
+    existingCampaignRows: Array<{ id: string }>,
+    stubOptions?: { failFirstTransactionOnCampaignInsertIndex?: number }
+  ) => {
+    const selectTables: unknown[] = [];
+    const insertedRowsByTable = new Map<unknown, unknown[]>();
+    const otherWriteTables: unknown[] = [];
+    let transactionCalls = 0;
+    let nonTransactionalInserts = 0;
+
+    const createInsertHandler = (
+      targetMap: Map<unknown, unknown[]>,
+      options: {
+        isTransactional: boolean;
+        txAttemptNumber: number;
+        campaignInsertCounter: { count: number };
+      }
+    ) => {
+      return (table: unknown) => ({
+        values(payload: unknown) {
+          const items = Array.isArray(payload) ? payload : [payload];
+          const record = async () => {
+            if (!options.isTransactional) {
+              nonTransactionalInserts += 1;
+            }
+            if (table === promotionCampaignsTable) {
+              options.campaignInsertCounter.count += 1;
+              if (
+                options.txAttemptNumber === 1 &&
+                stubOptions?.failFirstTransactionOnCampaignInsertIndex !== undefined &&
+                options.campaignInsertCounter.count ===
+                  stubOptions.failFirstTransactionOnCampaignInsertIndex
+              ) {
+                throw new Error("Simulated transient DB error mid-backfill");
+              }
+            }
+            const rows = targetMap.get(table) ?? [];
+            rows.push(...items);
+            targetMap.set(table, rows);
+          };
+          return {
+            async onConflictDoUpdate() {
+              await record();
+            },
+            async onConflictDoNothing() {
+              await record();
+            },
+          };
+        },
+      });
+    };
+
+    const db = {
+      select() {
+        return {
+          from(table: unknown) {
+            selectTables.push(table);
+            return {
+              async limit() {
+                if (table !== promotionCampaignsTable) return [];
+                if (existingCampaignRows.length > 0) return existingCampaignRows;
+                return (insertedRowsByTable.get(promotionCampaignsTable) ?? []) as Array<{
+                  id: string;
+                }>;
+              },
+            };
+          },
+        };
+      },
+      insert: createInsertHandler(insertedRowsByTable, {
+        isTransactional: false,
+        txAttemptNumber: 0,
+        campaignInsertCounter: { count: 0 },
+      }),
+      update(table: unknown) {
+        otherWriteTables.push(table);
+        return {
+          set() {
+            return {
+              async where() {
+                return [];
+              },
+            };
+          },
+        };
+      },
+      delete(table: unknown) {
+        otherWriteTables.push(table);
+        return {
+          async where() {
+            return [];
+          },
+        };
+      },
+      async transaction<T>(fn: (tx: typeof db) => Promise<T>): Promise<T> {
+        transactionCalls += 1;
+        const txRows = new Map<unknown, unknown[]>(
+          [...insertedRowsByTable.entries()].map(([tbl, rows]) => [tbl, [...rows]])
+        );
+        const tx = {
+          ...db,
+          insert: createInsertHandler(txRows, {
+            isTransactional: true,
+            txAttemptNumber: transactionCalls,
+            campaignInsertCounter: { count: 0 },
+          }),
+        };
+        const result = await fn(tx);
+        insertedRowsByTable.clear();
+        for (const [tbl, rows] of txRows.entries()) {
+          insertedRowsByTable.set(tbl, rows);
+        }
+        return result;
+      },
+    };
+
+    return {
+      db: db as unknown as LuxeStayDb,
+      selectTables,
+      insertedRowsByTable,
+      otherWriteTables,
+      get transactionCalls() {
+        return transactionCalls;
+      },
+      get nonTransactionalInserts() {
+        return nonTransactionalInserts;
+      },
+    };
+  };
+
+  // Case 1: Empty promotion_campaigns triggers atomic transactional backfill of 6 vouchers + 5 campaigns, never touching propertiesTable
+  const emptyStub = createStubDb([]);
+  const emptyResult = await backfillPromotionsIfNeeded(emptyStub.db);
+  assert.deepEqual(emptyResult, { backfilled: true });
+  assert.equal(emptyStub.transactionCalls, 1);
+  assert.equal(emptyStub.nonTransactionalInserts, 0);
+  assert.deepEqual(emptyStub.selectTables, [promotionCampaignsTable]);
+  assert.equal(
+    emptyStub.insertedRowsByTable.get(promotionsTable)?.length,
+    SEED_CATALOG_SNAPSHOT.promotions.vouchers.length
+  );
+  assert.equal(emptyStub.insertedRowsByTable.get(promotionsTable)?.length, 6);
+  assert.equal(
+    emptyStub.insertedRowsByTable.get(promotionCampaignsTable)?.length,
+    PROMOTION_CAMPAIGNS.length
+  );
+  assert.equal(emptyStub.insertedRowsByTable.get(promotionCampaignsTable)?.length, 5);
+  assert.equal(emptyStub.insertedRowsByTable.get(propertiesTable), undefined);
+  assert.equal(emptyStub.otherWriteTables.length, 0);
+
+  // Case 2: Non-empty promotion_campaigns skips backfill without opening a transaction or writing
+  const populatedStub = createStubDb([{ id: "camp-black-friday-2026" }]);
+  const populatedResult = await backfillPromotionsIfNeeded(populatedStub.db);
+  assert.deepEqual(populatedResult, { backfilled: false });
+  assert.equal(populatedStub.transactionCalls, 0);
+  assert.equal(populatedStub.nonTransactionalInserts, 0);
+  assert.equal(populatedStub.insertedRowsByTable.size, 0);
+  assert.equal(populatedStub.otherWriteTables.length, 0);
+
+  // Case 3: Mid-backfill failure rolls back atomically so a subsequent db:prepare retries cleanly
+  const transientFailStub = createStubDb([], {
+    failFirstTransactionOnCampaignInsertIndex: 2,
+  });
+  await assert.rejects(
+    () => backfillPromotionsIfNeeded(transientFailStub.db),
+    /Simulated transient DB error mid-backfill/
+  );
+  assert.equal(transientFailStub.transactionCalls, 1);
+  assert.equal(transientFailStub.nonTransactionalInserts, 0);
+  assert.equal(transientFailStub.insertedRowsByTable.size, 0);
+
+  const retryResult = await backfillPromotionsIfNeeded(transientFailStub.db);
+  assert.deepEqual(retryResult, { backfilled: true });
+  assert.equal(transientFailStub.transactionCalls, 2);
+  assert.equal(transientFailStub.nonTransactionalInserts, 0);
+  assert.equal(transientFailStub.insertedRowsByTable.get(promotionsTable)?.length, 6);
+  assert.equal(transientFailStub.insertedRowsByTable.get(promotionCampaignsTable)?.length, 5);
+  assert.equal(transientFailStub.insertedRowsByTable.get(propertiesTable), undefined);
+});
+
+test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
+  const { app } = createApiApp();
+
+  // 1. Deals hub returns 5 campaigns (1 hero + 4 carousel) and 6 vouchers
+  const hubRes = await app.request(API_ENDPOINTS.deals);
+  assert.equal(hubRes.status, 200);
+  const hubParsed = createApiSuccessSchema(DealsHubSchema).safeParse(await hubRes.json());
+  assert.equal(hubParsed.success, true);
+  if (hubParsed.success) {
+    assert.equal(hubParsed.data.data.campaigns.length, 5);
+    assert.equal(
+      hubParsed.data.data.campaigns.filter((c) => c.placement === "hero").length,
+      1
+    );
+    assert.equal(
+      hubParsed.data.data.campaigns.filter((c) => c.placement === "carousel").length,
+      4
+    );
+    assert.equal(hubParsed.data.data.vouchers.length, 6);
+  }
+
+  // 2. Deal detail resolves matched properties and vouchers
+  const detailRes = await app.request(API_ENDPOINTS.dealBySlug("bien-he-phu-quoc-nha-trang"));
+  assert.equal(detailRes.status, 200);
+  const detailParsed = createApiSuccessSchema(DealDetailSchema).safeParse(await detailRes.json());
+  assert.equal(detailParsed.success, true);
+  if (detailParsed.success) {
+    assert.deepEqual(
+      detailParsed.data.data.properties.map((p) => p.id),
+      ["stay-02", "stay-07", "stay-08", "stay-10"]
+    );
+    assert.deepEqual(
+      detailParsed.data.data.vouchers.map((v) => v.code),
+      ["NEWSTAY250", "LUXESTAY250"]
+    );
+  }
+
+  // 3. Slug whitespace/case normalization
+  const normalizedRes = await app.request("/api/v1/deals/%20BIEN-HE-PHU-QUOC-NHA-TRANG%20");
+  assert.equal(normalizedRes.status, 200);
+  const normalizedDetail = createApiSuccessSchema(DealDetailSchema).parse(
+    await normalizedRes.json()
+  ).data;
+  assert.equal(normalizedDetail.campaign.slug, "bien-he-phu-quoc-nha-trang");
+
+  // 4. Unknown slug returns 404 NOT_FOUND
+  const missingRes = await app.request(API_ENDPOINTS.dealBySlug("does-not-exist"));
+  assert.equal(missingRes.status, 404);
+  const missingErr = ApiErrorResponseSchema.parse(await missingRes.json());
+  assert.equal(missingErr.error.code, "NOT_FOUND");
+
+  // 5. Custom dealsRepository: inactive -> 404; active but expired -> 200
+  const baseCampaign = PROMOTION_CAMPAIGNS[0]!;
+  const customDealsRepo = createInMemoryDealsRepository([
+    {
+      ...baseCampaign,
+      id: "camp-inactive",
+      slug: "inactive-campaign",
+      isActive: false,
+    },
+    {
+      ...baseCampaign,
+      id: "camp-expired-active",
+      slug: "expired-active-campaign",
+      startsAt: "2019-01-01T00:00:00.000Z",
+      endsAt: "2020-01-01T00:00:00.000Z",
+      isActive: true,
+    },
+  ]);
+
+  const { app: customApp, repositories } = createApiApp({
+    dealsRepository: customDealsRepo,
+  });
+  assert.equal("deals" in repositories, true);
+
+  const inactiveRes = await customApp.request(API_ENDPOINTS.dealBySlug("inactive-campaign"));
+  assert.equal(inactiveRes.status, 404);
+  const inactiveErr = ApiErrorResponseSchema.parse(await inactiveRes.json());
+  assert.equal(inactiveErr.error.code, "NOT_FOUND");
+
+  const expiredRes = await customApp.request(API_ENDPOINTS.dealBySlug("expired-active-campaign"));
+  assert.equal(expiredRes.status, 200);
+  const expiredParsed = createApiSuccessSchema(DealDetailSchema).safeParse(
+    await expiredRes.json()
+  );
+  assert.equal(expiredParsed.success, true);
+});
+
+test("Server-authoritative voucher validation enforces property eligibility and new-user repeat-booking rules across validate and reservations", async () => {
+  const { app } = createApiApp({ nodeEnv: "test" });
+
+  // 1. Property-type eligibility on /api/v1/vouchers/validate
+  const hotelHomestayRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "stay-03" }),
+  });
+  assert.equal(hotelHomestayRes.status, 200);
+  const hotelHomestay = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await hotelHomestayRes.json()
+  ).data;
+  assert.equal(hotelHomestay.valid, false);
+  assert.equal(hotelHomestay.discount, 0);
+
+  const validHomestayRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "stay-01" }),
+  });
+  assert.equal(validHomestayRes.status, 200);
+  const validHomestay = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await validHomestayRes.json()
+  ).data;
+  assert.equal(validHomestay.valid, true);
+  assert.equal(validHomestay.discount, 200000);
+
+  // 1b. Unknown propertyId returns explicit 404 NOT_FOUND instead of bypassing property restrictions
+  const unknownPropertyRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "HOMESTAY10", subtotal: 2000000, propertyId: "unknown-stay" }),
+  });
+  assert.equal(unknownPropertyRes.status, 404);
+  const unknownPropertyErr = ApiErrorResponseSchema.parse(await unknownPropertyRes.json());
+  assert.equal(unknownPropertyErr.error.code, "NOT_FOUND");
+  assert.deepEqual(unknownPropertyErr.error.details, { propertyId: "unknown-stay" });
+
+  // 2. Guest visitor validating WELCOME150 gets valid: true
+  const guestWelcomeRes = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(guestWelcomeRes.status, 200);
+  const guestWelcome = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await guestWelcomeRes.json()
+  ).data;
+  assert.equal(guestWelcome.valid, true);
+  assert.equal(guestWelcome.discount, 150000);
+
+  // 3. Newly registered user with 0 bookings validates & books WELCOME150, then is blocked on repeat attempt
+  const userAReg = await app.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Nguyễn Mới",
+      email: "newuser-a@luxestay.vn",
+      phone: "0901112233",
+      password: "password123",
+    }),
+  });
+  assert.equal(userAReg.status, 201);
+  const userACookie = extractCookieHeader(userAReg);
+
+  const userAValidate1 = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(
+    createApiSuccessSchema(VoucherValidationResultSchema).parse(await userAValidate1.json()).data
+      .valid,
+    true
+  );
+
+  const userABook1 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-07",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Mới",
+        phone: "0901112233",
+        email: "newuser-a@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(userABook1.status, 201);
+  const userABooking1 = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await userABook1.json()
+  ).data;
+  assert.equal(userABooking1.status, "confirmed");
+  assert.equal(userABooking1.pricing.appliedPromoCode, "WELCOME150");
+  assert.equal(userABooking1.pricing.discount, 150000);
+
+  // Second attempt with WELCOME150 must fail on both /vouchers/validate and /reservations
+  const userAValidate2 = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  const userAValidate2Data = createApiSuccessSchema(VoucherValidationResultSchema).parse(
+    await userAValidate2.json()
+  ).data;
+  assert.equal(userAValidate2Data.valid, false);
+  assert.equal(userAValidate2Data.discount, 0);
+
+  const userABook2 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userACookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-15",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Nguyễn Mới",
+        phone: "0901112233",
+        email: "newuser-a@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(userABook2.status, 400);
+
+  // 4. Another user whose only prior reservation is cancelled STILL qualifies for WELCOME150
+  const userBReg = await app.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Trần Hủy Đơn",
+      email: "newuser-b@luxestay.vn",
+      phone: "0902223344",
+      password: "password123",
+    }),
+  });
+  assert.equal(userBReg.status, 201);
+  const userBCookie = extractCookieHeader(userBReg);
+
+  const userBBook1 = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-21",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Trần Hủy Đơn",
+        phone: "0902223344",
+        email: "newuser-b@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(userBBook1.status, 201);
+  const userBBooking1 = createApiSuccessSchema(BookingDetailsSchema).parse(
+    await userBBook1.json()
+  ).data;
+
+  const userBCancel = await app.request(
+    API_ENDPOINTS.cancelReservation(userBBooking1.bookingId!),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: userBCookie },
+      body: JSON.stringify({ reason: "Đổi kế hoạch" }),
+    }
+  );
+  assert.equal(userBCancel.status, 200);
+
+  const userBValidateAfterCancel = await app.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(
+    createApiSuccessSchema(VoucherValidationResultSchema).parse(
+      await userBValidateAfterCancel.json()
+    ).data.valid,
+    true
+  );
+
+  // 5. Tampered VIPRESORT1M on stay-01 (mountain-view) by authenticated user -> 400
+  const tamperedVipRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: userBCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-22",
+      nights: 4,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Trần Hủy Đơn",
+        phone: "0902223344",
+        email: "newuser-b@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "VIPRESORT1M",
+    }),
+  });
+  assert.equal(tamperedVipRes.status, 400);
+});
+
+test("mapCampaignRowToDomain and createPostgresDealsRepository map rows into PromotionCampaignSchema-valid domain objects", async () => {
+  const sampleRow = {
+    id: "camp-bien-he-phu-quoc",
+    slug: "bien-he-phu-quoc-nha-trang",
+    placement: "carousel" as const,
+    badge: "ĐẢO NGỌC & BIỂN XANH",
+    title: "Deal biển siêu hot",
+    subtitle: "Biệt thự sát biển và resort hồ bơi vô cực tại Phú Quốc, Nha Trang & Đà Nẵng.",
+    highlightText: "Giảm đến 250K",
+    periodLabel: "Đến 31/12/2026",
+    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80",
+    theme: "coral-summer" as const,
+    ctaLabel: "Xem ưu đãi",
+    terms: ["Điều khoản 1", "Điều khoản 2"],
+    voucherCodes: ["NEWSTAY250", "LUXESTAY250"],
+    targetFilter: { destinations: ["Phú Quốc", "Nha Trang", "Đà Nẵng"] },
+    startsAt: "2026-11-01T00:00:00.000Z",
+    endsAt: "2026-12-31T23:59:59.000Z",
+    isActive: true,
+    sortOrder: 1,
+  };
+
+  const mapped = mapCampaignRowToDomain(sampleRow);
+  const parsed = PromotionCampaignSchema.safeParse(mapped);
+  assert.equal(parsed.success, true);
+  assert.equal("sortOrder" in mapped, false);
+  assert.deepEqual(mapped.targetFilter, {
+    destinations: ["Phú Quốc", "Nha Trang", "Đà Nẵng"],
+  });
+  assert.deepEqual(mapped.voucherCodes, ["NEWSTAY250", "LUXESTAY250"]);
+
+  const stubDb = {
+    select() {
+      return {
+        from() {
+          return {
+            async orderBy() {
+              return [sampleRow];
+            },
+            where() {
+              return {
+                async limit() {
+                  return [sampleRow];
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as unknown as LuxeStayDb;
+
+  const pgRepo = createPostgresDealsRepository(stubDb);
+  const all = await pgRepo.getCampaigns();
+  assert.equal(all.length, 1);
+  assert.equal(all[0]?.slug, "bien-he-phu-quoc-nha-trang");
+  assert.equal(await pgRepo.getCampaignBySlug("   "), null);
+  const bySlug = await pgRepo.getCampaignBySlug(" BIEN-HE-PHU-QUOC-NHA-TRANG ");
+  assert.equal(bySlug?.id, "camp-bien-he-phu-quoc");
+});
+
+test("In-lock hasPriorSuccessfulBookings and lightweight hasSuccessfulBookingByUserId block concurrent WELCOME150 and skip full hydration", async () => {
+  // 1. Concurrent WELCOME150 requests on the same property for a new user: exactly 1 succeeds, 1 fails
+  const { app: raceApp } = createApiApp({ nodeEnv: "test" });
+  const raceReg = await raceApp.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Lê Song Song",
+      email: "concurrent@luxestay.vn",
+      phone: "0903334455",
+      password: "password123",
+    }),
+  });
+  assert.equal(raceReg.status, 201);
+  const raceCookie = extractCookieHeader(raceReg);
+
+  const [res1, res2] = await Promise.all([
+    raceApp.request(API_ENDPOINTS.reservations, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: raceCookie },
+      body: JSON.stringify({
+        propertyId: "stay-01",
+        checkInSeed: "2026-12-07",
+        nights: 2,
+        guests: { adults: 2, children: 0, rooms: 1 },
+        selectedAmenityIds: [],
+        guestInfo: {
+          fullName: "Lê Song Song",
+          phone: "0903334455",
+          email: "concurrent@luxestay.vn",
+        },
+        paymentMethod: "hotel",
+        promoCode: "WELCOME150",
+      }),
+    }),
+    raceApp.request(API_ENDPOINTS.reservations, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: raceCookie },
+      body: JSON.stringify({
+        propertyId: "stay-01",
+        checkInSeed: "2026-12-15",
+        nights: 2,
+        guests: { adults: 2, children: 0, rooms: 1 },
+        selectedAmenityIds: [],
+        guestInfo: {
+          fullName: "Lê Song Song",
+          phone: "0903334455",
+          email: "concurrent@luxestay.vn",
+        },
+        paymentMethod: "hotel",
+        promoCode: "WELCOME150",
+      }),
+    }),
+  ]);
+  const statuses = [res1.status, res2.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [201, 400]);
+
+  // 2. Spy repository verifies validateVoucher & createReservation never call findByUserId and skip user check when no promoCode
+  const baseRepo = createInMemoryReservationRepository();
+  let findByUserIdCalls = 0;
+  let hasSuccessfulCalls = 0;
+  const capturedLockOptions: Array<{ userId?: string } | undefined> = [];
+
+  const spyRepo = {
+    ...baseRepo,
+    async findByUserId(userId: string) {
+      findByUserIdCalls += 1;
+      return baseRepo.findByUserId(userId);
+    },
+    async hasSuccessfulBookingByUserId(userId: string) {
+      hasSuccessfulCalls += 1;
+      return baseRepo.hasSuccessfulBookingByUserId(userId);
+    },
+    async createWithPropertyLock(
+      propertyId: string,
+      prepare: Parameters<typeof baseRepo.createWithPropertyLock>[1],
+      lockOptions?: { userId?: string }
+    ) {
+      capturedLockOptions.push(lockOptions);
+      return baseRepo.createWithPropertyLock(propertyId, prepare, lockOptions);
+    },
+  };
+
+  const { app: spyApp } = createApiApp({
+    nodeEnv: "test",
+    reservationRepository: spyRepo,
+  });
+
+  const spyReg = await spyApp.request(API_ENDPOINTS.authRegister, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Phạm Tối Ưu",
+      email: "spy@luxestay.vn",
+      phone: "0904445566",
+      password: "password123",
+    }),
+  });
+  assert.equal(spyReg.status, 201);
+  const spyCookie = extractCookieHeader(spyReg);
+
+  // validateVoucher uses hasSuccessfulBookingByUserId, never findByUserId
+  const valRes = await spyApp.request(API_ENDPOINTS.validateVoucher, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({ code: "WELCOME150", subtotal: 1500000 }),
+  });
+  assert.equal(valRes.status, 200);
+  assert.equal(findByUserIdCalls, 0);
+  assert.equal(hasSuccessfulCalls, 1);
+
+  // createReservation WITHOUT promoCode passes undefined userId in lockOptions and avoids extra user check
+  const noPromoBook = await spyApp.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-07",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Phạm Tối Ưu",
+        phone: "0904445566",
+        email: "spy@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(noPromoBook.status, 201);
+  assert.equal(findByUserIdCalls, 0);
+  assert.equal(hasSuccessfulCalls, 1);
+  assert.equal(capturedLockOptions[0]?.userId, undefined);
+
+  // createReservation WITH WELCOME150 passes userId in lockOptions and rejects repeat user inside lock
+  const promoBook = await spyApp.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: spyCookie },
+    body: JSON.stringify({
+      propertyId: "stay-01",
+      checkInSeed: "2026-12-15",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: {
+        fullName: "Phạm Tối Ưu",
+        phone: "0904445566",
+        email: "spy@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    }),
+  });
+  assert.equal(promoBook.status, 400);
+  assert.equal(findByUserIdCalls, 0);
+  assert.ok(capturedLockOptions[1]?.userId);
+
+  // 3. Postgres repository hasSuccessfulBookingByUserId & createWithPropertyLock run lightweight SQL without hydrateRows/getSnapshot
+  let snapshotCalls = 0;
+  const queriedTables: unknown[] = [];
+  let userBookingQueryResult: Array<{ bookingId: string }> = [{ bookingId: "LX-PRIOR1" }];
+
+  const buildSelectChain = () => ({
+    from(table: unknown) {
+      queriedTables.push(table);
+      return {
+        where() {
+          const resultPromise = Promise.resolve([]);
+          return {
+            async for() {
+              return [{ id: "stay-01" }];
+            },
+            async orderBy() {
+              return [];
+            },
+            async limit() {
+              return table === reservationsTable ? userBookingQueryResult : [];
+            },
+            then: resultPromise.then.bind(resultPromise),
+          };
+        },
+      };
+    },
+  });
+
+  const pgStubDb = {
+    select: buildSelectChain,
+    async transaction<T>(fn: (tx: typeof pgStubDb) => Promise<T>): Promise<T> {
+      return fn({
+        select: buildSelectChain,
+        transaction: pgStubDb.transaction,
+      });
+    },
+  } as unknown as LuxeStayDb;
+
+  const baseCatalogRepo = createSeedCatalogRepository();
+  const spyCatalogRepo = {
+    ...baseCatalogRepo,
+    async getSnapshot() {
+      snapshotCalls += 1;
+      return baseCatalogRepo.getSnapshot();
+    },
+  };
+
+  const pgReservationRepo = createPostgresReservationRepository({
+    db: pgStubDb,
+    catalogRepository: spyCatalogRepo,
+  });
+
+  // Blank userId short-circuits without querying DB
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("   "), false);
+  assert.equal(queriedTables.length, 0);
+
+  // Populated user booking returns true and queries ONLY reservationsTable (no getSnapshot)
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("user-1"), true);
+  assert.deepEqual(queriedTables, [reservationsTable]);
+  assert.equal(snapshotCalls, 0);
+
+  // Empty user booking returns false
+  userBookingQueryResult = [];
+  assert.equal(await pgReservationRepo.hasSuccessfulBookingByUserId("user-2"), false);
+
+  // createWithPropertyLock without userId does NOT execute extra user-booking query
+  queriedTables.length = 0;
+  let capturedPriorWithoutUser: boolean | undefined;
+  await pgReservationRepo.createWithPropertyLock("stay-01", (ctx) => {
+    capturedPriorWithoutUser = ctx.hasPriorSuccessfulBookings;
+    return { ok: false, status: 400, code: "VALIDATION_ERROR", message: "stop" };
+  });
+  assert.equal(capturedPriorWithoutUser, false);
+  assert.deepEqual(queriedTables, [propertiesTable, propertyAvailabilityTable, reservationsTable]);
+  assert.equal(snapshotCalls, 0);
+
+  // createWithPropertyLock with userId executes lightweight user-booking check inside tx
+  queriedTables.length = 0;
+  userBookingQueryResult = [{ bookingId: "LX-PRIOR1" }];
+  let capturedPriorWithUser: boolean | undefined;
+  await pgReservationRepo.createWithPropertyLock(
+    "stay-01",
+    (ctx) => {
+      capturedPriorWithUser = ctx.hasPriorSuccessfulBookings;
+      return { ok: false, status: 400, code: "VALIDATION_ERROR", message: "stop" };
+    },
+    { userId: "user-1" }
+  );
+  assert.equal(capturedPriorWithUser, true);
+  assert.deepEqual(queriedTables, [
+    propertiesTable,
+    propertyAvailabilityTable,
+    reservationsTable,
+    reservationsTable,
+  ]);
+  assert.equal(snapshotCalls, 0);
 });

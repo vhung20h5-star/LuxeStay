@@ -6,14 +6,22 @@ import {
   deriveBookingQuote,
   processServerReservationIntent,
   startCheckoutSession,
+  submitBookingSession,
 } from "@luxestay/domain";
-import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { getPublicWebEnv, getServerWebEnv } from "@/shared/config/env";
 import { createHttpAuthPort, createMockAuthPort } from "@/shared/ports/authPort";
 import {
   createCatalogRepositoryForMode,
   createHttpCatalogRepository,
 } from "@/shared/ports/catalogPort";
+import {
+  createDealsRepositoryForMode,
+  createHttpDealsRepository,
+  createMockDealsRepository,
+  loadDealBySlug,
+  loadDealsHub,
+} from "@/shared/ports/dealsPort";
 import { HttpApiError } from "@/shared/ports/errors";
 import {
   createHttpPropertyExperiencePort,
@@ -490,7 +498,7 @@ test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and
   });
   const apiSnapshot = await apiRepo.getSnapshot();
   assert.equal(apiSnapshot.properties.length, 12);
-  assert.equal(apiSnapshot.promotions.vouchers.length, 2);
+  assert.equal(apiSnapshot.promotions.vouchers.length, 6);
 
   // Malformed response triggers CONTRACT_MISMATCH
   const brokenRepo = createHttpCatalogRepository({
@@ -854,9 +862,10 @@ test("AuthPort supports HttpOnly cookie credentials, register/login/OTP, and rem
 });
 
 test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulates sandbox outcomes", async () => {
-  // Mock voucher validation uses domain engine directly
+  // Mock voucher validation uses domain engine directly, including property-level rules
   const mockPayment = createMockPaymentGatewayPort({
     vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+    properties: SEED_CATALOG_SNAPSHOT.properties,
   });
   const okVoucher = await mockPayment.validateVoucher({ code: "luxestay250", subtotal: 2000000 });
   assert.equal(okVoucher.valid, true);
@@ -865,6 +874,54 @@ test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulat
   const badVoucher = await mockPayment.validateVoucher({ code: "LUXESTAY250", subtotal: 900000 });
   assert.equal(badVoucher.valid, false);
   assert.equal(badVoucher.discount, 0);
+
+  const ineligiblePropertyVoucher = await mockPayment.validateVoucher({
+    code: "HOMESTAY10",
+    subtotal: 2_000_000,
+    propertyId: "stay-03",
+  });
+  assert.equal(ineligiblePropertyVoucher.valid, false);
+  assert.equal(ineligiblePropertyVoucher.discount, 0);
+
+  const eligiblePropertyVoucher = await mockPayment.validateVoucher({
+    code: "HOMESTAY10",
+    subtotal: 2_000_000,
+    propertyId: "stay-01",
+  });
+  assert.equal(eligiblePropertyVoucher.valid, true);
+  assert.equal(eligiblePropertyVoucher.discount, 200_000);
+
+  await assert.rejects(
+    () =>
+      mockPayment.validateVoucher({
+        code: "HOMESTAY10",
+        subtotal: 2_000_000,
+        propertyId: "unknown-stay",
+      }),
+    (err: unknown) =>
+      err instanceof HttpApiError && err.status === 404 && err.code === "NOT_FOUND"
+  );
+
+  // createWebAppPorts(mode: "mock") wires properties into mock paymentGateway parity
+  const mockAppPorts = createWebAppPorts({
+    mode: "mock",
+    apiBaseUrl: "http://localhost:4000",
+    properties: SEED_CATALOG_SNAPSHOT.properties,
+    vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+  });
+  const appPortIneligible = await mockAppPorts.paymentGateway.validateVoucher({
+    code: "HOMESTAY10",
+    subtotal: 2_000_000,
+    propertyId: "stay-03",
+  });
+  assert.equal(appPortIneligible.valid, false);
+  const appPortEligible = await mockAppPorts.paymentGateway.validateVoucher({
+    code: "HOMESTAY10",
+    subtotal: 2_000_000,
+    propertyId: "stay-01",
+  });
+  assert.equal(appPortEligible.valid, true);
+  assert.equal(appPortEligible.discount, 200_000);
 
   // HTTP PaymentGatewayPort validates PaymentGatewaySession & PaymentWebhookResult contracts
   const sampleTx = {
@@ -919,6 +976,21 @@ test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulat
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+      if (url === "http://localhost:4000/api/v1/vouchers/validate") {
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.propertyId, "stay-01");
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess({
+              valid: true,
+              code: "HOMESTAY10",
+              discount: 200_000,
+              message: "Áp dụng mã HOMESTAY10 thành công — giảm 200.000đ.",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       throw new Error(`Unexpected payment request: ${url}`);
     },
   });
@@ -930,6 +1002,14 @@ test("PaymentGatewayPort validates vouchers, loads gateway sessions, and simulat
   const sim = await httpPayment.simulateOutcome("TXN-DEMO01", { outcome: "succeeded" });
   assert.equal(sim.bookingStatus, "confirmed");
   assert.equal(sim.deduplicated, false);
+
+  const httpVoucher = await httpPayment.validateVoucher({
+    code: "HOMESTAY10",
+    subtotal: 2_000_000,
+    propertyId: "stay-01",
+  });
+  assert.equal(httpVoucher.valid, true);
+  assert.equal(httpVoucher.discount, 200_000);
 });
 
 test("Phase 3A PropertyExperiencePort and ReservationManagerPort.complete work in mock and strict HTTP contract modes", async () => {
@@ -1139,5 +1219,299 @@ test("Phase 3B HostPort supports CRUD, availability overrides, and analytics in 
   await assert.rejects(
     httpHost.deleteProperty("stay-07"),
     (err: unknown) => err instanceof HttpApiError && err.status === 403 && err.code === "FORBIDDEN"
+  );
+});
+
+test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-origin HTTP envelopes, and strict api errors with zero fallback", async () => {
+  // 1. Mock DealsRepository hub & slug lookup
+  const mockRepo = createMockDealsRepository();
+  const mockHub = await mockRepo.getDealsHub();
+  assert.equal(mockHub.campaigns.length, 5);
+  assert.equal(mockHub.vouchers.length, 6);
+
+  const worldsBest = await mockRepo.getDealBySlug("worlds-best-resorts");
+  assert.ok(worldsBest);
+  assert.equal(worldsBest.campaign.slug, "worlds-best-resorts");
+  assert.deepEqual(
+    worldsBest.properties.map((p) => p.id),
+    ["stay-02", "stay-05", "stay-08", "stay-10"]
+  );
+  assert.deepEqual(
+    worldsBest.vouchers.map((v) => v.code),
+    ["VIPRESORT1M", "SUMMERVIBE"]
+  );
+
+  const normalizedLookup = await mockRepo.getDealBySlug("  WORLDS-BEST-RESORTS ");
+  assert.ok(normalizedLookup);
+  assert.equal(normalizedLookup.campaign.slug, "worlds-best-resorts");
+  assert.equal(normalizedLookup.properties.length, 4);
+
+  assert.equal(await mockRepo.getDealBySlug("missing"), null);
+  assert.equal(await mockRepo.getDealBySlug("   "), null);
+
+  // Custom inactive vs active-expired campaign rules
+  const baseCampaign = PROMOTION_CAMPAIGNS.find((c) => c.slug === "worlds-best-resorts")!;
+  const customMockRepo = createMockDealsRepository({
+    campaigns: [
+      { ...baseCampaign, id: "camp-inactive", slug: "inactive-campaign", isActive: false },
+      {
+        ...baseCampaign,
+        id: "camp-expired",
+        slug: "expired-campaign",
+        isActive: true,
+        endsAt: "2020-01-01T00:00:00.000Z",
+      },
+    ],
+  });
+  assert.equal(await customMockRepo.getDealBySlug("inactive-campaign"), null);
+  const expiredActive = await customMockRepo.getDealBySlug("expired-campaign");
+  assert.ok(expiredActive);
+  assert.equal(expiredActive.campaign.slug, "expired-campaign");
+  assert.equal(expiredActive.properties.length, 4);
+
+  // 2. Same-origin HTTP DealsRepository validates envelopes & 404 -> null
+  const requestedUrls: string[] = [];
+  const httpRepo = createHttpDealsRepository({
+    baseUrl: "",
+    fetchImpl: async (input) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === "/api/v1/deals") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess(mockHub, {
+              requestId: "req-deals-hub",
+              timestamp: "2026-11-24T00:00:00.000Z",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url === "/api/v1/deals/worlds-best-resorts") {
+        return new Response(
+          JSON.stringify(
+            buildApiSuccess(worldsBest, {
+              requestId: "req-deal-detail",
+              timestamp: "2026-11-24T00:00:00.000Z",
+            })
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url === "/api/v1/deals/missing") {
+        return new Response(
+          JSON.stringify(
+            buildApiError("NOT_FOUND", "Không tìm thấy chương trình ưu đãi.", undefined, {
+              requestId: "req-deal-404",
+              timestamp: "2026-11-24T00:00:00.000Z",
+            })
+          ),
+          { status: 404, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected deals URL: ${url}`);
+    },
+  });
+
+  const httpHub = await httpRepo.getDealsHub();
+  assert.equal(httpHub.campaigns.length, 5);
+  assert.equal(httpHub.vouchers.length, 6);
+
+  const httpDetail = await httpRepo.getDealBySlug("worlds-best-resorts");
+  assert.ok(httpDetail);
+  assert.equal(httpDetail.properties.length, 4);
+
+  const httpNormalizedDetail = await httpRepo.getDealBySlug("  WORLDS-BEST-RESORTS ");
+  assert.ok(httpNormalizedDetail);
+  assert.equal(httpNormalizedDetail.campaign.slug, "worlds-best-resorts");
+
+  assert.equal(await httpRepo.getDealBySlug("missing"), null);
+  assert.equal(await httpRepo.getDealBySlug("   "), null);
+  assert.deepEqual(requestedUrls, [
+    "/api/v1/deals",
+    "/api/v1/deals/worlds-best-resorts",
+    "/api/v1/deals/worlds-best-resorts",
+    "/api/v1/deals/missing",
+  ]);
+
+  // 3. Strict HTTP 500 error propagation (zero fallback)
+  const failing500Repo = createHttpDealsRepository({
+    baseUrl: "",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify(
+          buildApiError("INTERNAL_ERROR", "Cơ sở dữ liệu ưu đãi tạm thời gián đoạn.", undefined, {
+            requestId: "req-deals-500",
+            timestamp: "2026-11-24T00:00:00.000Z",
+          })
+        ),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      ),
+  });
+
+  await assert.rejects(
+    failing500Repo.getDealsHub(),
+    (err: unknown) =>
+      err instanceof HttpApiError &&
+      err.status === 500 &&
+      err.code === "INTERNAL_ERROR" &&
+      err.requestId === "req-deals-500" &&
+      err.message.includes("gián đoạn")
+  );
+  await assert.rejects(
+    failing500Repo.getDealBySlug("worlds-best-resorts"),
+    (err: unknown) =>
+      err instanceof HttpApiError &&
+      err.status === 500 &&
+      err.code === "INTERNAL_ERROR" &&
+      err.requestId === "req-deals-500"
+  );
+
+  // 4. Strict NETWORK_ERROR on fetch rejection (zero fallback)
+  const offlineDealsRepo = createHttpDealsRepository({
+    baseUrl: "",
+    fetchImpl: async () => {
+      throw new TypeError("fetch failed");
+    },
+  });
+  await assert.rejects(
+    offlineDealsRepo.getDealsHub(),
+    (err: unknown) => err instanceof HttpApiError && err.code === "NETWORK_ERROR" && err.status === 0
+  );
+  await assert.rejects(
+    offlineDealsRepo.getDealBySlug("worlds-best-resorts"),
+    (err: unknown) => err instanceof HttpApiError && err.code === "NETWORK_ERROR" && err.status === 0
+  );
+
+  // 5. CONTRACT_MISMATCH on malformed JSON payloads
+  const malformedRepo = createHttpDealsRepository({
+    baseUrl: "",
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ ok: true, data: { invalid: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
+  await assert.rejects(
+    malformedRepo.getDealsHub(),
+    (err: unknown) => err instanceof HttpApiError && err.code === "CONTRACT_MISMATCH"
+  );
+  await assert.rejects(
+    malformedRepo.getDealBySlug("worlds-best-resorts"),
+    (err: unknown) => err instanceof HttpApiError && err.code === "CONTRACT_MISMATCH"
+  );
+
+  // 6. Mode factory & server loader helpers
+  const modeMockRepo = createDealsRepositoryForMode({ mode: "mock", apiBaseUrl: "" });
+  assert.equal((await modeMockRepo.getDealsHub()).campaigns.length, 5);
+
+  const prevMode = process.env.NEXT_PUBLIC_DATA_MODE;
+  const prevApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  process.env.NEXT_PUBLIC_DATA_MODE = "mock";
+  process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:4000";
+  try {
+    const loadedHub = await loadDealsHub();
+    assert.equal(loadedHub.campaigns.length, 5);
+    const loadedDetail = await loadDealBySlug("worlds-best-resorts");
+    assert.equal(loadedDetail?.properties.length, 4);
+  } finally {
+    if (prevMode === undefined) delete process.env.NEXT_PUBLIC_DATA_MODE;
+    else process.env.NEXT_PUBLIC_DATA_MODE = prevMode;
+    if (prevApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    else process.env.NEXT_PUBLIC_API_BASE_URL = prevApiUrl;
+  }
+});
+
+test("submitBookingSession with explicit empty promoCode submits full-price booking even when session.promoCode is locally ineligible", async () => {
+  const session = startCheckoutSession(
+    createIdleBookingSession(),
+    stay02,
+    undefined,
+    baseDate,
+    "VIPRESORT1M"
+  );
+  assert.equal(session.promoCode, "VIPRESORT1M");
+
+  // Unauthenticated guest: VIPRESORT1M fails local eligibility so appliedPromoCode is undefined
+  const quote = deriveBookingQuote(session, baseDate, {
+    vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+    isAuthenticated: false,
+  })!;
+  assert.equal(quote.pricing.appliedPromoCode, undefined);
+  assert.equal(quote.pricing.discount, 0);
+
+  const capturedIntents: Record<string, unknown>[] = [];
+  const httpAdapter = createHttpReservationAdapter({
+    baseUrl: "http://localhost:4000",
+    fetchImpl: async (_input, init) => {
+      const intent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      capturedIntents.push(intent);
+      const serverResult = processServerReservationIntent(
+        intent as Parameters<typeof processServerReservationIntent>[0],
+        PROPERTIES,
+        {
+          bookingId: "LX-NOPROMO1",
+          createdAt: "2026-11-24T15:00:00.000Z",
+          fallbackBaseDate: baseDate,
+          vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+          isAuthenticated: false,
+        }
+      );
+      if (!serverResult.ok) {
+        return new Response(
+          JSON.stringify(buildApiError("VALIDATION_ERROR", serverResult.error)),
+          { status: serverResult.status, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify(buildApiSuccess(serverResult.booking)), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  const result = await submitBookingSession(
+    session,
+    {
+      fullName: "Khách Không Đăng Nhập",
+      phone: "0912 345 678",
+      email: "guest@luxestay.vn",
+      paymentMethod: "momo",
+      promoCode: quote.pricing.appliedPromoCode ?? "",
+    },
+    httpAdapter,
+    {
+      fallbackBaseDate: baseDate,
+      vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+      isAuthenticated: false,
+    }
+  );
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.booking.pricing.discount, 0);
+  assert.equal(result.booking.pricing.appliedPromoCode, undefined);
+  assert.equal(capturedIntents.length, 1);
+  assert.equal("promoCode" in capturedIntents[0], false);
+
+  // Contrast: passing undefined instead of "" falls back to session.promoCode and rejects with 400
+  await assert.rejects(
+    submitBookingSession(
+      session,
+      {
+        fullName: "Khách Không Đăng Nhập",
+        phone: "0912 345 678",
+        email: "guest@luxestay.vn",
+        paymentMethod: "momo",
+        promoCode: undefined,
+      },
+      httpAdapter,
+      {
+        fallbackBaseDate: baseDate,
+        vouchers: SEED_CATALOG_SNAPSHOT.promotions.vouchers,
+        isAuthenticated: false,
+      }
+    ),
+    (err: unknown) => err instanceof HttpApiError && err.status === 400 && err.code === "VALIDATION_ERROR"
   );
 });

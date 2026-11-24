@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import { PROMOTION_CAMPAIGNS, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { buildDemoStaffUsers } from "../modules/auth/demoAccounts.js";
 import { createDbClient, type LuxeStayDb } from "./client.js";
 import {
@@ -9,6 +9,7 @@ import {
   amenityFilterOptionsTable,
   categoriesTable,
   destinationsTable,
+  promotionCampaignsTable,
   promotionsTable,
   propertiesTable,
   propertyAmenitiesTable,
@@ -16,6 +17,93 @@ import {
   testimonialsTable,
   usersTable,
 } from "./schema/index.js";
+
+export async function seedPromotionsAndCampaigns(
+  db: Pick<LuxeStayDb, "insert"> | LuxeStayDb
+): Promise<void> {
+  const snapshot = SEED_CATALOG_SNAPSHOT;
+
+  for (const [idx, voucher] of snapshot.promotions.vouchers.entries()) {
+    const voucherFields = {
+      code: voucher.code,
+      description: voucher.description,
+      tone: voucher.tone,
+      expiryLabel: snapshot.promotions.expiryLabel,
+      discountType: voucher.discountType,
+      discountValue: voucher.discountValue,
+      minOrderTotal: voucher.minOrderTotal,
+      maxDiscount: voucher.maxDiscount ?? null,
+      expiresAt: voucher.expiresAt,
+      isActive: voucher.isActive,
+      memberOnly: voucher.memberOnly,
+      title: voucher.title ?? null,
+      subtitle: voucher.subtitle ?? null,
+      badge: voucher.badge ?? null,
+      iconName: voucher.iconName ?? null,
+      audience: voucher.audience,
+      newUserOnly: voucher.newUserOnly,
+      applicablePropertyTypes: voucher.applicablePropertyTypes
+        ? [...voucher.applicablePropertyTypes]
+        : null,
+      applicableCategories: voucher.applicableCategories
+        ? [...voucher.applicableCategories]
+        : null,
+      terms: voucher.terms ? [...voucher.terms] : null,
+      sortOrder: idx,
+    };
+
+    await db
+      .insert(promotionsTable)
+      .values({ id: voucher.id, ...voucherFields })
+      .onConflictDoUpdate({
+        target: promotionsTable.id,
+        set: voucherFields,
+      });
+  }
+
+  for (const [idx, campaign] of PROMOTION_CAMPAIGNS.entries()) {
+    const campaignFields = {
+      slug: campaign.slug,
+      placement: campaign.placement,
+      badge: campaign.badge,
+      title: campaign.title,
+      subtitle: campaign.subtitle,
+      highlightText: campaign.highlightText,
+      periodLabel: campaign.periodLabel,
+      image: campaign.image,
+      theme: campaign.theme,
+      ctaLabel: campaign.ctaLabel,
+      terms: [...campaign.terms],
+      voucherCodes: [...campaign.voucherCodes],
+      targetFilter: {
+        ...(campaign.targetFilter.destinations
+          ? { destinations: [...campaign.targetFilter.destinations] }
+          : {}),
+        ...(campaign.targetFilter.categories
+          ? { categories: [...campaign.targetFilter.categories] }
+          : {}),
+        ...(campaign.targetFilter.propertyTypes
+          ? { propertyTypes: [...campaign.targetFilter.propertyTypes] }
+          : {}),
+        ...(campaign.targetFilter.flashDealOnly !== undefined
+          ? { flashDealOnly: campaign.targetFilter.flashDealOnly }
+          : {}),
+      },
+      startsAt: campaign.startsAt,
+      endsAt: campaign.endsAt,
+      isActive: campaign.isActive,
+      sortOrder: idx,
+    };
+
+    await db
+      .insert(promotionCampaignsTable)
+      .values({ id: campaign.id, ...campaignFields })
+      .onConflictDoUpdate({
+        target: promotionCampaignsTable.id,
+        set: campaignFields,
+      });
+  }
+}
 
 export async function seedDatabase(db: LuxeStayDb): Promise<void> {
   const snapshot = SEED_CATALOG_SNAPSHOT;
@@ -50,41 +138,7 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
       )
       .onConflictDoNothing();
 
-    for (const [idx, voucher] of snapshot.promotions.vouchers.entries()) {
-      await tx
-        .insert(promotionsTable)
-        .values({
-          id: voucher.id,
-          code: voucher.code,
-          description: voucher.description,
-          tone: voucher.tone,
-          expiryLabel: snapshot.promotions.expiryLabel,
-          discountType: voucher.discountType,
-          discountValue: voucher.discountValue,
-          minOrderTotal: voucher.minOrderTotal,
-          maxDiscount: voucher.maxDiscount ?? null,
-          expiresAt: voucher.expiresAt,
-          isActive: voucher.isActive,
-          memberOnly: voucher.memberOnly,
-          sortOrder: idx,
-        })
-        .onConflictDoUpdate({
-          target: promotionsTable.id,
-          set: {
-            description: voucher.description,
-            tone: voucher.tone,
-            expiryLabel: snapshot.promotions.expiryLabel,
-            discountType: voucher.discountType,
-            discountValue: voucher.discountValue,
-            minOrderTotal: voucher.minOrderTotal,
-            maxDiscount: voucher.maxDiscount ?? null,
-            expiresAt: voucher.expiresAt,
-            isActive: voucher.isActive,
-            memberOnly: voucher.memberOnly,
-            sortOrder: idx,
-          },
-        });
-    }
+    await seedPromotionsAndCampaigns(tx);
 
     await tx
       .insert(testimonialsTable)

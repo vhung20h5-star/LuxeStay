@@ -2,6 +2,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import type {
   AmenityCatalogItem,
   CatalogSnapshot,
+  PromotionVoucher,
   Property,
   PropertyAmenityOverride,
   PropertyReview,
@@ -25,6 +26,36 @@ export type PropertyRow = typeof propertiesTable.$inferSelect;
 export type PropertyAmenityRow = typeof propertyAmenitiesTable.$inferSelect;
 export type ReviewRow = typeof reviewsTable.$inferSelect;
 export type AmenityCatalogRow = typeof amenityCatalogTable.$inferSelect;
+export type PromotionVoucherRow = typeof promotionsTable.$inferSelect;
+
+export function mapPromotionVoucherRowToDomain(row: PromotionVoucherRow): PromotionVoucher {
+  return {
+    id: row.id,
+    code: row.code,
+    description: row.description,
+    tone: row.tone,
+    discountType: row.discountType,
+    discountValue: row.discountValue,
+    minOrderTotal: row.minOrderTotal,
+    expiresAt: row.expiresAt,
+    isActive: row.isActive,
+    memberOnly: row.memberOnly,
+    audience: row.audience,
+    newUserOnly: row.newUserOnly,
+    ...(row.maxDiscount !== null ? { maxDiscount: row.maxDiscount } : {}),
+    ...(row.title !== null ? { title: row.title } : {}),
+    ...(row.subtitle !== null ? { subtitle: row.subtitle } : {}),
+    ...(row.badge !== null ? { badge: row.badge } : {}),
+    ...(row.iconName !== null ? { iconName: row.iconName } : {}),
+    ...(row.applicablePropertyTypes !== null
+      ? { applicablePropertyTypes: row.applicablePropertyTypes }
+      : {}),
+    ...(row.applicableCategories !== null
+      ? { applicableCategories: row.applicableCategories }
+      : {}),
+    ...(row.terms !== null ? { terms: row.terms } : {}),
+  };
+}
 
 export function mapPropertyAmenityRow(row: PropertyAmenityRow): PropertyAmenityOverride {
   const override: PropertyAmenityOverride = {
@@ -219,19 +250,7 @@ export function createPostgresCatalogRepository(db: LuxeStayDb): ApiCatalogRepos
         amenityCatalog,
         promotions: {
           expiryLabel: promotionRows[0]?.expiryLabel ?? "",
-          vouchers: promotionRows.map((row) => ({
-            id: row.id,
-            code: row.code,
-            description: row.description,
-            tone: row.tone,
-            discountType: row.discountType,
-            discountValue: row.discountValue,
-            minOrderTotal: row.minOrderTotal,
-            maxDiscount: row.maxDiscount ?? undefined,
-            expiresAt: row.expiresAt,
-            isActive: row.isActive,
-            memberOnly: row.memberOnly,
-          })),
+          vouchers: promotionRows.map(mapPromotionVoucherRowToDomain),
         },
         testimonials: testimonialRows.map((row) => ({
           id: row.id,

@@ -134,4 +134,48 @@ test("locale translation and multi-currency VND/USD conversion format determinis
     translate("vi", "catalog.resultsCount", { count: 12 }),
     "Tìm thấy 12 chỗ nghỉ phù hợp"
   );
+
+  const viDealsTitle = translate("vi", "deals.newUserTitle");
+  const enDealsTitle = translate("en", "deals.newUserTitle");
+  assert.ok(viDealsTitle.length > 0);
+  assert.ok(enDealsTitle.length > 0);
+  assert.notEqual(viDealsTitle, enDealsTitle);
+
+  const dealsKeys = [
+    "deals.newUserTitle",
+    "deals.newUserSubtitle",
+    "deals.ongoingTitle",
+    "deals.viewAll",
+    "deals.copy",
+    "deals.copied",
+    "deals.viewDeal",
+    "deals.termsApply",
+    "deals.endsIn",
+    "deals.days",
+    "deals.hours",
+    "deals.minutes",
+    "deals.seconds",
+    "deals.modalTitle",
+    "deals.minOrder",
+    "deals.expiry",
+    "deals.scope",
+    "deals.conditions",
+    "deals.filterAll",
+    "deals.filterNewUser",
+    "deals.filterMember",
+    "deals.backToDeals",
+    "deals.matchingStays",
+    "deals.matchingStaysSubtitle",
+    "deals.autoApplySelected",
+    "deals.selectToApply",
+    "deals.noMatchingStays",
+    "deals.featuredCode",
+  ] as const;
+
+  for (const key of dealsKeys) {
+    const viText = translate("vi", key);
+    const enText = translate("en", key);
+    assert.ok(viText.trim().length > 0 && viText !== key, `Missing vi translation for ${key}`);
+    assert.ok(enText.trim().length > 0 && enText !== key, `Missing en translation for ${key}`);
+  }
 });

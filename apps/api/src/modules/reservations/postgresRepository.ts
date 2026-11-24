@@ -168,6 +168,27 @@ function buildReservationInsertValues(bookingId: string, booking: BookingDetails
   };
 }
 
+async function queryHasSuccessfulBookingByUserId(
+  executor: Pick<LuxeStayDb, "select">,
+  userId: string | undefined
+): Promise<boolean> {
+  const normalized = userId?.trim();
+  if (!normalized) return false;
+
+  const rows = await executor
+    .select({ bookingId: reservationsTable.bookingId })
+    .from(reservationsTable)
+    .where(
+      and(
+        eq(reservationsTable.userId, normalized),
+        inArray(reservationsTable.status, ["confirmed", "completed"])
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
 export function createPostgresReservationRepository(deps: {
   db: LuxeStayDb;
   catalogRepository: ApiCatalogRepository;
@@ -276,7 +297,7 @@ export function createPostgresReservationRepository(deps: {
       return Object.freeze(rows.map(mapActiveRowToOccupancy));
     },
 
-    async createWithPropertyLock(propertyId, prepare) {
+    async createWithPropertyLock(propertyId, prepare, lockOptions) {
       const normalized = propertyId.trim();
       return db.transaction(async (tx) => {
         // Acquire row-level exclusive lock on property row to prevent concurrent double-booking
@@ -286,7 +307,7 @@ export function createPostgresReservationRepository(deps: {
           .where(eq(propertiesTable.id, normalized))
           .for("update");
 
-        const [overrideRows, activeRows] = await Promise.all([
+        const [overrideRows, activeRows, hasPriorSuccessful] = await Promise.all([
           tx
             .select()
             .from(propertyAvailabilityTable)
@@ -310,11 +331,15 @@ export function createPostgresReservationRepository(deps: {
                 inArray(reservationsTable.status, ["confirmed", "pending_payment"])
               )
             ),
+          lockOptions?.userId
+            ? queryHasSuccessfulBookingByUserId(tx, lockOptions.userId)
+            : Promise.resolve(false),
         ]);
 
         const prepared = prepare({
           existingReservations: activeRows.map(mapActiveRowToOccupancy),
           dailyOverrides: overrideRows.map(mapAvailabilityRowToDomain),
+          hasPriorSuccessfulBookings: hasPriorSuccessful,
         });
 
         if (!prepared.ok) {
@@ -393,6 +418,10 @@ export function createPostgresReservationRepository(deps: {
         .orderBy(desc(reservationsTable.createdAt));
 
       return hydrateRows(rows);
+    },
+
+    async hasSuccessfulBookingByUserId(userId: string): Promise<boolean> {
+      return queryHasSuccessfulBookingByUserId(db, userId);
     },
 
     async update(booking: BookingDetails): Promise<BookingDetails> {

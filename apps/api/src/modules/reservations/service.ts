@@ -82,19 +82,25 @@ export function createReservationService(deps: {
 
   return {
     async createReservation(intent, context) {
+      const authUser = context?.authUser ?? null;
       const snapshot = await deps.catalogRepository.getSnapshot();
       const propertyId = intent.propertyId?.trim() ?? "";
+      const hasPromoCode = Boolean(intent.promoCode?.trim());
+      const promoCheckUserId = authUser && hasPromoCode ? authUser.id : undefined;
       const bookingId = `LX-${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-      const authUser = context?.authUser ?? null;
 
       // Fast path when propertyId is missing or non-existent (no lock needed)
       if (!propertyId || !snapshot.properties.some((p) => p.id === propertyId)) {
+        const fastPathPriorSuccessful = promoCheckUserId
+          ? await deps.reservationRepository.hasSuccessfulBookingByUserId(promoCheckUserId)
+          : undefined;
         const result = processServerReservationIntent(intent, snapshot.properties, {
           bookingId,
           createdAt: new Date().toISOString(),
           vouchers: snapshot.promotions.vouchers,
           userId: authUser?.id,
           isAuthenticated: Boolean(authUser),
+          hasPriorSuccessfulBookings: fastPathPriorSuccessful,
         });
         if (!result.ok) {
           return {
@@ -108,7 +114,7 @@ export function createReservationService(deps: {
 
       const lockedResult = await deps.reservationRepository.createWithPropertyLock(
         propertyId,
-        ({ existingReservations, dailyOverrides }) => {
+        ({ existingReservations, dailyOverrides, hasPriorSuccessfulBookings }) => {
           const now = new Date();
           const result = processServerReservationIntent(intent, snapshot.properties, {
             bookingId,
@@ -117,6 +123,7 @@ export function createReservationService(deps: {
             vouchers: snapshot.promotions.vouchers,
             userId: authUser?.id,
             isAuthenticated: Boolean(authUser),
+            hasPriorSuccessfulBookings,
             dailyOverrides,
             existingReservations,
             enforceAvailability: true,
@@ -135,7 +142,8 @@ export function createReservationService(deps: {
             ok: true,
             booking: result.booking,
           };
-        }
+        },
+        { userId: promoCheckUserId }
       );
 
       if (!lockedResult.ok) {

@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { BookingQuote } from "@luxestay/contracts";
+import type { BookingQuote, PromotionVoucher, Property } from "@luxestay/contracts";
 import {
   describeSelectedAmenity,
   evaluatePromotionVoucher,
@@ -26,14 +26,69 @@ import { useBookingSession, useCatalog } from "@/features/booking/BookingContext
 import { SeasonalPricingSummary } from "@/features/property/SeasonalPricingSummary";
 import { useOverlayLayer } from "@/shared/overlay/OverlayContext";
 import { HttpApiError, isAbortError } from "@/shared/ports/errors";
+import type { PaymentGatewayPort } from "@/shared/ports/types";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
+
+async function validateCheckoutVoucher(params: {
+  code: string;
+  subtotal: number;
+  vouchers: readonly PromotionVoucher[];
+  isAuthenticated: boolean;
+  property: Property;
+  paymentGateway: PaymentGatewayPort;
+  signal?: AbortSignal;
+  onServerValidateStart?: () => void;
+}): Promise<
+  | { ok: true; code: string; message: string }
+  | { ok: false; source: "local" | "server" | "error"; message: string }
+> {
+  const localEval = evaluatePromotionVoucher(
+    params.code,
+    params.subtotal,
+    params.vouchers,
+    {
+      isAuthenticated: params.isAuthenticated,
+      property: params.property,
+    }
+  );
+  if (!localEval.ok) {
+    return { ok: false, source: "local", message: localEval.message };
+  }
+
+  params.onServerValidateStart?.();
+  try {
+    const serverRes = await params.paymentGateway.validateVoucher(
+      {
+        code: params.code,
+        subtotal: params.subtotal,
+        propertyId: params.property.id,
+      },
+      { signal: params.signal }
+    );
+    if (!serverRes.valid) {
+      return { ok: false, source: "server", message: serverRes.message };
+    }
+    return { ok: true, code: serverRes.code, message: serverRes.message };
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    return {
+      ok: false,
+      source: "error",
+      message:
+        err instanceof HttpApiError
+          ? err.message
+          : "Không thể kiểm tra mã giảm giá lúc này.",
+    };
+  }
+}
 
 function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
   const router = useRouter();
   const { user } = useAuth();
   const { promotions } = useCatalog();
   const {
+    bookingSession,
     setCheckoutProperty,
     removeBookingAmenity,
     setBookingPromoCode,
@@ -45,6 +100,8 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const voucherAbortRef = useRef<AbortController | null>(null);
+  const initialPromoHandledRef = useRef(false);
 
   // Form state (auto-populated from logged-in account when available)
   const [fullName, setFullName] = useState(user?.fullName ?? "");
@@ -56,7 +113,9 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
   const [paymentMethod, setPaymentMethod] = useState<"momo" | "vnpay" | "card" | "hotel">("vnpay");
 
   // Voucher input state
-  const [voucherInput, setVoucherInput] = useState(pricing.appliedPromoCode ?? "");
+  const [voucherInput, setVoucherInput] = useState(
+    bookingSession.promoCode ?? pricing.appliedPromoCode ?? ""
+  );
   const [voucherFeedback, setVoucherFeedback] = useState<{
     tone: "success" | "error";
     message: string;
@@ -76,12 +135,94 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      voucherAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (initialPromoHandledRef.current) return;
+    const prefilledCode = bookingSession.promoCode?.trim().toUpperCase();
+    if (!prefilledCode) {
+      initialPromoHandledRef.current = true;
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    voucherAbortRef.current?.abort();
+    voucherAbortRef.current = controller;
+
+    void Promise.resolve()
+      .then(async () => {
+        if (cancelled || controller.signal.aborted) return;
+
+        const result = await validateCheckoutVoucher({
+          code: prefilledCode,
+          subtotal,
+          vouchers: promotions.vouchers,
+          isAuthenticated: Boolean(user),
+          property,
+          paymentGateway,
+          signal: controller.signal,
+          onServerValidateStart: () => {
+            if (!cancelled && !controller.signal.aborted) {
+              setIsValidatingVoucher(true);
+            }
+          },
+        });
+        if (cancelled || controller.signal.aborted) return;
+
+        initialPromoHandledRef.current = true;
+        if (!result.ok) {
+          if (result.source !== "local") {
+            setBookingPromoCode(null);
+          }
+          setVoucherFeedback({ tone: "error", message: result.message });
+          return;
+        }
+
+        if (result.code !== prefilledCode) {
+          setBookingPromoCode(result.code);
+        }
+        setVoucherFeedback({ tone: "success", message: result.message });
+      })
+      .catch((err: unknown) => {
+        if (cancelled || controller.signal.aborted || isAbortError(err)) return;
+        initialPromoHandledRef.current = true;
+        setBookingPromoCode(null);
+        setVoucherFeedback({
+          tone: "error",
+          message:
+            err instanceof HttpApiError
+              ? err.message
+              : "Không thể kiểm tra mã giảm giá lúc này.",
+        });
+      })
+      .finally(() => {
+        if (!cancelled && !controller.signal.aborted) {
+          setIsValidatingVoucher(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    bookingSession.promoCode,
+    paymentGateway,
+    promotions.vouchers,
+    property,
+    setBookingPromoCode,
+    subtotal,
+    user,
+  ]);
 
   const handleClose = () => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    voucherAbortRef.current?.abort();
+    voucherAbortRef.current = null;
     setIsSubmitting(false);
     setCheckoutProperty(null);
   };
@@ -94,36 +235,43 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
   });
 
   const handleApplyVoucher = async (rawCode?: string) => {
+    initialPromoHandledRef.current = true;
     const codeToTry = (rawCode ?? voucherInput).trim().toUpperCase();
     setVoucherInput(codeToTry);
+    voucherAbortRef.current?.abort();
     if (!codeToTry) {
+      voucherAbortRef.current = null;
+      setIsValidatingVoucher(false);
       setBookingPromoCode(null);
       setVoucherFeedback(null);
       return;
     }
 
+    const controller = new AbortController();
+    voucherAbortRef.current = controller;
     setIsValidatingVoucher(true);
     try {
-      // Quick client validation first, then verify against server endpoint
-      const localEval = evaluatePromotionVoucher(codeToTry, subtotal, promotions.vouchers, {
+      const result = await validateCheckoutVoucher({
+        code: codeToTry,
+        subtotal,
+        vouchers: promotions.vouchers,
         isAuthenticated: Boolean(user),
+        property,
+        paymentGateway,
+        signal: controller.signal,
       });
-      if (!localEval.ok) {
+      if (controller.signal.aborted) return;
+
+      if (!result.ok) {
         setBookingPromoCode(null);
-        setVoucherFeedback({ tone: "error", message: localEval.message });
+        setVoucherFeedback({ tone: "error", message: result.message });
         return;
       }
 
-      const serverRes = await paymentGateway.validateVoucher({ code: codeToTry, subtotal });
-      if (!serverRes.valid) {
-        setBookingPromoCode(null);
-        setVoucherFeedback({ tone: "error", message: serverRes.message });
-        return;
-      }
-
-      setBookingPromoCode(serverRes.code);
-      setVoucherFeedback({ tone: "success", message: serverRes.message });
+      setBookingPromoCode(result.code);
+      setVoucherFeedback({ tone: "success", message: result.message });
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted) return;
       setBookingPromoCode(null);
       setVoucherFeedback({
         tone: "error",
@@ -131,11 +279,17 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
           err instanceof HttpApiError ? err.message : "Không thể kiểm tra mã giảm giá lúc này.",
       });
     } finally {
-      setIsValidatingVoucher(false);
+      if (!controller.signal.aborted) {
+        setIsValidatingVoucher(false);
+      }
     }
   };
 
   const handleRemoveVoucher = () => {
+    initialPromoHandledRef.current = true;
+    voucherAbortRef.current?.abort();
+    voucherAbortRef.current = null;
+    setIsValidatingVoucher(false);
     setVoucherInput("");
     setBookingPromoCode(null);
     setVoucherFeedback(null);
@@ -158,7 +312,7 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
           email,
           note,
           paymentMethod,
-          promoCode: pricing.appliedPromoCode,
+          promoCode: pricing.appliedPromoCode ?? "",
         },
         controller.signal
       );

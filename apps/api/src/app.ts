@@ -22,6 +22,12 @@ import {
 import { createCatalogRoutes } from "./modules/catalog/routes.js";
 import { createCatalogService } from "./modules/catalog/service.js";
 import {
+  createInMemoryDealsRepository,
+  type ApiDealsRepository,
+} from "./modules/deals/repository.js";
+import { createDealsRoutes } from "./modules/deals/routes.js";
+import { createDealsService } from "./modules/deals/service.js";
+import {
   createInMemoryFavoritesRepository,
   type ApiFavoritesRepository,
 } from "./modules/favorites/repository.js";
@@ -63,6 +69,7 @@ export interface CreateApiAppOptions {
   paymentSandboxEnabled?: boolean;
   notificationWebhookUrl?: string;
   catalogRepository?: ApiCatalogRepository;
+  dealsRepository?: ApiDealsRepository;
   availabilityRepository?: ApiAvailabilityRepository;
   reservationRepository?: ApiReservationRepository;
   reviewRepository?: ApiReviewRepository;
@@ -81,6 +88,7 @@ export function createApiApp(options?: CreateApiAppOptions) {
   const paymentSandboxEnabled = options?.paymentSandboxEnabled ?? nodeEnv !== "production";
 
   const catalogRepository = options?.catalogRepository ?? createSeedCatalogRepository();
+  const dealsRepository = options?.dealsRepository ?? createInMemoryDealsRepository();
   const availabilityRepository =
     options?.availabilityRepository ?? createInMemoryAvailabilityRepository();
   const reservationRepository =
@@ -96,6 +104,10 @@ export function createApiApp(options?: CreateApiAppOptions) {
     options?.notificationRepository ?? createInMemoryNotificationRepository();
 
   const catalogService = createCatalogService(catalogRepository);
+  const dealsService = createDealsService({
+    dealsRepository,
+    catalogRepository,
+  });
   const availabilityService = createAvailabilityService({
     catalogRepository,
     availabilityRepository,
@@ -182,7 +194,8 @@ export function createApiApp(options?: CreateApiAppOptions) {
   app.use("*", createAuthSessionMiddleware(authService));
 
   app.route("/", createHealthRoutes());
-  app.route("/", createCatalogRoutes(catalogService));
+  app.route("/", createCatalogRoutes(catalogService, { reservationRepository }));
+  app.route("/", createDealsRoutes(dealsService));
   app.route("/", createAvailabilityRoutes(availabilityService));
   app.route("/", createReviewRoutes(reviewService));
   app.route("/", createHostRoutes(hostService));
@@ -205,6 +218,7 @@ export function createApiApp(options?: CreateApiAppOptions) {
     webhookSecret: paymentWebhookSecret,
     repositories: {
       catalog: catalogRepository,
+      deals: dealsRepository,
       availability: availabilityRepository,
       reservations: reservationRepository,
       reviews: reviewRepository,

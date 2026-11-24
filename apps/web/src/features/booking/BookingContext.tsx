@@ -122,8 +122,10 @@ export interface BookingSessionContextValue {
   bookingQuote: BookingQuote | null;
   selectedProperty: Property | null;
   setSelectedProperty: (property: Property | null) => void;
+  openPropertyWithPromo: (property: Property, promoCode?: string | null) => void;
   checkoutProperty: Property | null;
   setCheckoutProperty: (property: Property | null) => void;
+  startCheckoutWithPromo: (property: Property, promoCode?: string | null) => void;
   bookingSuccess: BookingDetails | null;
   setBookingSuccess: (details: BookingDetails | null) => void;
   proceedToCheckout: () => void;
@@ -504,12 +506,30 @@ export function BookingProvider({
     [searchCriteria]
   );
 
+  const openPropertyWithPromo = useCallback(
+    (property: Property, promoCode?: string | null) => {
+      setBookingSession((prev) =>
+        openPropertySession(prev, property, searchCriteria, undefined, promoCode)
+      );
+    },
+    [searchCriteria]
+  );
+
   const setCheckoutProperty = useCallback(
     (property: Property | null) => {
       setBookingSession((prev) =>
         property
           ? startCheckoutSession(prev, property, searchCriteria)
           : closeCheckoutSession(prev)
+      );
+    },
+    [searchCriteria]
+  );
+
+  const startCheckoutWithPromo = useCallback(
+    (property: Property, promoCode?: string | null) => {
+      setBookingSession((prev) =>
+        startCheckoutSession(prev, property, searchCriteria, undefined, promoCode)
       );
     },
     [searchCriteria]
@@ -651,8 +671,10 @@ export function BookingProvider({
       bookingQuote,
       selectedProperty,
       setSelectedProperty,
+      openPropertyWithPromo,
       checkoutProperty,
       setCheckoutProperty,
+      startCheckoutWithPromo,
       bookingSuccess,
       setBookingSuccess,
       proceedToCheckout,
@@ -677,8 +699,10 @@ export function BookingProvider({
       bookingQuote,
       selectedProperty,
       setSelectedProperty,
+      openPropertyWithPromo,
       checkoutProperty,
       setCheckoutProperty,
+      startCheckoutWithPromo,
       bookingSuccess,
       setBookingSuccess,
       proceedToCheckout,
