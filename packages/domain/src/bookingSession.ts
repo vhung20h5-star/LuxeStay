@@ -228,6 +228,8 @@ function calculateBookingPricing(
     vouchers?: readonly PromotionVoucher[];
     now?: Date;
     isAuthenticated?: boolean;
+    hasPriorSuccessfulBookings?: boolean;
+    property?: Pick<Property, "propertyType" | "category">;
   }
 ): BookingQuote["pricing"] {
   const { basePrice, nightsTotal, seasonalSurcharge, nightlyBreakdown } = stayPricing;
@@ -249,6 +251,8 @@ function calculateBookingPricing(
       {
         now: promo.now,
         isAuthenticated: promo.isAuthenticated,
+        hasPriorSuccessfulBookings: promo.hasPriorSuccessfulBookings,
+        property: promo.property,
       }
     );
     if (evalResult.ok) {
@@ -279,7 +283,8 @@ function seedSessionForProperty(
   property: Property,
   step: "previewing" | "checking-out",
   searchCriteria?: SearchCriteria,
-  fallbackBaseDate: Date = new Date()
+  fallbackBaseDate: Date = new Date(),
+  initialPromoCode?: string | null
 ): BookingSessionState {
   const defaultYear = fallbackBaseDate.getFullYear();
   const parsedIn = parseDateInput(searchCriteria?.checkIn, defaultYear);
@@ -288,6 +293,7 @@ function seedSessionForProperty(
   const seededAdults = searchCriteria?.guests.adults ?? 2;
   const seededChildren = Math.max(0, Math.floor(searchCriteria?.guests.children ?? 0));
   const seededRooms = Math.max(1, Math.floor(searchCriteria?.guests.rooms ?? 1));
+  const normalizedPromo = normalizeVoucherCode(initialPromoCode);
 
   return {
     step,
@@ -301,7 +307,7 @@ function seedSessionForProperty(
       rooms: seededRooms,
     },
     selectedAmenityIds: [],
-    promoCode: undefined,
+    promoCode: normalizedPromo || undefined,
     confirmedBooking: null,
   };
 }
@@ -328,11 +334,13 @@ export function openPropertySession(
   current: BookingSessionState,
   property: Property,
   searchCriteria?: SearchCriteria,
-  fallbackBaseDate: Date = new Date()
+  fallbackBaseDate: Date = new Date(),
+  initialPromoCode?: string | null
 ): BookingSessionState {
   const incomingSeedKey = buildSearchSeedKey(searchCriteria);
   const sameProperty = current.property?.id === property.id;
   const searchUnchanged = current.searchSeedKey === incomingSeedKey;
+  const normalizedInitialPromo = normalizeVoucherCode(initialPromoCode);
 
   if (sameProperty && searchUnchanged) {
     return {
@@ -344,23 +352,32 @@ export function openPropertySession(
         ...current.guests,
         adults: clampAdults(current.guests.adults, property.maxGuests),
       },
+      ...(normalizedInitialPromo ? { promoCode: normalizedInitialPromo } : {}),
       confirmedBooking: null,
     };
   }
 
-  return seedSessionForProperty(property, "previewing", searchCriteria, fallbackBaseDate);
+  return seedSessionForProperty(
+    property,
+    "previewing",
+    searchCriteria,
+    fallbackBaseDate,
+    initialPromoCode
+  );
 }
 
 export function startCheckoutSession(
   current: BookingSessionState,
   property: Property,
   searchCriteria?: SearchCriteria,
-  fallbackBaseDate: Date = new Date()
+  fallbackBaseDate: Date = new Date(),
+  initialPromoCode?: string | null
 ): BookingSessionState {
   const incomingSeedKey = buildSearchSeedKey(searchCriteria);
   const sameProperty = current.property?.id === property.id;
   const preserveFromActiveFlow =
     current.step === "previewing" || current.searchSeedKey === incomingSeedKey;
+  const normalizedInitialPromo = normalizeVoucherCode(initialPromoCode);
 
   if (sameProperty && preserveFromActiveFlow) {
     return {
@@ -372,11 +389,18 @@ export function startCheckoutSession(
         ...current.guests,
         adults: clampAdults(current.guests.adults, property.maxGuests),
       },
+      ...(normalizedInitialPromo ? { promoCode: normalizedInitialPromo } : {}),
       confirmedBooking: null,
     };
   }
 
-  return seedSessionForProperty(property, "checking-out", searchCriteria, fallbackBaseDate);
+  return seedSessionForProperty(
+    property,
+    "checking-out",
+    searchCriteria,
+    fallbackBaseDate,
+    initialPromoCode
+  );
 }
 
 export function closePreviewSession(current: BookingSessionState): BookingSessionState {
@@ -499,6 +523,7 @@ export interface DeriveBookingQuoteOptions {
   vouchers?: readonly PromotionVoucher[];
   now?: Date;
   isAuthenticated?: boolean;
+  hasPriorSuccessfulBookings?: boolean;
   dailyOverrides?: readonly PropertyAvailabilityOverride[];
 }
 
@@ -543,6 +568,8 @@ export function deriveBookingQuote(
       vouchers: options?.vouchers,
       now: evalNow,
       isAuthenticated: options?.isAuthenticated,
+      hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
+      property,
     }
   );
 
@@ -618,6 +645,7 @@ export function processServerReservationIntent(
     vouchers?: readonly PromotionVoucher[];
     userId?: string;
     isAuthenticated?: boolean;
+    hasPriorSuccessfulBookings?: boolean;
     now?: Date;
     paymentExpiresInMinutes?: number;
     dailyOverrides?: readonly PropertyAvailabilityOverride[];
@@ -744,6 +772,8 @@ export function processServerReservationIntent(
       {
         now: evalNow,
         isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
+        hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
+        property,
       }
     );
     if (!voucherEval.ok) {
@@ -759,6 +789,7 @@ export function processServerReservationIntent(
     vouchers: options?.vouchers,
     now: evalNow,
     isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
+    hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
     dailyOverrides: options?.dailyOverrides,
   });
   if (!serverQuote) {
@@ -1060,6 +1091,7 @@ export async function submitBookingSession(
     fallbackBaseDate?: Date;
     vouchers?: readonly PromotionVoucher[];
     isAuthenticated?: boolean;
+    hasPriorSuccessfulBookings?: boolean;
     dailyOverrides?: readonly PropertyAvailabilityOverride[];
   }
 ): Promise<
@@ -1084,6 +1116,7 @@ export async function submitBookingSession(
     {
       vouchers: options?.vouchers,
       isAuthenticated: options?.isAuthenticated,
+      hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
       dailyOverrides: options?.dailyOverrides,
     }
   );

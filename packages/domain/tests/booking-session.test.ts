@@ -697,3 +697,82 @@ test("evaluatePaymentWebhookTransition enforces pending_payment state transition
   assert.equal(expired.ok, true);
   if (expired.ok) assert.equal(expired.nextStatus, "expired");
 });
+
+test("openPropertySession and startCheckoutSession carry initialPromoCode and processServerReservationIntent enforces property and newUserOnly eligibility", () => {
+  const stay01 = PROPERTIES.find((p) => p.id === "stay-01")!;
+
+  const previewWithPromo = openPropertySession(
+    createIdleBookingSession(),
+    stay01,
+    undefined,
+    baseDate,
+    " welcome150 "
+  );
+  assert.equal(previewWithPromo.promoCode, "WELCOME150");
+
+  const checkoutWithPromo = startCheckoutSession(
+    previewWithPromo,
+    stay01,
+    undefined,
+    baseDate
+  );
+  assert.equal(checkoutWithPromo.promoCode, "WELCOME150");
+
+  const quoteAllowed = deriveBookingQuote(checkoutWithPromo, baseDate, {
+    vouchers: PROMOTION_VOUCHERS,
+    now: baseDate,
+    isAuthenticated: true,
+    hasPriorSuccessfulBookings: false,
+  });
+  assert.ok(quoteAllowed);
+  assert.equal(quoteAllowed.pricing.appliedPromoCode, "WELCOME150");
+  assert.equal(quoteAllowed.pricing.discount, 150000);
+
+  const quoteRepeatBlocked = deriveBookingQuote(checkoutWithPromo, baseDate, {
+    vouchers: PROMOTION_VOUCHERS,
+    now: baseDate,
+    isAuthenticated: true,
+    hasPriorSuccessfulBookings: true,
+  });
+  assert.ok(quoteRepeatBlocked);
+  assert.equal(quoteRepeatBlocked.pricing.appliedPromoCode, undefined);
+  assert.equal(quoteRepeatBlocked.pricing.discount, 0);
+
+  const homestayOnHotel = processServerReservationIntent(
+    {
+      propertyId: "stay-03",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Test", phone: "0912345678", email: "test@luxestay.vn" },
+      paymentMethod: "vnpay",
+      promoCode: "HOMESTAY10",
+    },
+    PROPERTIES,
+    { fallbackBaseDate: baseDate, vouchers: PROMOTION_VOUCHERS }
+  );
+  assert.equal(homestayOnHotel.ok, false);
+  if (!homestayOnHotel.ok) assert.equal(homestayOnHotel.status, 400);
+
+  const welcomeRepeatBlocked = processServerReservationIntent(
+    {
+      propertyId: "stay-01",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      guestInfo: { fullName: "Khách Cũ", phone: "0912345678", email: "repeat@luxestay.vn" },
+      paymentMethod: "hotel",
+      promoCode: "WELCOME150",
+    },
+    PROPERTIES,
+    {
+      fallbackBaseDate: baseDate,
+      vouchers: PROMOTION_VOUCHERS,
+      userId: "USR-REPEAT-1",
+      isAuthenticated: true,
+      hasPriorSuccessfulBookings: true,
+    }
+  );
+  assert.equal(welcomeRepeatBlocked.ok, false);
+  if (!welcomeRepeatBlocked.ok) assert.equal(welcomeRepeatBlocked.status, 400);
+});

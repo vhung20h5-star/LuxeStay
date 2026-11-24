@@ -1,4 +1,8 @@
-import type { PromotionVoucher } from "@luxestay/contracts";
+import type { PromotionVoucher, Property } from "@luxestay/contracts";
+import {
+  isVoucherEligibleForProperty,
+  resolveVoucherScopeLabels,
+} from "./deals.js";
 import { formatVND } from "./utils.js";
 
 export type VoucherErrorReason =
@@ -7,7 +11,9 @@ export type VoucherErrorReason =
   | "INACTIVE"
   | "EXPIRED"
   | "MIN_ORDER"
-  | "MEMBER_ONLY";
+  | "MEMBER_ONLY"
+  | "NEW_USER_ONLY"
+  | "PROPERTY_NOT_ELIGIBLE";
 
 export type VoucherEvaluationResult =
   | {
@@ -29,6 +35,23 @@ export function normalizeVoucherCode(code: string | undefined | null): string {
   return code.trim().toUpperCase();
 }
 
+function buildPropertyEligibilityMessage(
+  code: string,
+  voucher: PromotionVoucher
+): string {
+  const { propertyTypeLabels, categoryLabels } = resolveVoucherScopeLabels(voucher);
+  if (propertyTypeLabels.length > 0 && categoryLabels.length > 0) {
+    return `Mã "${code}" chỉ áp dụng cho loại hình ${propertyTypeLabels.join(", ")} thuộc nhóm ${categoryLabels.join(", ")}.`;
+  }
+  if (propertyTypeLabels.length > 0) {
+    return `Mã "${code}" chỉ áp dụng cho chỗ nghỉ thuộc loại hình: ${propertyTypeLabels.join(", ")}.`;
+  }
+  if (categoryLabels.length > 0) {
+    return `Mã "${code}" chỉ áp dụng cho chỗ nghỉ thuộc danh mục: ${categoryLabels.join(", ")}.`;
+  }
+  return `Mã "${code}" không áp dụng cho chỗ nghỉ này.`;
+}
+
 export function evaluatePromotionVoucher(
   rawCode: string | undefined | null,
   subtotal: number,
@@ -36,6 +59,8 @@ export function evaluatePromotionVoucher(
   options?: {
     now?: Date;
     isAuthenticated?: boolean;
+    hasPriorSuccessfulBookings?: boolean;
+    property?: Pick<Property, "propertyType" | "category">;
   }
 ): VoucherEvaluationResult {
   const code = normalizeVoucherCode(rawCode);
@@ -84,6 +109,28 @@ export function evaluatePromotionVoucher(
       code,
       reason: "MEMBER_ONLY",
       message: `Mã "${code}" chỉ áp dụng cho thành viên đã đăng nhập LuxeStay.`,
+    };
+  }
+
+  if (
+    voucher.newUserOnly &&
+    options?.isAuthenticated &&
+    options?.hasPriorSuccessfulBookings === true
+  ) {
+    return {
+      ok: false,
+      code,
+      reason: "NEW_USER_ONLY",
+      message: `Mã "${code}" chỉ áp dụng cho đơn đặt phòng đầu tiên của bạn trên LuxeStay.`,
+    };
+  }
+
+  if (options?.property && !isVoucherEligibleForProperty(voucher, options.property)) {
+    return {
+      ok: false,
+      code,
+      reason: "PROPERTY_NOT_ELIGIBLE",
+      message: buildPropertyEligibilityMessage(code, voucher),
     };
   }
 
