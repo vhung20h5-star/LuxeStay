@@ -25,6 +25,7 @@ import { PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
 import { resolveDatabaseConfig } from "../dist/db/client.js";
+import { prepareDatabaseIfConfigured } from "../dist/db/vercelPrepare.js";
 import { resetApiRuntimeForTests } from "../dist/runtime.js";
 import vercelServerApp from "../dist/server.js";
 import { mapPropertyRowToDomain } from "../dist/modules/catalog/postgresRepository.js";
@@ -1319,4 +1320,17 @@ test("Vercel Hono entrypoint (server.ts) lazily boots runtime and CORS trusts Ve
   } finally {
     await resetApiRuntimeForTests();
   }
+
+  // prepareDatabaseIfConfigured skips safely in memory mode or when URL is [SENSITIVE]
+  assert.deepEqual(
+    await prepareDatabaseIfConfigured({ STORAGE_DRIVER: "memory" }),
+    { status: "skipped" }
+  );
+  assert.deepEqual(
+    await prepareDatabaseIfConfigured({
+      STORAGE_DRIVER: "database",
+      DATABASE_URL: "[SENSITIVE]",
+    }),
+    { status: "skipped" }
+  );
 });

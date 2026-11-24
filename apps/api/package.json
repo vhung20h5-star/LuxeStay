@@ -12,7 +12,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "db:prepare": "tsx src/db/vercelPrepare.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",

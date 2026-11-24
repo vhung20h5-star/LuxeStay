@@ -52,7 +52,9 @@ File cấu hình [vercel.json](../vercel.json) ở thư mục gốc chia 1 Verce
   - Trình duyệt gọi API cùng domain với `NEXT_PUBLIC_API_BASE_URL=/` -> mọi request tới `/api/v1/*` dùng chung origin nên cookie `luxestay_session` (`HttpOnly; SameSite=Lax; Secure`) hoạt động đồng nhất trên cả Production và Preview URLs.
 - **`backend` (`apps/api`, Hono 4 trên Vercel Functions / Fluid Compute):**
   - Entrypoint: `src/server.ts` (lazy-init an toàn lúc build, tái sử dụng `pg.Pool` kết hợp `attachDatabasePool` từ `@vercel/functions`).
-  - Build: `cd ../.. && npx turbo run build --filter=@luxestay/api...`
+  - Build: `cd ../.. && node -e "require('node:fs').rmSync('apps/api/dist',{recursive:true,force:true})" && npx turbo run build --filter=@luxestay/contracts --filter=@luxestay/domain && npm run db:prepare --workspace=@luxestay/api`
+    - *Lưu ý:* Xóa `apps/api/dist` trước khi `@vercel/backends` đóng gói để Vercel luôn compile `src/server.ts` qua Rolldown sang `.mjs` (ESM sạch), không load nhầm `dist/app.js` theo chế độ CommonJS.
+    - Tự động chạy `db:prepare` (idempotent migrate + seed lần đầu nếu DB chưa có dữ liệu) ngay trong bước build của Vercel khi `STORAGE_DRIVER=database`.
   - Nhận toàn bộ traffic công khai khớp `/api/v1/(.*)` và `/health`.
 - **Database:** **Neon Serverless Postgres** (Marketplace native trên Vercel), giữ nguyên driver `pg` + `drizzle-orm/node-postgres` để hỗ trợ đầy đủ interactive transaction và khóa hàng `SELECT ... FOR UPDATE` chống đặt trùng phòng (Phase 3A).
 
@@ -97,26 +99,14 @@ Vào **Project Settings -> Environment Variables** (áp dụng cho cả **Produc
 > node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 > ```
 
-### Bước 4: Chạy Migration & Seed vào Neon Database (1 lần đầu)
-Từ thư mục gốc repo trên máy local (sau khi đã `npx vercel link`):
+### Bước 4: Migration & Seed vào Neon Database
+- **Tự động khi deploy Vercel:** `vercel.json` đã gắn `npm run db:prepare --workspace=@luxestay/api` trong `buildCommand` của `backend`. Khi Vercel build với `STORAGE_DRIVER=database`, các biến Neon Secret (`DATABASE_URL_UNPOOLED`, `DATABASE_URL`) được inject sẵn trong build container để tự động chạy Drizzle migrations (`0000`–`0003`) và seed dữ liệu mẫu **1 lần đầu** khi bảng `properties` chưa có bản ghi (an toàn 100%, không ghi đè dữ liệu Host đã chỉnh sửa về sau).
+- **Hoặc chạy thủ công từ máy local:** *(Lưu ý: Các biến Neon do Marketplace tạo có kiểu **Secret/Sensitive**, nên `vercel env pull` sẽ ghi `[SENSITIVE]` thay vì chuỗi thật. Hãy vào Vercel Project -> **Storage** -> Neon DB -> **Open in Neon Console / Show secret** để copy `DATABASE_URL_UNPOOLED`)*:
 
 ```powershell
-# 1. Kéo biến môi trường Production (chứa DATABASE_URL & DATABASE_URL_UNPOOLED) ra file tạm (.gitignore đã loại trừ)
-npx vercel env pull .env.vercel.local --environment=production
-
-# 2. Nạp biến vào phiên PowerShell hiện tại và chạy migration + seed (idempotent)
-Get-Content .env.vercel.local | ForEach-Object {
-  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
-    $name = $matches[1].Trim()
-    $val = $matches[2].Trim().Trim('"')
-    Set-Item -Path "env:$name" -Value $val
-  }
-}
+$env:DATABASE_URL_UNPOOLED="postgresql://<user>:<password>@<ep-host>.neon.tech/neondb?sslmode=require"
 npm run db:migrate
 npm run db:seed
-
-# 3. Xóa file tạm chứa thông tin nhạy cảm sau khi seed xong
-Remove-Item .env.vercel.local
 ```
 
 > Lưu ý: [apps/api/src/db/migrate.ts](../apps/api/src/db/migrate.ts) tự động ưu tiên `DATABASE_URL_UNPOOLED` (kết nối trực tiếp của Neon) khi chạy DDL migration và fallback sang `DATABASE_URL`. Script `db:seed` hoàn toàn idempotent — tạo 12 chỗ nghỉ, 51 tiện ích, 2 voucher, 3 đánh giá mẫu và 2 tài khoản quản trị:

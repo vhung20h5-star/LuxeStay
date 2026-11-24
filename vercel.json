@@ -18,7 +18,7 @@
       "root": "apps/api",
       "framework": "hono",
       "entrypoint": "src/server.ts",
-      "buildCommand": "cd ../.. && npx turbo run build --filter=@luxestay/api..."
+      "buildCommand": "cd ../.. && node -e \"require('node:fs').rmSync('apps/api/dist',{recursive:true,force:true})\" && npx turbo run build --filter=@luxestay/contracts --filter=@luxestay/domain && npm run db:prepare --workspace=@luxestay/api"
     }
   },
   "rewrites": [
