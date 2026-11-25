@@ -23,6 +23,11 @@ export {
   PROMOTION_VOUCHERS,
 } from "./promotions.js";
 export { PROPERTIES } from "./properties.js";
+export {
+  RETIRED_SEED_CAMPAIGN_IMAGES,
+  RETIRED_SEED_DESTINATION_IMAGES,
+  RETIRED_SEED_PROPERTY_IMAGES,
+} from "./retiredImages.js";
 export { TESTIMONIALS } from "./testimonials.js";
 
 export const SEED_CATALOG_SNAPSHOT: CatalogSnapshot = Object.freeze({

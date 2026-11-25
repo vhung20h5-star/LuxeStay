@@ -1,13 +1,13 @@
 # Engineering, Maintenance & Feature Expansion Plan — LuxeStay (`travel-service`)
 
-- **Phiên bản kế hoạch:** 2.4 (Phase 3 Completed — Baseline v0.6.0)
-- **Ngày cập nhật:** 2026-11-24
-- **Trạng thái:** All Planned Phases (0–3) Completed ✅
+- **Phiên bản kế hoạch:** 3.0 (Phase 4A–4C Completed · Phase 5 Planned)
+- **Ngày cập nhật:** 2026-11-25
+- **Trạng thái:** Phase 0–4C Completed ✅ | Phase 5 Planned 📋
 - **Tài liệu liên quan:** [PRD.md](./PRD.md) | [ARCHITECTURE.md](./ARCHITECTURE.md) | [ADR Index](./adr/README.md) | [GLOSSARY.md](../GLOSSARY.md)
 
 ---
 
-## 1. Ảnh chụp Hiện trạng (Baseline Snapshot — 2026-11-24)
+## 1. Ảnh chụp Hiện trạng (Baseline Snapshot — 2026-11-25)
 
 ### 1.1. Các mốc kiến trúc đã hoàn thành (Completed Milestones)
 | Mốc | Commit / Phiên bản | Nội dung đã hoàn tất | Hồ sơ thiết kế / ADR |
@@ -25,11 +25,14 @@
 | **M10 — Phase 2: Commercialization (Auth, Wishlist Sync, Voucher Engine & Payment Sandbox)** | `5fd6940` (`v0.4.0`) | Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie + `OAuthProviderSeam`, `AuthContext` tách riêng), đồng bộ Wishlist `user_favorites` + lịch sử `Đơn đặt phòng của tôi` (`/api/v1/reservations/my`); Dynamic Voucher Engine (`evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, ô áp mã trên Checkout); Payment Gateway Sandbox (`pending_payment → confirmed/payment_failed/expired`, `/payments/[transactionId]`, Webhook `HMAC-SHA256` + Idempotency + `notification_logs` email vé điện tử); Migration `0001` (19 bảng PostgreSQL 16), 75/75 tests + 13/13 live PostgreSQL E2E | [ADR-0009](./adr/0009-custom-session-auth-and-wishlist-sync.md), [ADR-0010](./adr/0010-payment-sandbox-webhook-and-notifications.md) |
 | **M11 — Phase 3A: Availability Engine, Anti-Double-Booking, Seasonal Pricing & Verified Reviews** | `v0.5.0` | Quản lý tồn kho theo từng đêm (`properties.inventory_count` + `property_availability`), khóa giao dịch `SELECT ... FOR UPDATE` trên PostgreSQL / per-property async mutex trên `memory` chống đặt trùng (`409 CONFLICT`), giá theo mùa (`override > lễ VN +30% > cuối tuần T6–T7 +20% > giá gốc`) + `seasonalSurcharge` & `nightlyBreakdown`; trạng thái `completed` (`POST /api/v1/reservations/:bookingId/complete` sandbox), Đánh giá xác thực (`POST /api/v1/properties/:id/reviews`, `reviews.booking_id UNIQUE`, tự tính lại `rating` & `review_count` trong DB transaction); Migration `0002` (20 bảng PostgreSQL 16), UI `AvailabilityCalendar`, `SeasonalPricingSummary`, badge xác thực & form đánh giá, 84/84 tests + 7/7 live Postgres concurrency E2E | [ADR-0011](./adr/0011-availability-engine-seasonal-pricing-and-verified-reviews.md) |
 | **M12 — Phase 3B: RBAC Host/Admin Portal, Multi-Language/Currency & Playwright E2E** | `v0.6.0` | Phân quyền RBAC (`guest \| host \| admin`) với `users.role` + `properties.owner_user_id` (Migration `0003`, seed tài khoản demo Host/Admin), toàn bộ API `/api/v1/host/*` (CRUD chỗ nghỉ có chặn xóa `409` khi có đơn hoạt động, ghi đè lịch/giá `property_availability`, danh sách đơn khách, hoàn tất lưu trú kể cả khi tắt sandbox, báo cáo doanh thu `computeHostAnalytics`); giao diện `/host` 4 tab; `LocaleContext` (`vi`/`en`, `VND`/`USD` qua `useSyncExternalStore` không đổi URL) + bộ chọn tương tác trên `Navbar`; bộ kiểm thử **Playwright Chromium E2E** (`e2e/`, `npm run test:e2e`, CI job), 90/90 unit/integration tests + 3/3 Playwright E2E + live Postgres 16 RBAC E2E | [ADR-0012](./adr/0012-rbac-host-portal-i18n-and-playwright-e2e.md) |
+| **M13 — Phase 4A: Promotions Hub, Deals Center & Campaign-Scoped Vouchers** | `69763ba` (`feat/promotions-hub-deals`) | Khu vực Ưu đãi 3 tầng kiểu Traveloka trên trang chủ (Mã người dùng mới + Hero Campaign có đếm ngược + Carousel chiến dịch), trang `/deals` & `/deals/[slug]` SSR; Migration `0004_promotions_campaigns.sql` (21 bảng PostgreSQL 16), module API độc lập `apps/api/src/modules/deals/*`, `dealsPort.ts`, quy tắc server-authoritative `NEW_USER_ONLY` & `PROPERTY_NOT_ELIGIBLE` chống lách mã đồng thời; 115/115 unit/API tests + 4/4 Playwright E2E (`E2E-4`) | — |
+| **M14 — Phase 4B: Modular Stay Catalog Expansion (+30 Stays) & Progressive Pagination** | `ae68e49` (`feat/catalog-expansion-30-stays`) | Mở rộng danh mục `12 → 42` chỗ nghỉ phủ đều 5 loại hình (`homestay`, `hotel`, `villa`, `resort`, `glamping`), 8 danh mục và 14 điểm đến (thêm Hạ Long, Huế, Quy Nhơn, Mộc Châu, Vũng Tàu, TP.HCM); tách seed modular theo loại hình (`packages/domain/src/seed/properties/*`); phân trang **Xem thêm / Thu gọn** (`12` chỗ nghỉ/lượt) trong `PropertyList.tsx`; backfill transactional idempotent `backfillMissingSeedProperties` (`ON CONFLICT DO NOTHING`) trong `vercelPrepare.ts`; 116/116 unit/API tests + 5/5 Playwright E2E (`E2E-5`) | — |
+| **M15 — Phase 4C: Authentic Stay & Destination Imagery Overhaul** | `Completed` (`feat/catalog-expansion-30-stays`) | Đại tu 100% bộ ảnh cho toàn bộ 42 chỗ nghỉ (`128` ô) + 8 Điểm đến (`8` ô) + 5 Banner chiến dịch (`5` ô) theo chiến lược Hybrid ưu tiên ảnh chụp thực tế (`138` ảnh thật Pexels/Unsplash + `3` ảnh AI local tối ưu), tiêu chuẩn chân thực 4 trục, `0%` trùng lặp toàn cục (`141/141`), sửa DB có điều kiện an toàn `repairRetiredSeedImages`, unit test `117/117` + `scripts/verify-seed-images.mjs` (`0` ảnh lỗi) | — |
 
 ### 1.2. Hiện trạng kiểm chứng kỹ thuật
-- **Automated Tests (4 tầng + Playwright E2E):** `90/90` unit/integration tests đạt (`contracts`: 7, `domain`: 49, `api`: 13, `web`: 21) qua `npm run test` + **`3/3` Playwright Chromium E2E** qua `npm run test:e2e`.
+- **Automated Tests (4 tầng + Media Integrity + Playwright E2E):** `117/117` unit/integration tests đạt (`contracts`: 8, `domain`: 56, `api`: 21, `web`: 32) qua `npm run test`, `141/141` ảnh sạch không trùng lặp qua `node scripts/verify-seed-images.mjs`, và **`5/5` Playwright Chromium E2E** (`E2E-1` đến `E2E-5`) qua `npm run test:e2e`.
 - **Lint & Typecheck:** `npm run lint` (**ESLint 9 + Import Boundaries trên cả 4 workspaces, 0 errors, 0 warnings**) và `npm run typecheck` (6/6 tasks pass).
-- **Production Build & Live PostgreSQL 16 E2E:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`, `/host`, `/payments/[transactionId]`); kiểm chứng sống trên PostgreSQL 16 Docker (`20` bảng, migrations `0000`–`0003`, 3-way concurrent double-booking `[201, 409, 409]`, đánh giá xác thực atomic, và RBAC Host/Admin CRUD + `property_availability`).
+- **Production Build & PostgreSQL 16 Schema:** `npm run build` (4/4 workspaces pass; Next.js routes: `/`, `/_not-found`, `/deals`, `/deals/[slug]`, `/stays/[id]`, `/bookings`, `/bookings/[bookingId]`, `/host`, `/payments/[transactionId]`); `21` bảng PostgreSQL 16 (migrations `0000`–`0004`), backfill idempotent an toàn cho Neon Postgres & Vercel Services.
 
 ---
 
@@ -93,6 +96,49 @@
 
 ---
 
+### Phase 4A — Promotions Hub, Deals Center & Campaign-Scoped Vouchers (ĐÃ HOÀN THÀNH ✅ — `feat/promotions-hub-deals`, `69763ba`)
+**Mục tiêu:** Cung cấp trung tâm ưu đãi đang diễn ra rõ ràng ngay trên trang chủ và trang chuyên mục riêng, đi kèm ràng buộc mã giảm giá chuẩn phía server.
+
+- [x] **P4.1 — Promotions Hub 3 tầng, `/deals`, `/deals/[slug]` & Server-Authoritative Rules:**
+  - Mở rộng hợp đồng Zod (`PromotionVoucherSchema`, `PromotionCampaignSchema`, `DealsSnapshotSchema`, `DealDetailResponseSchema`) và module domain `packages/domain/src/deals.ts`.
+  - Migration `0004_promotions_campaigns.sql` (thêm `promotion_campaigns` + mở rộng cột `promotions`), module API độc lập `apps/api/src/modules/deals/*`, `dealsPort.ts` trên `apps/web`.
+  - Chặn nghiêm ngặt phía server các quy tắc `NEW_USER_ONLY` (kiểm tra trong transaction lock bằng `hasSuccessfulBookingByUserId`), `PROPERTY_NOT_ELIGIBLE`, và `404` với `propertyId` không tồn tại.
+  - Phủ kiểm thử Playwright `E2E-4` (banner ưu đãi, modal điều kiện mã, `/deals`, `/deals/[slug]` tự động điền mã sang checkout).
+
+### Phase 4B — Modular Stay Catalog Expansion (+30 Stays) & Progressive Pagination (ĐÃ HOÀN THÀNH ✅ — `feat/catalog-expansion-30-stays`, `ae68e49`)
+**Mục tiêu:** Làm phong phú nguồn cung chỗ nghỉ toàn quốc trên kiến trúc seed tách module sẵn sàng mở rộng dịch vụ mới, đồng thời tối ưu trải nghiệm duyệt danh sách dài.
+
+- [x] **P4.2 — Mở rộng +30 chỗ nghỉ đa loại hình (`stay-13`–`stay-42`) & Phân trang Xem thêm:**
+  - Tách cấu trúc seed theo loại hình dưới `packages/domain/src/seed/properties/` (`homestays.ts`, `hotels.ts`, `villas.ts`, `resorts.ts`, `glamping.ts`), nâng tổng danh mục từ `12` lên `42` chỗ nghỉ phủ 14 điểm đến (thêm Hạ Long, Huế, Quy Nhơn, Mộc Châu, Vũng Tàu, TP. Hồ Chí Minh).
+  - Thêm phân trang tiến triển trên `PropertyList.tsx` (`12` chỗ nghỉ ban đầu, `+12` mỗi lượt Xem thêm, nút Thu gọn, tự động reset khi thay đổi bộ lọc, hỗ trợ VI/EN).
+  - Bổ sung `backfillMissingSeedProperties` chạy giao dịch `ON CONFLICT DO NOTHING` trong `vercelPrepare.ts` đảm bảo không ghi đè chỗ nghỉ đã tồn tại.
+  - Phủ kiểm thử Playwright `E2E-5` (42 kết quả, nạp 12 → 24 → thu gọn 12, lọc điểm đến mới Hạ Long).
+
+### Phase 4C — Authentic Stay & Destination Imagery Overhaul (ĐÃ HOÀN THÀNH ✅ — `feat/catalog-expansion-30-stays`)
+**Mục tiêu:** Loại bỏ triệt để tình trạng trùng lặp hình ảnh và ảnh minh họa sai bối cảnh ("treo đầu dê bán thịt chó") trên toàn bộ 42 chỗ nghỉ và 8 Điểm đến nổi bật.
+
+- [x] **P4.3 — Đại tu 136 ảnh thực tế (42 chỗ nghỉ × 3–4 ảnh + 8 Điểm đến) theo chuẩn 4 trục:**
+  - Áp dụng mô hình **Hybrid ưu tiên ảnh chụp thực tế** (`138` ảnh thực Pexels/Unsplash + `3` ảnh AI local nén nhẹ trong `apps/web/public/images/stays/` cho `stay-01`, `stay-15`, `stay-18`).
+  - Đạt **0% trùng lặp toàn cục** (`141/141` ảnh riêng biệt giữa 42 chỗ nghỉ, 8 Điểm đến và 5 Banner chiến dịch) và duyệt trực quan theo hàng trên contact-sheet theo **4 trục chân thực**: Loại hình × Vùng miền × Phân khúc giá × Tiện ích thực tế có trong `resortAmenities`.
+- [x] **P4.4 — Đồng bộ DB có điều kiện an toàn & Hàng rào kiểm thử tự động:**
+  - Bổ sung `repairRetiredSeedImages(db)` trong `apps/api/src/db/vercelPrepare.ts` dùng bảng đối chiếu `RETIRED_SEED_*` (`packages/domain/src/seed/retiredImages.ts`, chỉ cập nhật khi DB đang lưu chính xác URL seed cũ, bảo toàn 100% ảnh do Host/Admin tự sửa; đã phủ test trong `apps/api/tests/api.test.ts`).
+  - Cập nhật `apps/web/next.config.ts` (bổ sung `images.pexels.com`, giữ nguyên `images.unoptimized: true`), nâng cấp unit test cưỡng chế `0%` trùng lặp + kiểm tra tồn tại file local trong `properties-amenities.test.ts`, và bổ sung script `scripts/verify-seed-images.mjs` kiểm tra `HTTP 200` + `content-type: image/*`.
+
+---
+
+### Phase 5 — Multi-Service Travel Expansion: Activities, Tours & Transfers (LỘ TRÌNH KẾ TIẾP 📋 — Tách nhánh mới sau Phase 4C)
+**Mục tiêu:** Mở rộng LuxeStay từ nền tảng lưu trú sang hệ sinh thái dịch vụ du lịch đa mảng mà vẫn bảo toàn chặt biên kiến trúc `@luxestay/contracts` → `@luxestay/domain` → `apps/api` & `apps/web`.
+
+- [ ] **P5.1 — Hợp đồng & Domain Dịch vụ Hoạt động/Tour & Đưa đón (`activities` & `transfers`):**
+  - Định nghĩa Zod schema cho `TravelActivity`, `ActivitySlot`, `TransferService`, `ServiceBookingIntent` trong `@luxestay/contracts`.
+  - Tách module seed `packages/domain/src/seed/activities/*` và hàm thuần lọc/báo giá/kiểm tra suất hoạt động trong `@luxestay/domain`.
+- [ ] **P5.2 — Backend Persistence (Migration `0005`), API độc lập & Cross-Sell cùng Voucher:**
+  - Migration `0005_travel_activities.sql`, module API cô lập `apps/api/src/modules/activities/*` hỗ trợ đặt độc lập hoặc đính kèm vào chuyến lưu trú (`stay + activity` bundle) và áp dụng mã ưu đãi từ Promotions Hub.
+- [ ] **P5.3 — Giao diện Khám phá Hoạt động (`/activities`, `/activities/[slug]`) & E2E-6:**
+  - Cổng `activitiesPort.ts`, giao diện lọc theo điểm đến/loại trải nghiệm/khung giờ, trang chi tiết SSR + đặt vé nhanh và kịch bản Playwright `E2E-6`.
+
+---
+
 ## 3. Quy trình Kiểm soát, Bảo trì & Mở rộng Tính năng
 
 ```mermaid
@@ -131,3 +177,4 @@ npm run build
 | **Phình to `BookingContext.tsx` khi thêm miền mới** | Trung bình | Nhiều state không liên quan dồn chung 1 provider | Tạo Context/Feature riêng (ví dụ `features/auth/AuthContext.tsx`) thay vì nhồi vào `BookingContext` |
 | **Double-booking khi nối Database ở Phase 1–3** | Đã kiểm soát (P3.1 ✅) | 2 khách cùng đặt 1 chỗ nghỉ trùng ngày | Đã khóa giao dịch hàng `SELECT ... FOR UPDATE` trong `createWithPropertyLock` (PostgreSQL) & per-property mutex (`memory`), kiểm chứng 3-way concurrent race `[201, 409, 409]` |
 | **Quên build `packages/*` khi phát triển riêng 1 app** | Thấp | `apps/api` hoặc `apps/web` đọc `dist/` cũ của `packages/*` | Luôn chạy qua root script `npm run dev` / `npm run dev:web` / `npm run dev:api` (Turborepo tự chạy `^build` và watch) |
+| **Trùng lặp / sai lệch hình ảnh minh họa chỗ nghỉ & link ảnh bên ngoài bị gỡ** | Cao | Nhiều chỗ nghỉ dùng chung ảnh bìa hoặc ảnh sai khu vực/tiện ích (treo đầu dê bán thịt chó), hoặc URL remote trả 404 | Cưỡng chế `0%` trùng lặp toàn cục qua unit test (`properties-amenities.test.ts`), kiểm duyệt 4 trục chân thực + contact-sheet, chạy `scripts/verify-seed-images.mjs` xác minh `HTTP 200` / file local tồn tại, và chỉ cập nhật DB qua `repairRetiredSeedImages` có điều kiện |

@@ -28,20 +28,32 @@ import {
   PropertySchema,
   VoucherValidationResultSchema,
 } from "@luxestay/contracts";
-import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import {
+  PROMOTION_CAMPAIGNS,
+  PROPERTIES,
+  RETIRED_SEED_CAMPAIGN_IMAGES,
+  RETIRED_SEED_DESTINATION_IMAGES,
+  RETIRED_SEED_PROPERTY_IMAGES,
+  SEED_CATALOG_SNAPSHOT,
+} from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
 import { resolveDatabaseConfig, type LuxeStayDb } from "../dist/db/client.js";
 import {
+  destinationsTable,
   promotionCampaignsTable,
   promotionsTable,
   propertiesTable,
+  propertyAmenitiesTable,
   propertyAvailabilityTable,
   reservationsTable,
+  reviewsTable,
 } from "../dist/db/schema/index.js";
 import {
+  backfillMissingSeedProperties,
   backfillPromotionsIfNeeded,
   prepareDatabaseIfConfigured,
+  repairRetiredSeedImages,
 } from "../dist/db/vercelPrepare.js";
 import { resetApiRuntimeForTests } from "../dist/runtime.js";
 import vercelServerApp from "../dist/server.js";
@@ -99,7 +111,7 @@ test("GET /api/v1/catalog returns complete CatalogSnapshot validated against con
   const parsed = createApiSuccessSchema(CatalogSnapshotSchema).safeParse(body);
   assert.equal(parsed.success, true);
   if (parsed.success) {
-    assert.equal(parsed.data.data.properties.length, 12);
+    assert.equal(parsed.data.data.properties.length, 42);
     assert.equal(parsed.data.data.categories.length, 9);
     assert.equal(parsed.data.data.destinations.length, 8);
     assert.equal(Object.keys(parsed.data.data.amenityCatalog).length, 51);
@@ -1285,7 +1297,7 @@ test("Phase 3B RBAC & Host/Admin Portal: guards, property CRUD, availability ove
   const adminProps = createApiSuccessSchema(HostPropertiesListDataSchema).parse(
     await adminPropsRes.json()
   ).data.properties;
-  assert.equal(adminProps.length, 12);
+  assert.equal(adminProps.length, 42);
 
   const adminPatchStay07 = await app.request(API_ENDPOINTS.hostPropertyById("stay-07"), {
     method: "PATCH",
@@ -1650,6 +1662,254 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
   assert.equal(transientFailStub.insertedRowsByTable.get(propertiesTable), undefined);
 });
 
+test("backfillMissingSeedProperties inserts only missing seed stays transactionally without overwriting existing rows", async () => {
+  const createPropertyBackfillStubDb = (existingPropertyIds: readonly string[]) => {
+    const insertedRowsByTable = new Map<unknown, unknown[]>();
+    const otherWriteTables: unknown[] = [];
+    let transactionCalls = 0;
+    let nonTransactionalInserts = 0;
+    let onConflictUpdateCalls = 0;
+
+    const createInsertHandler = (
+      targetMap: Map<unknown, unknown[]>,
+      isTransactional: boolean
+    ) => {
+      return (table: unknown) => ({
+        values(payload: unknown) {
+          const items = Array.isArray(payload) ? payload : [payload];
+          const record = async () => {
+            if (!isTransactional) nonTransactionalInserts += 1;
+            const rows = targetMap.get(table) ?? [];
+            rows.push(...items);
+            targetMap.set(table, rows);
+          };
+          return {
+            async onConflictDoNothing() {
+              await record();
+            },
+            async onConflictDoUpdate() {
+              onConflictUpdateCalls += 1;
+              await record();
+            },
+          };
+        },
+      });
+    };
+
+    const db = {
+      select() {
+        return {
+          async from(table: unknown) {
+            if (table !== propertiesTable) return [];
+            const insertedIds = (
+              (insertedRowsByTable.get(propertiesTable) ?? []) as Array<{ id: string }>
+            ).map((row) => row.id);
+            return [...new Set([...existingPropertyIds, ...insertedIds])].map((id) => ({ id }));
+          },
+        };
+      },
+      insert: createInsertHandler(insertedRowsByTable, false),
+      update(table: unknown) {
+        otherWriteTables.push(table);
+        return { set: () => ({ async where() { return []; } }) };
+      },
+      delete(table: unknown) {
+        otherWriteTables.push(table);
+        return { async where() { return []; } };
+      },
+      async transaction<T>(fn: (tx: typeof db) => Promise<T>): Promise<T> {
+        transactionCalls += 1;
+        const txRows = new Map<unknown, unknown[]>(
+          [...insertedRowsByTable.entries()].map(([tbl, rows]) => [tbl, [...rows]])
+        );
+        const tx = {
+          ...db,
+          insert: createInsertHandler(txRows, true),
+        };
+        const result = await fn(tx);
+        insertedRowsByTable.clear();
+        for (const [tbl, rows] of txRows.entries()) {
+          insertedRowsByTable.set(tbl, rows);
+        }
+        return result;
+      },
+    };
+
+    return {
+      db: db as unknown as LuxeStayDb,
+      insertedRowsByTable,
+      otherWriteTables,
+      get transactionCalls() {
+        return transactionCalls;
+      },
+      get nonTransactionalInserts() {
+        return nonTransactionalInserts;
+      },
+      get onConflictUpdateCalls() {
+        return onConflictUpdateCalls;
+      },
+    };
+  };
+
+  // Case 1: Pre-existing 12-property Neon DB receives exactly the 30 missing stays (stay-13..stay-42) via ON CONFLICT DO NOTHING
+  const legacyIds = PROPERTIES.slice(0, 12).map((p) => p.id);
+  const legacyStub = createPropertyBackfillStubDb(legacyIds);
+  const firstRun = await backfillMissingSeedProperties(legacyStub.db);
+  assert.deepEqual(firstRun, { insertedCount: 30 });
+  assert.equal(legacyStub.transactionCalls, 1);
+  assert.equal(legacyStub.nonTransactionalInserts, 0);
+  assert.equal(legacyStub.onConflictUpdateCalls, 0);
+  assert.equal(legacyStub.otherWriteTables.length, 0);
+
+  const insertedProps = (legacyStub.insertedRowsByTable.get(propertiesTable) ?? []) as Array<{
+    id: string;
+  }>;
+  assert.equal(insertedProps.length, 30);
+  assert.equal(
+    insertedProps.some((row) => legacyIds.includes(row.id)),
+    false,
+    "Must never touch existing stay-01..stay-12 rows"
+  );
+  assert.ok((legacyStub.insertedRowsByTable.get(propertyAmenitiesTable)?.length ?? 0) >= 300);
+  assert.ok((legacyStub.insertedRowsByTable.get(reviewsTable)?.length ?? 0) >= 30);
+
+  // Case 2: Re-running after all 42 stays exist is a pure no-op
+  const secondRun = await backfillMissingSeedProperties(legacyStub.db);
+  assert.deepEqual(secondRun, { insertedCount: 0 });
+  assert.equal(legacyStub.transactionCalls, 1);
+});
+
+test("repairRetiredSeedImages updates only rows matching retired seed images and preserves Host/Admin edits", async () => {
+  const stay01Retired = RETIRED_SEED_PROPERTY_IMAGES["stay-01"]?.[0];
+  const stay02Custom = ["https://images.pexels.com/photos/9999999/custom-host-photo.jpeg"];
+  assert.ok(stay01Retired && stay01Retired.length >= 3);
+
+  const propRows = new Map<string, string[]>([
+    ["stay-01", [...stay01Retired]],
+    ["stay-02", [...stay02Custom]],
+  ]);
+  const destRows = new Map<string, string>([
+    ["ninh-binh", RETIRED_SEED_DESTINATION_IMAGES["ninh-binh"]![0]!],
+    ["hoi-an", "https://images.unsplash.com/photo-1557750298-47962451bebb?auto=format&fit=crop&w=800&q=80"],
+    ["da-lat", "https://images.pexels.com/photos/8888888/custom-admin-dest.jpeg"],
+  ]);
+  const campRows = new Map<string, string>([
+    [
+      "camp-san-may-da-lat-sapa",
+      RETIRED_SEED_CAMPAIGN_IMAGES["camp-san-may-da-lat-sapa"]![0]!,
+    ],
+  ]);
+
+  let transactionCalls = 0;
+  let nonTransactionalWrites = 0;
+  const updatedPropertyIds: string[] = [];
+  const updatedDestinationIds: string[] = [];
+  const updatedCampaignIds: string[] = [];
+
+  const createTx = (isTransactional: boolean) => ({
+    select() {
+      return {
+        from(table: unknown) {
+          return {
+            async where() {
+              if (table !== propertiesTable) return [];
+              return [...propRows.entries()].map(([id, images]) => ({ id, images }));
+            },
+          };
+        },
+      };
+    },
+    update(table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            where(condition: unknown) {
+              if (!isTransactional) nonTransactionalWrites += 1;
+              if (table === propertiesTable) {
+                const nextImages = values.images as string[];
+                const matchedId = PROPERTIES.find(
+                  (p) => JSON.stringify(p.images) === JSON.stringify(nextImages)
+                )?.id;
+                if (matchedId && propRows.has(matchedId)) {
+                  propRows.set(matchedId, [...nextImages]);
+                  updatedPropertyIds.push(matchedId);
+                }
+                return Promise.resolve([]);
+              }
+              return {
+                async returning() {
+                  if (table === destinationsTable) {
+                    const nextImg = values.image as string;
+                    const dest = SEED_CATALOG_SNAPSHOT.destinations.find((d) => d.image === nextImg);
+                    if (!dest) return [];
+                    const current = destRows.get(dest.id);
+                    const retired = RETIRED_SEED_DESTINATION_IMAGES[dest.id] ?? [];
+                    if (current && retired.includes(current)) {
+                      destRows.set(dest.id, nextImg);
+                      updatedDestinationIds.push(dest.id);
+                      return [{ id: dest.id }];
+                    }
+                    return [];
+                  }
+                  if (table === promotionCampaignsTable) {
+                    const nextImg = values.image as string;
+                    const camp = PROMOTION_CAMPAIGNS.find((c) => c.image === nextImg);
+                    if (!camp) return [];
+                    const current = campRows.get(camp.id);
+                    const retired = RETIRED_SEED_CAMPAIGN_IMAGES[camp.id] ?? [];
+                    if (current && retired.includes(current) && condition) {
+                      campRows.set(camp.id, nextImg);
+                      updatedCampaignIds.push(camp.id);
+                      return [{ id: camp.id }];
+                    }
+                    return [];
+                  }
+                  return [];
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      transactionCalls += 1;
+      return fn(createTx(true));
+    },
+  });
+
+  const stubDb = createTx(false) as unknown as LuxeStayDb;
+
+  const first = await repairRetiredSeedImages(stubDb);
+  assert.deepEqual(first, {
+    updatedDestinations: 2,
+    updatedCampaigns: 1,
+    updatedProperties: 1,
+  });
+  assert.equal(transactionCalls, 1);
+  assert.equal(nonTransactionalWrites, 0);
+  assert.deepEqual(updatedPropertyIds, ["stay-01"]);
+  assert.deepEqual(updatedDestinationIds.sort(), ["hoi-an", "ninh-binh"]);
+  assert.deepEqual(updatedCampaignIds, ["camp-san-may-da-lat-sapa"]);
+  // Custom host property and custom admin destination are completely untouched
+  assert.deepEqual(propRows.get("stay-02"), stay02Custom);
+  assert.equal(
+    destRows.get("da-lat"),
+    "https://images.pexels.com/photos/8888888/custom-admin-dest.jpeg"
+  );
+  // Stay-01 now matches current authentic seed images
+  const stay01Current = PROPERTIES.find((p) => p.id === "stay-01")!;
+  assert.deepEqual(propRows.get("stay-01"), stay01Current.images);
+
+  // Second run is a clean idempotent no-op
+  const second = await repairRetiredSeedImages(stubDb);
+  assert.deepEqual(second, {
+    updatedDestinations: 0,
+    updatedCampaigns: 0,
+    updatedProperties: 0,
+  });
+});
+
 test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
   const { app } = createApiApp();
 
@@ -1677,10 +1937,11 @@ test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:
   const detailParsed = createApiSuccessSchema(DealDetailSchema).safeParse(await detailRes.json());
   assert.equal(detailParsed.success, true);
   if (detailParsed.success) {
-    assert.deepEqual(
-      detailParsed.data.data.properties.map((p) => p.id),
-      ["stay-02", "stay-07", "stay-08", "stay-10"]
-    );
+    const matchedIds = detailParsed.data.data.properties.map((p) => p.id);
+    assert.equal(matchedIds.length, 12);
+    for (const anchorId of ["stay-02", "stay-07", "stay-08", "stay-10", "stay-25", "stay-32"]) {
+      assert.equal(matchedIds.includes(anchorId), true);
+    }
     assert.deepEqual(
       detailParsed.data.data.vouchers.map((v) => v.code),
       ["NEWSTAY250", "LUXESTAY250"]

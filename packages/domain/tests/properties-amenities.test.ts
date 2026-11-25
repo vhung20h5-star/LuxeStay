@@ -1,14 +1,154 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PROPERTIES } from "../dist/seed/index.js";
-import { AMENITY_CATALOG, AMENITY_FILTER_OPTIONS } from "../dist/seed/index.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  AMENITY_CATALOG,
+  AMENITY_FILTER_OPTIONS,
+  DESTINATIONS,
+  PROMOTION_CAMPAIGNS,
+  PROPERTIES,
+  RETIRED_SEED_CAMPAIGN_IMAGES,
+  RETIRED_SEED_DESTINATION_IMAGES,
+  RETIRED_SEED_PROPERTY_IMAGES,
+} from "../dist/seed/index.js";
+import {
+  createDefaultCatalogQuery,
+  executeCatalogQuery,
   projectPropertyAmenities,
   propertyHasAmenityFilters,
 } from "../dist/index.js";
 
-test("all 12 properties have valid, duplicate-free resortAmenities, no legacy amenities array, and >= 4 featured items", () => {
-  assert.equal(PROPERTIES.length, 12);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WEB_PUBLIC_DIR = path.resolve(__dirname, "../../../apps/web/public");
+
+const ALLOWED_IMAGE_PATTERN =
+  /^(https:\/\/images\.unsplash\.com\/photo-[a-zA-Z0-9-]+|https:\/\/images\.pexels\.com\/photos\/\d+\/pexels-photo-\d+|\/images\/(stays|destinations)\/[a-z0-9-]+\.(jpg|jpeg|webp|png))/;
+
+function normalizeMediaKey(src: string): string {
+  const withoutQuery = src.split("?")[0] ?? src;
+  const pexelsMatch = withoutQuery.match(/^https:\/\/images\.pexels\.com\/photos\/(\d+)\//);
+  if (pexelsMatch) return `pexels:${pexelsMatch[1]}`;
+  return withoutQuery;
+}
+
+function assertValidSeedImageSource(ownerLabel: string, src: string): void {
+  assert.ok(
+    ALLOWED_IMAGE_PATTERN.test(src),
+    `${ownerLabel} has unsupported image source: ${src}`
+  );
+  if (src.startsWith("/images/")) {
+    const filePath = path.join(WEB_PUBLIC_DIR, src.replace(/^\//, ""));
+    assert.ok(
+      fs.existsSync(filePath),
+      `${ownerLabel} references missing local image asset: ${filePath}`
+    );
+  }
+}
+
+test("all 42 properties have valid, duplicate-free resortAmenities, no legacy amenities array, and >= 4 featured items", () => {
+  assert.equal(PROPERTIES.length, 42);
+  assert.equal(new Set(PROPERTIES.map((p) => p.id)).size, 42);
+
+  const reviewIds = PROPERTIES.flatMap((p) => p.reviews.map((r) => r.id));
+  assert.equal(new Set(reviewIds).size, reviewIds.length, "Duplicate review ID detected in seed");
+
+  const typeCounts = new Map<string, number>();
+  const categoryCounts = new Map<string, number>();
+  const globalMediaUsage = new Map<string, string>();
+
+  for (const prop of PROPERTIES) {
+    typeCounts.set(prop.propertyType, (typeCounts.get(prop.propertyType) ?? 0) + 1);
+    categoryCounts.set(prop.category, (categoryCounts.get(prop.category) ?? 0) + 1);
+    assert.ok(prop.images.length >= 3, `${prop.id} should have at least 3 images`);
+    prop.images.forEach((img, idx) => {
+      const slot = `${prop.id}[${idx}]`;
+      assertValidSeedImageSource(slot, img);
+      const key = normalizeMediaKey(img);
+      const prevOwner = globalMediaUsage.get(key);
+      assert.equal(
+        prevOwner,
+        undefined,
+        `Duplicate image detected: ${slot} reuses ${key} already assigned to ${prevOwner}`
+      );
+      globalMediaUsage.set(key, slot);
+    });
+  }
+
+  for (const dest of DESTINATIONS) {
+    const slot = `destination:${dest.id}`;
+    assertValidSeedImageSource(slot, dest.image);
+    const key = normalizeMediaKey(dest.image);
+    const prevOwner = globalMediaUsage.get(key);
+    assert.equal(
+      prevOwner,
+      undefined,
+      `Duplicate image detected: ${slot} reuses ${key} already assigned to ${prevOwner}`
+    );
+    globalMediaUsage.set(key, slot);
+  }
+
+  for (const camp of PROMOTION_CAMPAIGNS) {
+    const slot = `campaign:${camp.slug}`;
+    assertValidSeedImageSource(slot, camp.image);
+    const key = normalizeMediaKey(camp.image);
+    const prevOwner = globalMediaUsage.get(key);
+    assert.equal(
+      prevOwner,
+      undefined,
+      `Duplicate image detected: ${slot} reuses ${key} already assigned to ${prevOwner}`
+    );
+    globalMediaUsage.set(key, slot);
+  }
+
+  const totalSlots =
+    PROPERTIES.reduce((sum, p) => sum + p.images.length, 0) +
+    DESTINATIONS.length +
+    PROMOTION_CAMPAIGNS.length;
+  assert.equal(
+    globalMediaUsage.size,
+    totalSlots,
+    `Expected 100% unique images (${totalSlots}), got ${globalMediaUsage.size}`
+  );
+
+  const propIds = new Set(PROPERTIES.map((p) => p.id));
+  const destIds = new Set(DESTINATIONS.map((d) => d.id));
+  const campIds = new Set(PROMOTION_CAMPAIGNS.map((c) => c.id));
+  for (const id of Object.keys(RETIRED_SEED_PROPERTY_IMAGES)) {
+    assert.ok(propIds.has(id), `Unknown property ID in RETIRED_SEED_PROPERTY_IMAGES: ${id}`);
+  }
+  for (const id of Object.keys(RETIRED_SEED_DESTINATION_IMAGES)) {
+    assert.ok(destIds.has(id), `Unknown destination ID in RETIRED_SEED_DESTINATION_IMAGES: ${id}`);
+  }
+  for (const id of Object.keys(RETIRED_SEED_CAMPAIGN_IMAGES)) {
+    assert.ok(campIds.has(id), `Unknown campaign ID in RETIRED_SEED_CAMPAIGN_IMAGES: ${id}`);
+  }
+
+  for (const requiredType of ["homestay", "hotel", "villa", "resort", "glamping"]) {
+    assert.ok(
+      (typeCounts.get(requiredType) ?? 0) >= 6,
+      `Expected >= 6 properties of type ${requiredType}, got ${typeCounts.get(requiredType) ?? 0}`
+    );
+  }
+  for (const requiredCategory of [
+    "mountain-view",
+    "beachfront",
+    "vintage-homestay",
+    "infinity-pool",
+    "ecolodge",
+    "pine-forest",
+    "city-center",
+    "luxury-resort",
+  ]) {
+    assert.ok(
+      (categoryCounts.get(requiredCategory) ?? 0) >= 3,
+      `Expected >= 3 properties in category ${requiredCategory}, got ${categoryCounts.get(requiredCategory) ?? 0}`
+    );
+  }
+
+  const defaultQuery = executeCatalogQuery(PROPERTIES, createDefaultCatalogQuery());
+  assert.equal(defaultQuery.items[0]?.id, "stay-08");
 
   for (const prop of PROPERTIES) {
     assert.equal("amenities" in prop, false, `${prop.id} must not carry legacy amenities array`);

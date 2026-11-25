@@ -1,7 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
-import { and, eq } from "drizzle-orm";
+import {
+  PROMOTION_CAMPAIGNS,
+  RETIRED_SEED_CAMPAIGN_IMAGES,
+  RETIRED_SEED_DESTINATION_IMAGES,
+  RETIRED_SEED_PROPERTY_IMAGES,
+  SEED_CATALOG_SNAPSHOT,
+} from "@luxestay/domain/seed";
+import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDbClient, type LuxeStayDb } from "./client.js";
 import {
@@ -9,7 +15,11 @@ import {
   promotionCampaignsTable,
   propertiesTable,
 } from "./schema/index.js";
-import { seedDatabase, seedPromotionsAndCampaigns } from "./seed.js";
+import {
+  seedDatabase,
+  seedPromotionsAndCampaigns,
+  insertMissingSeedProperties,
+} from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(__dirname, "migrations");
@@ -55,6 +65,127 @@ export async function backfillPromotionsIfNeeded(
   return { backfilled: true };
 }
 
+export async function backfillMissingSeedProperties(
+  db: LuxeStayDb
+): Promise<{ insertedCount: number }> {
+  const existingRows = await db.select({ id: propertiesTable.id }).from(propertiesTable);
+  const existingIds = new Set(existingRows.map((row) => row.id));
+
+  const missingEntries = SEED_CATALOG_SNAPSHOT.properties
+    .map((property, sortOrder) => ({ property, sortOrder }))
+    .filter(({ property }) => !existingIds.has(property.id));
+
+  if (missingEntries.length === 0) {
+    return { insertedCount: 0 };
+  }
+
+  await db.transaction(async (tx) => {
+    await insertMissingSeedProperties(tx, missingEntries);
+  });
+
+  return { insertedCount: missingEntries.length };
+}
+
+function sameStringArray(a: readonly string[] | null | undefined, b: readonly string[]): boolean {
+  if (!Array.isArray(a) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Narrow conditional repair for retired/duplicated pre-Phase-4C seed images.
+ * Updates a destination, campaign, or property image ONLY when its stored value
+ * matches an exact retired seed snapshot — Host/Admin edits are never overwritten.
+ */
+export async function repairRetiredSeedImages(
+  db: LuxeStayDb
+): Promise<{
+  updatedDestinations: number;
+  updatedCampaigns: number;
+  updatedProperties: number;
+}> {
+  const seedDestById = new Map(SEED_CATALOG_SNAPSHOT.destinations.map((d) => [d.id, d]));
+  const seedCampaignById = new Map(PROMOTION_CAMPAIGNS.map((c) => [c.id, c]));
+  const seedPropById = new Map(SEED_CATALOG_SNAPSHOT.properties.map((p) => [p.id, p]));
+
+  const trackedPropIds = Object.keys(RETIRED_SEED_PROPERTY_IMAGES).filter((id) =>
+    seedPropById.has(id)
+  );
+
+  let updatedDestinations = 0;
+  let updatedCampaigns = 0;
+  let updatedProperties = 0;
+
+  await db.transaction(async (tx) => {
+    for (const [destId, retiredUrls] of Object.entries(RETIRED_SEED_DESTINATION_IMAGES)) {
+      const targetDest = seedDestById.get(destId);
+      if (!targetDest || retiredUrls.length === 0) continue;
+      const retiredCandidates = retiredUrls.filter((u) => u !== targetDest.image);
+      if (retiredCandidates.length === 0) continue;
+
+      const updated = await tx
+        .update(destinationsTable)
+        .set({ image: targetDest.image })
+        .where(
+          and(
+            eq(destinationsTable.id, destId),
+            inArray(destinationsTable.image, [...retiredCandidates])
+          )
+        )
+        .returning({ id: destinationsTable.id });
+      updatedDestinations += updated.length;
+    }
+
+    for (const [campId, retiredUrls] of Object.entries(RETIRED_SEED_CAMPAIGN_IMAGES)) {
+      const targetCamp = seedCampaignById.get(campId);
+      if (!targetCamp || retiredUrls.length === 0) continue;
+      const retiredCandidates = retiredUrls.filter((u) => u !== targetCamp.image);
+      if (retiredCandidates.length === 0) continue;
+
+      const updated = await tx
+        .update(promotionCampaignsTable)
+        .set({ image: targetCamp.image })
+        .where(
+          and(
+            eq(promotionCampaignsTable.id, campId),
+            inArray(promotionCampaignsTable.image, [...retiredCandidates])
+          )
+        )
+        .returning({ id: promotionCampaignsTable.id });
+      updatedCampaigns += updated.length;
+    }
+
+    if (trackedPropIds.length > 0) {
+      const existingProps = await tx
+        .select({ id: propertiesTable.id, images: propertiesTable.images })
+        .from(propertiesTable)
+        .where(inArray(propertiesTable.id, trackedPropIds));
+
+      for (const row of existingProps) {
+        const targetProp = seedPropById.get(row.id);
+        const retiredSets = RETIRED_SEED_PROPERTY_IMAGES[row.id];
+        if (!targetProp || !retiredSets || retiredSets.length === 0) continue;
+        if (sameStringArray(row.images, targetProp.images)) continue;
+
+        const matchesRetired = retiredSets.some((retiredArr) =>
+          sameStringArray(row.images, retiredArr)
+        );
+        if (!matchesRetired) continue;
+
+        await tx
+          .update(propertiesTable)
+          .set({ images: targetProp.images })
+          .where(eq(propertiesTable.id, row.id));
+        updatedProperties += 1;
+      }
+    }
+  });
+
+  return { updatedDestinations, updatedCampaigns, updatedProperties };
+}
+
 export async function prepareDatabaseIfConfigured(
   rawEnv: Record<string, string | undefined> = process.env
 ): Promise<{ status: "skipped" | "migrated" | "migrated_and_seeded" }> {
@@ -89,29 +220,30 @@ export async function prepareDatabaseIfConfigured(
       return { status: "migrated_and_seeded" };
     }
 
-    // Repair known retired upstream destination image URL without overwriting user/host catalog edits.
-    const hoiAnSeed = SEED_CATALOG_SNAPSHOT.destinations.find((d) => d.id === "hoi-an");
-    if (hoiAnSeed) {
-      await client.db
-        .update(destinationsTable)
-        .set({ image: hoiAnSeed.image })
-        .where(
-          and(
-            eq(destinationsTable.id, "hoi-an"),
-            eq(
-              destinationsTable.image,
-              "https://images.unsplash.com/photo-1557750298-47962451bebb?auto=format&fit=crop&w=800&q=80"
-            )
-          )
-        );
-    }
-
     const { backfilled } = await backfillPromotionsIfNeeded(client.db);
     if (backfilled) {
       console.log("[luxestay-api] Backfilled promotions and promotion campaigns.");
     }
 
-    console.log("[luxestay-api] Migrations up to date; properties already seeded (skipping overwrite).");
+    const { insertedCount } = await backfillMissingSeedProperties(client.db);
+    if (insertedCount > 0) {
+      console.log(
+        `[luxestay-api] Backfilled ${insertedCount} missing seed properties without overwriting existing rows.`
+      );
+    }
+
+    const repaired = await repairRetiredSeedImages(client.db);
+    if (
+      repaired.updatedDestinations > 0 ||
+      repaired.updatedCampaigns > 0 ||
+      repaired.updatedProperties > 0
+    ) {
+      console.log(
+        `[luxestay-api] Repaired retired seed images (properties: ${repaired.updatedProperties}, destinations: ${repaired.updatedDestinations}, campaigns: ${repaired.updatedCampaigns}); host edits preserved.`
+      );
+    }
+
+    console.log("[luxestay-api] Migrations up to date; existing properties preserved.");
     return { status: "migrated" };
   } finally {
     await client.close();
