@@ -219,7 +219,7 @@ export const PROMOTION_CAMPAIGNS: readonly PromotionCampaign[] = Object.freeze([
     highlightText: "Giảm đến 300K",
     periodLabel: "Đến 31/12/2026",
     image:
-      "https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80",
+      "https://images.pexels.com/photos/1323550/pexels-photo-1323550.jpeg?auto=compress&cs=tinysrgb&w=1200",
     ctaLabel: "Xem ưu đãi",
     voucherCodes: Object.freeze(["WELCOME150", "HOMESTAY10"]),
     targetFilter: Object.freeze({

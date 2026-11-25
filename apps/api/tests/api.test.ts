@@ -28,11 +28,19 @@ import {
   PropertySchema,
   VoucherValidationResultSchema,
 } from "@luxestay/contracts";
-import { PROMOTION_CAMPAIGNS, PROPERTIES, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import {
+  PROMOTION_CAMPAIGNS,
+  PROPERTIES,
+  RETIRED_SEED_CAMPAIGN_IMAGES,
+  RETIRED_SEED_DESTINATION_IMAGES,
+  RETIRED_SEED_PROPERTY_IMAGES,
+  SEED_CATALOG_SNAPSHOT,
+} from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
 import { resolveDatabaseConfig, type LuxeStayDb } from "../dist/db/client.js";
 import {
+  destinationsTable,
   promotionCampaignsTable,
   promotionsTable,
   propertiesTable,
@@ -45,6 +53,7 @@ import {
   backfillMissingSeedProperties,
   backfillPromotionsIfNeeded,
   prepareDatabaseIfConfigured,
+  repairRetiredSeedImages,
 } from "../dist/db/vercelPrepare.js";
 import { resetApiRuntimeForTests } from "../dist/runtime.js";
 import vercelServerApp from "../dist/server.js";
@@ -1768,6 +1777,137 @@ test("backfillMissingSeedProperties inserts only missing seed stays transactiona
   const secondRun = await backfillMissingSeedProperties(legacyStub.db);
   assert.deepEqual(secondRun, { insertedCount: 0 });
   assert.equal(legacyStub.transactionCalls, 1);
+});
+
+test("repairRetiredSeedImages updates only rows matching retired seed images and preserves Host/Admin edits", async () => {
+  const stay01Retired = RETIRED_SEED_PROPERTY_IMAGES["stay-01"]?.[0];
+  const stay02Custom = ["https://images.pexels.com/photos/9999999/custom-host-photo.jpeg"];
+  assert.ok(stay01Retired && stay01Retired.length >= 3);
+
+  const propRows = new Map<string, string[]>([
+    ["stay-01", [...stay01Retired]],
+    ["stay-02", [...stay02Custom]],
+  ]);
+  const destRows = new Map<string, string>([
+    ["ninh-binh", RETIRED_SEED_DESTINATION_IMAGES["ninh-binh"]![0]!],
+    ["hoi-an", "https://images.unsplash.com/photo-1557750298-47962451bebb?auto=format&fit=crop&w=800&q=80"],
+    ["da-lat", "https://images.pexels.com/photos/8888888/custom-admin-dest.jpeg"],
+  ]);
+  const campRows = new Map<string, string>([
+    [
+      "camp-san-may-da-lat-sapa",
+      RETIRED_SEED_CAMPAIGN_IMAGES["camp-san-may-da-lat-sapa"]![0]!,
+    ],
+  ]);
+
+  let transactionCalls = 0;
+  let nonTransactionalWrites = 0;
+  const updatedPropertyIds: string[] = [];
+  const updatedDestinationIds: string[] = [];
+  const updatedCampaignIds: string[] = [];
+
+  const createTx = (isTransactional: boolean) => ({
+    select() {
+      return {
+        from(table: unknown) {
+          return {
+            async where() {
+              if (table !== propertiesTable) return [];
+              return [...propRows.entries()].map(([id, images]) => ({ id, images }));
+            },
+          };
+        },
+      };
+    },
+    update(table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            where(condition: unknown) {
+              if (!isTransactional) nonTransactionalWrites += 1;
+              if (table === propertiesTable) {
+                const nextImages = values.images as string[];
+                const matchedId = PROPERTIES.find(
+                  (p) => JSON.stringify(p.images) === JSON.stringify(nextImages)
+                )?.id;
+                if (matchedId && propRows.has(matchedId)) {
+                  propRows.set(matchedId, [...nextImages]);
+                  updatedPropertyIds.push(matchedId);
+                }
+                return Promise.resolve([]);
+              }
+              return {
+                async returning() {
+                  if (table === destinationsTable) {
+                    const nextImg = values.image as string;
+                    const dest = SEED_CATALOG_SNAPSHOT.destinations.find((d) => d.image === nextImg);
+                    if (!dest) return [];
+                    const current = destRows.get(dest.id);
+                    const retired = RETIRED_SEED_DESTINATION_IMAGES[dest.id] ?? [];
+                    if (current && retired.includes(current)) {
+                      destRows.set(dest.id, nextImg);
+                      updatedDestinationIds.push(dest.id);
+                      return [{ id: dest.id }];
+                    }
+                    return [];
+                  }
+                  if (table === promotionCampaignsTable) {
+                    const nextImg = values.image as string;
+                    const camp = PROMOTION_CAMPAIGNS.find((c) => c.image === nextImg);
+                    if (!camp) return [];
+                    const current = campRows.get(camp.id);
+                    const retired = RETIRED_SEED_CAMPAIGN_IMAGES[camp.id] ?? [];
+                    if (current && retired.includes(current) && condition) {
+                      campRows.set(camp.id, nextImg);
+                      updatedCampaignIds.push(camp.id);
+                      return [{ id: camp.id }];
+                    }
+                    return [];
+                  }
+                  return [];
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      transactionCalls += 1;
+      return fn(createTx(true));
+    },
+  });
+
+  const stubDb = createTx(false) as unknown as LuxeStayDb;
+
+  const first = await repairRetiredSeedImages(stubDb);
+  assert.deepEqual(first, {
+    updatedDestinations: 2,
+    updatedCampaigns: 1,
+    updatedProperties: 1,
+  });
+  assert.equal(transactionCalls, 1);
+  assert.equal(nonTransactionalWrites, 0);
+  assert.deepEqual(updatedPropertyIds, ["stay-01"]);
+  assert.deepEqual(updatedDestinationIds.sort(), ["hoi-an", "ninh-binh"]);
+  assert.deepEqual(updatedCampaignIds, ["camp-san-may-da-lat-sapa"]);
+  // Custom host property and custom admin destination are completely untouched
+  assert.deepEqual(propRows.get("stay-02"), stay02Custom);
+  assert.equal(
+    destRows.get("da-lat"),
+    "https://images.pexels.com/photos/8888888/custom-admin-dest.jpeg"
+  );
+  // Stay-01 now matches current authentic seed images
+  const stay01Current = PROPERTIES.find((p) => p.id === "stay-01")!;
+  assert.deepEqual(propRows.get("stay-01"), stay01Current.images);
+
+  // Second run is a clean idempotent no-op
+  const second = await repairRetiredSeedImages(stubDb);
+  assert.deepEqual(second, {
+    updatedDestinations: 0,
+    updatedCampaigns: 0,
+    updatedProperties: 0,
+  });
 });
 
 test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
