@@ -15,21 +15,27 @@ description: >-
 
 ## 2. Verification & Isolated Playwright E2E
 1. **Static & unit gates:** Run `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test`.
+   - Workspace tests import compiled `../dist/...` artifacts, so always run `npm run build` before `npm run test` after editing `@luxestay/contracts`, `@luxestay/domain`, or `@luxestay/api`.
    - If `@luxestay/contracts` or `@luxestay/domain` `.d.ts` files trigger stale Turbo cache errors in `@luxestay/api`, run `npx turbo run build --force`.
+   - On **Windows PowerShell**, chain failing commands with `; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }` (PowerShell 5.1 rejects `&&`), and single-quote Next.js route-group paths in `git add` (e.g., `'apps/web/src/app/(main)/page.tsx'`).
 2. **Playwright E2E without dev-server collision:** If `npm run dev` is already running on `:3000/:4000`, `next build` overwrites `.next` and breaks the live dev server's chunks. Always isolate E2E ports:
    - PowerShell: `$env:E2E_API_PORT="4100"; $env:E2E_WEB_PORT="3100"; npm run test:e2e`
    - Bash: `E2E_API_PORT=4100 E2E_WEB_PORT=3100 npm run test:e2e`
+   - Includes `E2E-6` mobile responsive checks (`390×844`, `360×800`) asserting `documentElement.scrollWidth <= innerWidth` across routes and open popovers/drawers.
+3. **Seed media curation & audit (`scripts/verify-seed-images.mjs`):**
+   - Prefer verified real photography (`images.unsplash.com`, `images.pexels.com`) and reserve compact local assets under `apps/web/public/images/(stays|destinations)/` (`< 350 KB`) for Vietnam-specific landmarks lacking accurate stock photos.
+   - Before modifying seed arrays, render Chromium contact-sheets to inspect all slots visually, ensure 0% global duplication, and run `node scripts/verify-seed-images.mjs` after `npm run build` to verify `HTTP 200 image/*` and local file existence.
 
 ## 3. Vercel Services + Neon Postgres Deployment
 - **Project setup:** Keep Vercel **Root Directory** as `.` so `vercel.json` orchestrates both `frontend` (`apps/web`) and `backend` (`apps/api`, `entrypoint: src/server.ts`) under one domain with Service Binding `API_BASE_URL`.
-- **Next.js Images under Vercel Services:** Keep `images.unoptimized: true` in `apps/web/next.config.ts`—Vercel Services (Beta) returns `404` for `/_next/image`, while Unsplash URLs already include Imgix CDN sizing params.
+- **Next.js Images under Vercel Services:** Keep `images.unoptimized: true` in `apps/web/next.config.ts`—Vercel Services (Beta) returns `404` for `/_next/image`, keep `remotePatterns` aligned (`images.unsplash.com`, `plus.unsplash.com`, `images.pexels.com`), and store local assets under `apps/web/public/images/`.
 - **Critical `@vercel/backends` rule:** `services.backend.buildCommand` MUST remove `apps/api/dist` and build only upstream workspaces (`@luxestay/contracts`, `@luxestay/domain`). Leaving `apps/api/dist/app.js` causes `@vercel/backends` to serve raw CJS `/var/task/app.js` (`500 FUNCTION_INVOCATION_FAILED`) instead of Rolldown's ESM `server.mjs`.
 - **Required Vercel Env Vars (Production & Preview):**
   - Config: `NEXT_PUBLIC_DATA_MODE=api`, `NEXT_PUBLIC_API_BASE_URL=/`, `STORAGE_DRIVER=database`, `PAYMENT_SANDBOX_ENABLED=true` (demo) or `false` (prod).
   - Secret: `PAYMENT_WEBHOOK_SECRET` (distinct >=32-char secrets per environment) + Marketplace Neon vars (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`).
 - **Migrations & Seed on Neon:**
   - Vercel builds run `npm run db:prepare --workspace=@luxestay/api` (`apps/api/src/db/vercelPrepare.ts`) using injected Neon Secrets (`DATABASE_URL_UNPOOLED` first) to migrate idempotently and seed only when `properties` is empty.
-  - If a retired external seed URL (e.g., Unsplash 404) is replaced after Neon is already seeded, update `packages/domain/src/seed/*` AND add a targeted conditional update in `vercelPrepare.ts` matching `(id, oldBrokenUrl)` so live Neon rows update without overwriting host edits.
+  - When adding modular seed stays or replacing retired seed images on an already-seeded Neon DB, rely on the helpers in `apps/api/src/db/vercelPrepare.ts`: `backfillMissingSeedProperties` (`ON CONFLICT DO NOTHING`) and `repairRetiredSeedImages` (matches `RETIRED_SEED_*` snapshots in `packages/domain/src/seed/retiredImages.ts` so host/admin edits are never overwritten).
   - Note: `npx vercel env pull` writes `"[SENSITIVE]"` for Neon Secrets; for manual local runs against Neon, copy `DATABASE_URL_UNPOOLED` from Vercel Storage / Neon Console instead. Running `vercel pull` may also append `.env*` to `.gitignore`—ensure `!.env.example` stays below any `.env*` rule.
 - **Debugging live deploys:**
   - Build logs: `npx vercel inspect <deployment-url> --wait --logs`
