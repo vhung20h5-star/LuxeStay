@@ -9,7 +9,7 @@ import { useCatalog } from "@/features/booking/BookingContext";
 export function TestimonialsSection() {
   const { testimonials } = useCatalog();
   return (
-    <section id="testimonials-section" className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="testimonials-section" className="py-16 w-full min-w-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto mb-12">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold mb-3">

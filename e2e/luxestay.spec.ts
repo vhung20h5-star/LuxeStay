@@ -243,4 +243,57 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
     await expect(page.getByTestId("property-card-price")).toHaveCount(2);
     await expect(page.getByTestId("property-list-load-more")).toBeHidden();
   });
+
+  test("E2E-6: Mobile viewports (390px and 360px) render without horizontal page overflow across routes and open popovers", async ({
+    page,
+  }) => {
+    const viewports = [
+      { width: 390, height: 844 },
+      { width: 360, height: 800 },
+    ];
+    const routes = ["/", "/deals", "/deals/black-friday-2026", "/stays/stay-08", "/bookings", "/host"];
+
+    for (const vp of viewports) {
+      await page.setViewportSize(vp);
+
+      for (const route of routes) {
+        await page.goto(route);
+        const metrics = await page.evaluate(() => ({
+          innerWidth: window.innerWidth,
+          docScrollWidth: document.documentElement.scrollWidth,
+          bodyScrollWidth: document.body.scrollWidth,
+        }));
+
+        expect(
+          metrics.docScrollWidth,
+          `Horizontal overflow on ${route} at ${vp.width}px`
+        ).toBeLessThanOrEqual(metrics.innerWidth);
+        expect(
+          metrics.bodyScrollWidth,
+          `Body overflow on ${route} at ${vp.width}px`
+        ).toBeLessThanOrEqual(metrics.innerWidth);
+      }
+
+      // Verify Homepage interactive popovers and PromotionsHub bounds on mobile
+      await page.goto("/");
+      const dealsSection = page.getByTestId("promotions-hub");
+      await expect(dealsSection).toBeVisible();
+      const dealsBox = await dealsSection.boundingBox();
+      expect(dealsBox).not.toBeNull();
+      expect(dealsBox!.width).toBeLessThanOrEqual(vp.width + 1);
+
+      // Open SearchBar destination popover & check zero document overflow
+      await page.getByPlaceholder("Bạn muốn đi đâu? (VD: da lat)").click();
+      await expect(page.getByText("Điểm đến phổ biến")).toBeVisible();
+      const popoverScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(popoverScrollWidth).toBeLessThanOrEqual(vp.width);
+
+      // Close popover & open Mobile Menu drawer & check zero overflow
+      await page.getByLabel("Menu").click();
+      await expect(page.getByText("Đánh giá khách hàng")).toBeVisible();
+      const drawerScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(drawerScrollWidth).toBeLessThanOrEqual(vp.width);
+      await page.getByLabel("Menu").click();
+    }
+  });
 });

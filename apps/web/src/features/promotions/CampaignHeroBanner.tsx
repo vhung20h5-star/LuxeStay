@@ -62,23 +62,23 @@ export function CampaignHeroBanner({
       />
 
       {/* Foreground Content Grid */}
-      <div className="relative z-10 pointer-events-none p-6 sm:p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
+      <div className="relative z-10 pointer-events-none p-5 sm:p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8 items-center">
         {/* Left Column: Campaign Story */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/20 border border-amber-300/35 text-amber-200 text-xs font-extrabold tracking-wide uppercase shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
-            <span>{campaign.badge}</span>
+        <div className="lg:col-span-7 space-y-3 sm:space-y-4 min-w-0">
+          <div className="inline-flex max-w-full items-center gap-1.5 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-amber-400/20 border border-amber-300/35 text-amber-200 text-[11px] sm:text-xs font-extrabold tracking-wide uppercase shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
+            <span className="truncate">{campaign.badge}</span>
           </div>
 
-          <h3 className="text-2xl sm:text-4xl lg:text-[40px] font-black tracking-tight leading-[1.15] text-white">
+          <h3 className="text-xl sm:text-4xl lg:text-[40px] font-black tracking-tight leading-[1.18] text-white">
             {campaign.title}
           </h3>
 
-          <p className="text-slate-200/90 text-sm sm:text-base leading-relaxed max-w-2xl">
+          <p className="text-slate-200/90 text-xs sm:text-base leading-relaxed max-w-2xl">
             {campaign.subtitle}
           </p>
 
-          <div className="pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300/90 font-medium">
+          <div className="pt-0.5 flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1 text-[11px] sm:text-xs text-slate-300/90 font-medium">
             <span>{t("deals.termsApply")}</span>
             <span aria-hidden="true" className="text-slate-500">
               •
@@ -88,18 +88,18 @@ export function CampaignHeroBanner({
         </div>
 
         {/* Right Column: Glassmorphic Web CTA Panel */}
-        <div className="lg:col-span-5 bg-white/12 backdrop-blur-md border border-white/25 rounded-2xl p-4 sm:p-5 space-y-4 shadow-lg">
-          <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-200">
-              <Clock className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
+        <div className="lg:col-span-5 min-w-0 bg-white/12 backdrop-blur-md border border-white/25 rounded-2xl p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-amber-200">
+              <Clock className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
               <span>{t("deals.endsIn")}</span>
             </span>
-            <span className="text-[11px] font-semibold text-amber-100/90 bg-amber-500/20 border border-amber-300/30 px-2.5 py-0.5 rounded-full">
+            <span className="text-[11px] font-semibold text-amber-100/90 bg-amber-500/20 border border-amber-300/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
               {campaign.highlightText}
             </span>
           </div>
 
-          <CampaignCountdown endsAt={campaign.endsAt} />
+          <CampaignCountdown endsAt={campaign.endsAt} className="flex-wrap max-w-full" />
 
           {featuredVoucher && (
             <div className="relative z-20 pointer-events-auto rounded-xl bg-slate-950/55 border border-white/15 px-3.5 py-2.5 flex items-center justify-between gap-3">

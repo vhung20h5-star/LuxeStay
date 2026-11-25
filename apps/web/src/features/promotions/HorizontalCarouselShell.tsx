@@ -76,7 +76,7 @@ export function HorizontalCarouselShell({
   };
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative w-full min-w-0", className)}>
       {scrollState.canScrollLeft && (
         <button
           type="button"
