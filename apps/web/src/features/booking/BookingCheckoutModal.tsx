@@ -22,6 +22,7 @@ import {
   formatVND,
 } from "@luxestay/domain";
 import { useAuth } from "@/features/auth/AuthContext";
+import { StayActivitiesCrossSell } from "@/features/activities/StayActivitiesCrossSell";
 import { useBookingSession, useCatalog } from "@/features/booking/BookingContext";
 import { SeasonalPricingSummary } from "@/features/property/SeasonalPricingSummary";
 import { useOverlayLayer } from "@/shared/overlay/OverlayContext";
@@ -91,11 +92,22 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
     bookingSession,
     setCheckoutProperty,
     removeBookingAmenity,
+    toggleBookingActivity,
+    removeBookingActivity,
     setBookingPromoCode,
     submitCheckout,
     paymentGateway,
   } = useBookingSession();
-  const { property, nights, guests, checkIn, checkOut, selectedAmenities, pricing } = quote;
+  const {
+    property,
+    nights,
+    guests,
+    checkIn,
+    checkOut,
+    selectedAmenities,
+    selectedActivities = [],
+    pricing,
+  } = quote;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -630,6 +642,49 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
 
             <div className="h-px bg-slate-100" />
 
+            {/* Optional Phase 5 Cross-Sell: Airport Transfers & Local Tours */}
+            <StayActivitiesCrossSell
+              city={property.location.city}
+              checkInDate={checkIn}
+              selectedActivities={bookingSession.selectedActivities ?? []}
+              onToggleActivity={(item) => toggleBookingActivity(item)}
+              compact
+            />
+
+            {selectedActivities.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-sky-950">
+                  <span>Trải nghiệm &amp; Đưa đón đã chọn ({selectedActivities.length})</span>
+                  <span className="text-sky-700">{formatVND(pricing.activitiesFee ?? 0)}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {selectedActivities.map((act) => (
+                    <div
+                      key={act.activityId}
+                      className="flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-xl text-[11px]"
+                    >
+                      <span className="font-medium text-slate-800 truncate">
+                        {act.activityTitle}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-bold text-sky-700">{formatVND(act.totalPrice)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeBookingActivity(act.activityId)}
+                          className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                          aria-label={`Bỏ ${act.activityTitle}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="h-px bg-slate-100" />
+
             {/* Step 3: Payment Method */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
@@ -719,6 +774,14 @@ function BookingCheckoutContent({ quote }: { quote: BookingQuote }) {
                   <span>Tiện ích &amp; dịch vụ đi kèm ({selectedAmenities.length})</span>
                   <span className="font-semibold text-slate-800">
                     {formatAmenitiesFeeSummary(pricing.amenitiesFee)}
+                  </span>
+                </div>
+              )}
+              {(pricing.activitiesFee ?? 0) > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Trải nghiệm &amp; Đưa đón ({selectedActivities.length})</span>
+                  <span className="font-semibold text-sky-700">
+                    {formatVND(pricing.activitiesFee ?? 0)}
                   </span>
                 </div>
               )}

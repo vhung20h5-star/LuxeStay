@@ -38,6 +38,7 @@ export const reservationsTable = pgTable(
     cleaningFee: integer("cleaning_fee").notNull(),
     serviceFee: integer("service_fee").notNull().default(0),
     amenitiesFee: integer("amenities_fee").notNull().default(0),
+    activitiesFee: integer("activities_fee").notNull().default(0),
     discount: integer("discount").notNull().default(0),
     appliedPromoCode: text("applied_promo_code"),
     total: integer("total").notNull(),

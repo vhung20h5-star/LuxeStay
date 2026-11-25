@@ -31,12 +31,15 @@ import {
   formatVND,
   openPropertySession,
   projectPropertyAmenities,
+  removeSessionActivity,
   removeSessionAmenity,
+  toggleSessionActivity,
   toggleSessionAmenity,
   updateSessionAdults,
   updateSessionCheckIn,
   updateSessionNights,
 } from "@luxestay/domain";
+import { StayActivitiesCrossSell } from "@/features/activities/StayActivitiesCrossSell";
 import {
   useBookingSession,
   useCatalog,
@@ -58,7 +61,7 @@ interface AmenitiesModalState {
 export function StayDetailView({ property }: { property: Property }) {
   const { searchCriteria } = useCatalog();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { startCheckoutWithDraft } = useBookingSession();
+  const { startCheckoutWithDraft, activitiesCatalog } = useBookingSession();
 
   const [draftSession, setDraftSession] = useState(() =>
     openPropertySession(createIdleBookingSession(), property, searchCriteria)
@@ -71,7 +74,10 @@ export function StayDetailView({ property }: { property: Property }) {
     initialCategory: "all",
   });
 
-  const quote = useMemo(() => deriveBookingQuote(draftSession)!, [draftSession]);
+  const quote = useMemo(
+    () => deriveBookingQuote(draftSession, undefined, { activities: activitiesCatalog })!,
+    [activitiesCatalog, draftSession]
+  );
   const {
     totalCount: amenityCount,
     categories: categorySummaries,
@@ -104,6 +110,7 @@ export function StayDetailView({ property }: { property: Property }) {
       nights: quote.nights,
       adults: quote.guests.adults,
       selectedAmenityIds: quote.selectedAmenityIds,
+      selectedActivities: draftSession.selectedActivities ?? [],
       checkInSeed: draftSession.checkInSeed || quote.checkIn,
     });
   };
@@ -424,6 +431,16 @@ export function StayDetailView({ property }: { property: Property }) {
                 ))}
               </div>
             </section>
+
+            {/* Phase 5 Cross-Sell: Airport Transfers & Local Tours */}
+            <StayActivitiesCrossSell
+              city={property.location.city}
+              checkInDate={quote.checkIn}
+              selectedActivities={draftSession.selectedActivities ?? []}
+              onToggleActivity={(item) =>
+                setDraftSession((prev) => toggleSessionActivity(prev, item))
+              }
+            />
           </div>
 
           {/* Right Column: Sticky Booking Quote Card */}
@@ -571,6 +588,45 @@ export function StayDetailView({ property }: { property: Property }) {
                 </div>
               )}
 
+              {/* Selected Bundle Activities Summary */}
+              {(quote.selectedActivities?.length ?? 0) > 0 && (
+                <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-sky-950">
+                    <span>Trải nghiệm &amp; Đưa đón ({quote.selectedActivities?.length ?? 0})</span>
+                    <span className="text-sky-700">
+                      {formatVND(quote.pricing.activitiesFee ?? 0)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {(quote.selectedActivities ?? []).map((item) => (
+                      <div
+                        key={item.activityId}
+                        className="flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-xl text-[11px]"
+                      >
+                        <span className="font-medium text-slate-800 truncate">
+                          {item.activityTitle}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="font-bold text-sky-700">{formatVND(item.totalPrice)}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftSession((prev) =>
+                                removeSessionActivity(prev, item.activityId)
+                              )
+                            }
+                            className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                            aria-label={`Bỏ ${item.activityTitle}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Price Breakdown */}
               <div className="space-y-2 text-xs pt-2 border-t border-slate-100">
                 <SeasonalPricingSummary
@@ -586,6 +642,14 @@ export function StayDetailView({ property }: { property: Property }) {
                   <div className="flex justify-between text-slate-600">
                     <span>Tiện ích &amp; dịch vụ đi kèm</span>
                     <span>{formatAmenitiesFeeSummary(quote.pricing.amenitiesFee)}</span>
+                  </div>
+                )}
+                {(quote.pricing.activitiesFee ?? 0) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Trải nghiệm &amp; Đưa đón</span>
+                    <span className="font-semibold text-sky-700">
+                      {formatVND(quote.pricing.activitiesFee ?? 0)}
+                    </span>
                   </div>
                 )}
                 {quote.pricing.discount > 0 ? (

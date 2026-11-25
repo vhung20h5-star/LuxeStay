@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ActivitiesCatalogResponseSchema,
+  ActivityBookingSchema,
+  ActivityDetailResponseSchema,
   API_ENDPOINTS,
   ApiErrorResponseSchema,
   AuthUserSchema,
@@ -24,6 +27,9 @@ import {
   RegisterInputSchema,
   ReservationLookupInputSchema,
   ServerReservationIntentSchema,
+  ServiceBookingIntentSchema,
+  TransferServiceSchema,
+  TravelActivitySchema,
   UpsertHostAvailabilityInputSchema,
   ValidateVoucherInputSchema,
 } from "../dist/index.js";
@@ -430,4 +436,144 @@ test("Promotions Hub and Deals contracts validate extended vouchers, campaigns, 
   assert.equal(API_ENDPOINTS.deals, "/api/v1/deals");
   assert.equal(API_ENDPOINTS.dealBySlug(" black-friday-2026 "), "/api/v1/deals/black-friday-2026");
   assert.equal(API_ENDPOINTS.dealBySlug("a/b c"), "/api/v1/deals/a%2Fb%20c");
+});
+
+test("Phase 5 Activities, Transfers, ServiceBookingIntent, bundle reservations, and endpoints validate cleanly", () => {
+  const transferPayload = {
+    id: "act-01",
+    slug: "xe-rieng-san-bay-lien-khuong-da-lat",
+    title: "Xe riêng đón sân bay Liên Khương ↔ Đà Lạt",
+    subtitle: "SUV 7 chỗ đón tận sảnh",
+    category: "transfer" as const,
+    destinationCity: "Đà Lạt",
+    province: "Lâm Đồng",
+    meetingPoint: "Sân bay Liên Khương",
+    durationLabel: "45 phút",
+    pricePerUnit: 380_000,
+    unitLabel: "chuyến xe",
+    rating: 4.96,
+    reviewCount: 318,
+    images: ["/images/activities/act-01.jpg"],
+    highlights: ["Đón tận sảnh"],
+    included: ["Xe riêng 7 chỗ"],
+    freeCancellation: true,
+    instantConfirmation: true,
+    slots: [
+      {
+        id: "slot-dli-morning",
+        startTime: "06:00",
+        endTime: "12:00",
+        period: "morning" as const,
+        label: "Sáng (06:00 - 12:00)",
+        maxCapacity: 8,
+        priceModifier: 0,
+      },
+    ],
+    transferDetails: {
+      routeFrom: "Sân bay Liên Khương",
+      routeTo: "Đà Lạt",
+      vehicleType: "SUV 7 chỗ",
+      maxPassengers: 6,
+      maxLuggage: 5,
+      roundTripAvailable: true,
+    },
+    isFeatured: true,
+    isActive: true,
+  };
+
+  assert.equal(TravelActivitySchema.safeParse(transferPayload).success, true);
+  assert.equal(TransferServiceSchema.safeParse(transferPayload).success, true);
+
+  assert.equal(
+    ActivitiesCatalogResponseSchema.safeParse({
+      activities: [transferPayload],
+      cities: ["Đà Lạt"],
+      categories: ["transfer"],
+    }).success,
+    true
+  );
+
+  assert.equal(
+    ActivityDetailResponseSchema.safeParse({
+      activity: transferPayload,
+      relatedStays: [],
+      availableVouchers: [],
+    }).success,
+    true
+  );
+
+  const intentParsed = ServiceBookingIntentSchema.safeParse({
+    activityId: "act-01",
+    slotId: "slot-dli-morning",
+    dateIso: "2026-12-10",
+    quantity: 2,
+    guestInfo: {
+      fullName: "Nguyễn Văn A",
+      phone: "0912345678",
+      email: "a@luxestay.vn",
+    },
+    paymentMethod: "hotel",
+    promoCode: " welcome150 ",
+  });
+  assert.equal(intentParsed.success, true);
+  if (intentParsed.success) {
+    assert.equal(intentParsed.data.promoCode, "WELCOME150");
+  }
+
+  assert.equal(
+    ActivityBookingSchema.safeParse({
+      bookingId: "ACT-123456",
+      activityId: "act-01",
+      activitySlug: "xe-rieng-san-bay-lien-khuong-da-lat",
+      activityTitle: transferPayload.title,
+      activityCategory: "transfer",
+      activityImage: "/images/activities/act-01.jpg",
+      destinationCity: "Đà Lạt",
+      slotId: "slot-dli-morning",
+      slotLabel: "Sáng (06:00 - 12:00)",
+      dateIso: "2026-12-10",
+      quantity: 2,
+      unitLabel: "chuyến xe",
+      unitPrice: 380_000,
+      subtotal: 760_000,
+      discount: 150_000,
+      appliedPromoCode: "WELCOME150",
+      total: 610_000,
+      guestInfo: {
+        fullName: "Nguyễn Văn A",
+        phone: "0912345678",
+        email: "a@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+      freeCancellation: true,
+      status: "confirmed",
+      createdAt: "2026-11-25T10:00:00.000Z",
+    }).success,
+    true
+  );
+
+  const bundleIntent = ServerReservationIntentSchema.safeParse({
+    propertyId: "stay-01",
+    nights: 2,
+    guests: { adults: 2, children: 0, rooms: 1 },
+    selectedAmenityIds: [],
+    selectedActivities: [
+      { activityId: "act-01", slotId: "slot-dli-morning", dateIso: "2026-12-10", quantity: 1 },
+    ],
+    guestInfo: { fullName: "Nguyễn B", phone: "0912345678", email: "b@luxestay.vn" },
+    paymentMethod: "momo",
+  });
+  assert.equal(bundleIntent.success, true);
+
+  assert.equal(API_ENDPOINTS.activities, "/api/v1/activities");
+  assert.equal(API_ENDPOINTS.activityBySlug("tour-san-may"), "/api/v1/activities/tour-san-may");
+  assert.equal(API_ENDPOINTS.activityBookings, "/api/v1/activities/bookings");
+  assert.equal(
+    API_ENDPOINTS.cancelActivityBooking("act-999999"),
+    "/api/v1/activities/bookings/ACT-999999/cancel"
+  );
+  assert.equal(
+    API_ENDPOINTS.cancelReservationActivityItem("lx-abc123", "item-1"),
+    "/api/v1/reservations/LX-ABC123/activities/item-1/cancel"
+  );
 });

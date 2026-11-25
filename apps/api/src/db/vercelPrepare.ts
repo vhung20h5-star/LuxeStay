@@ -6,6 +6,7 @@ import {
   RETIRED_SEED_DESTINATION_IMAGES,
   RETIRED_SEED_PROPERTY_IMAGES,
   SEED_CATALOG_SNAPSHOT,
+  TRAVEL_ACTIVITIES,
 } from "@luxestay/domain/seed";
 import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -14,11 +15,13 @@ import {
   destinationsTable,
   promotionCampaignsTable,
   propertiesTable,
+  travelActivitiesTable,
 } from "./schema/index.js";
 import {
   seedDatabase,
   seedPromotionsAndCampaigns,
   insertMissingSeedProperties,
+  insertMissingSeedActivities,
 } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -232,6 +235,13 @@ export async function prepareDatabaseIfConfigured(
       );
     }
 
+    const { insertedCount: insertedActivities } = await backfillMissingSeedActivities(client.db);
+    if (insertedActivities > 0) {
+      console.log(
+        `[luxestay-api] Backfilled ${insertedActivities} missing seed travel activities without overwriting existing rows.`
+      );
+    }
+
     const repaired = await repairRetiredSeedImages(client.db);
     if (
       repaired.updatedDestinations > 0 ||
@@ -248,6 +258,23 @@ export async function prepareDatabaseIfConfigured(
   } finally {
     await client.close();
   }
+}
+
+export async function backfillMissingSeedActivities(
+  db: LuxeStayDb
+): Promise<{ insertedCount: number }> {
+  const existingRows = await db
+    .select({ id: travelActivitiesTable.id })
+    .from(travelActivitiesTable);
+  const existingIds = new Set(existingRows.map((row) => row.id));
+  const missing = TRAVEL_ACTIVITIES.filter((activity) => !existingIds.has(activity.id));
+  if (missing.length === 0) {
+    return { insertedCount: 0 };
+  }
+  await db.transaction(async (tx) => {
+    await insertMissingSeedActivities(tx, missing);
+  });
+  return { insertedCount: missing.length };
 }
 
 const currentFilePath = path.resolve(fileURLToPath(import.meta.url));

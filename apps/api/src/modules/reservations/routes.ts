@@ -191,6 +191,41 @@ export function createReservationRoutes(reservationService: ReservationService) 
     return c.json(buildApiSuccess(result.booking, buildMeta(c)), 200);
   });
 
+  routes.patch("/api/v1/reservations/:bookingId/activities/:itemId/cancel", async (c) => {
+    const bookingId = c.req.param("bookingId");
+    const itemId = c.req.param("itemId");
+    const authUser = c.get("authUser");
+    let rawBody: unknown = {};
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      rawBody = {};
+    }
+
+    const parsed = CancelReservationInputSchema.safeParse(rawBody);
+    if (!parsed.success || (!authUser && !parsed.data.contact)) {
+      const message = !parsed.success
+        ? (parsed.error.issues[0]?.message ?? "Thiếu thông tin xác nhận hủy dịch vụ đi kèm.")
+        : "Vui lòng đăng nhập hoặc cung cấp email/số điện thoại để hủy dịch vụ đi kèm.";
+      return c.json(buildApiError("VALIDATION_ERROR", message, undefined, buildMeta(c)), 400);
+    }
+
+    const result = await reservationService.cancelReservationActivityItem(
+      bookingId,
+      itemId,
+      parsed.data,
+      { authUser }
+    );
+    if (!result.ok) {
+      return c.json(
+        buildApiError(result.code, result.message, undefined, buildMeta(c)),
+        result.status
+      );
+    }
+
+    return c.json(buildApiSuccess(result.booking, buildMeta(c)), 200);
+  });
+
   routes.post("/api/v1/reservations/:bookingId/complete", async (c) => {
     const bookingId = c.req.param("bookingId");
     const authUser = c.get("authUser");

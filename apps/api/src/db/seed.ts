@@ -1,7 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Property } from "@luxestay/contracts";
-import { PROMOTION_CAMPAIGNS, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
+import type { Property, TravelActivity } from "@luxestay/contracts";
+import {
+  PROMOTION_CAMPAIGNS,
+  SEED_CATALOG_SNAPSHOT,
+  TRAVEL_ACTIVITIES,
+} from "@luxestay/domain/seed";
 import { buildDemoStaffUsers } from "../modules/auth/demoAccounts.js";
 import { createDbClient, type LuxeStayDb } from "./client.js";
 import {
@@ -16,6 +20,7 @@ import {
   propertyAmenitiesTable,
   reviewsTable,
   testimonialsTable,
+  travelActivitiesTable,
   usersTable,
 } from "./schema/index.js";
 
@@ -354,7 +359,47 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
     if (reviewRows.length > 0) {
       await tx.insert(reviewsTable).values(reviewRows).onConflictDoNothing();
     }
+
+    await insertMissingSeedActivities(tx, TRAVEL_ACTIVITIES);
   });
+}
+
+function buildTravelActivityInsertRow(activity: TravelActivity, sortOrder: number) {
+  return {
+    id: activity.id,
+    slug: activity.slug,
+    title: activity.title,
+    subtitle: activity.subtitle,
+    category: activity.category,
+    destinationCity: activity.destinationCity,
+    province: activity.province,
+    meetingPoint: activity.meetingPoint,
+    durationLabel: activity.durationLabel,
+    pricePerUnit: activity.pricePerUnit,
+    unitLabel: activity.unitLabel,
+    originalPrice: activity.originalPrice ?? null,
+    rating: activity.rating,
+    reviewCount: activity.reviewCount,
+    images: [...activity.images],
+    highlights: [...activity.highlights],
+    included: [...activity.included],
+    freeCancellation: Boolean(activity.freeCancellation),
+    instantConfirmation: Boolean(activity.instantConfirmation),
+    slots: activity.slots.map((slot) => ({ ...slot })),
+    transferDetails: activity.transferDetails ? { ...activity.transferDetails } : null,
+    isFeatured: Boolean(activity.isFeatured),
+    isActive: Boolean(activity.isActive),
+    sortOrder,
+  };
+}
+
+export async function insertMissingSeedActivities(
+  db: Pick<LuxeStayDb, "insert"> | LuxeStayDb,
+  activities: readonly TravelActivity[]
+): Promise<void> {
+  if (activities.length === 0) return;
+  const rows = activities.map((activity, idx) => buildTravelActivityInsertRow(activity, idx));
+  await db.insert(travelActivitiesTable).values(rows).onConflictDoNothing();
 }
 
 async function main() {

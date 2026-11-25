@@ -1,24 +1,24 @@
 # Product Requirements Document (PRD) — LuxeStay
 
-> **Version:** `2.0`  
+> **Version:** `2.1`  
 > **Last Updated:** `2026-11-25`  
-> **Trạng thái Scope:** `Phase 0 – Phase 4C (Completed)` · `Epic 9 / Phase 5 (Planned)`  
-> **Tài liệu liên quan:** [ARCHITECTURE.md](./ARCHITECTURE.md) (`v3.0`) · [PLAN.md](./PLAN.md) (`v3.0`) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [GLOSSARY.md](../GLOSSARY.md)
+> **Trạng thái Scope:** `Phase 0 – Phase 5 (Completed)`  
+> **Tài liệu liên quan:** [ARCHITECTURE.md](./ARCHITECTURE.md) (`v3.1`) · [PLAN.md](./PLAN.md) (`v3.1`) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [GLOSSARY.md](../GLOSSARY.md)
 
 ---
 
 ## 1. Tầm nhìn & Phạm vi Sản phẩm
 
 ### 1.1 Tổng quan
-**LuxeStay** là nền tảng đặt phòng khách sạn, villa, resort, homestay và glamping nghỉ dưỡng tại Việt Nam với triết lý minh bạch chi phí, kiểm soát tồn kho nguyên tử theo ngày, trải nghiệm ưu đãi tập trung và khả năng vận hành ổn định trên cả desktop lẫn thiết bị di động (`360px+`).
+**LuxeStay** là nền tảng đặt phòng khách sạn, villa, resort, homestay, glamping kết hợp trải nghiệm địa phương, tour & đưa đón sân bay tại Việt Nam với triết lý minh bạch chi phí, kiểm soát tồn kho/suất nguyên tử theo ngày, trải nghiệm ưu đãi tập trung và khả năng vận hành ổn định trên cả desktop lẫn thiết bị di động (`360px+`).
 
 ### 1.2 Giá trị cốt lõi (Value Proposition)
-- **Kho chỗ nghỉ tuyển chọn & xác thực hình ảnh:** **42 chỗ nghỉ** (`stay-01`..`stay-42`) phủ **14 thành phố** du lịch trọng điểm, phân tách **141 media slots** duy nhất (0% trùng lặp toàn cục) căn chỉnh theo 4 trục chất lượng.
-- **Minh bạch tài chính 100% (Server-Authoritative):** Tách bạch giá cơ bản, phụ phí cuối tuần/mùa cao điểm theo từng đêm (`nightlyBreakdown`), phí dọn phòng (`150.000đ`), tiện ích trả phí đính kèm, và giảm giá voucher hợp lệ được kiểm chứng trực tiếp trên server.
-- **Promotions Hub & Deep-Link Campaign:** Trải nghiệm ưu đãi 3 tầng ngay trang chủ kèm trung tâm `/deals` và landing page `/deals/[slug]` truyền thẳng mã ưu đãi qua `BookingContext` vào modal chi tiết/giỏ đặt phòng.
-- **Khép kín giao dịch & Quản trị Chủ nhà:** Hỗ trợ thanh toán trực tuyến mô phỏng (`pending_payment` -> webhook HMAC), giữ chỗ không cần trả trước (`confirmed`), hủy đơn có kiểm soát chính sách, cùng Cổng Chủ nhà/Quản trị `/host` (RBAC).
+- **Kho chỗ nghỉ & Trải nghiệm tuyển chọn, xác thực hình ảnh:** **42 chỗ nghỉ** (`stay-01`..`stay-42`) phủ **14 thành phố** du lịch trọng điểm kết hợp **12 dịch vụ Hoạt động, Tour & Đưa đón sân bay** (`act-01`..`act-12`), phân tách **153 media slots** duy nhất (0% trùng lặp toàn cục) căn chỉnh theo 4 trục chất lượng.
+- **Minh bạch tài chính 100% (Server-Authoritative):** Tách bạch giá cơ bản, phụ phí cuối tuần/mùa cao điểm theo từng đêm (`nightlyBreakdown`), phí dọn phòng (`150.000đ`), tiện ích trả phí đính kèm, phí trải nghiệm/đưa đón (`activitiesFee`), và giảm giá voucher hợp lệ được kiểm chứng trực tiếp trên server.
+- **Promotions Hub & Deep-Link Campaign:** Trải nghiệm ưu đãi 3 tầng ngay trang chủ kèm trung tâm `/deals` và landing page `/deals/[slug]` truyền thẳng mã ưu đãi qua `BookingContext` vào modal chi tiết/giỏ đặt phòng, áp dụng xuyên suốt cả lưu trú lẫn đặt dịch vụ hoạt động.
+- **Khép kín giao dịch đa dịch vụ & Quản trị Chủ nhà:** Hỗ trợ đặt phòng độc lập, đặt trải nghiệm/xe riêng độc lập (`ACT-XXXXXX`), hoặc ghép gói Stay + Activity Bundle thanh toán 1 lần qua cổng sandbox (`pending_payment` -> webhook HMAC) và hủy riêng từng dịch vụ đính kèm mà vẫn giữ nguyên phòng, cùng Cổng Chủ nhà/Quản trị `/host` (RBAC).
 
-### 1.3 Phạm vi Hệ thống (Implemented vs Planned — Khớp `PLAN.md v3.0`)
+### 1.3 Phạm vi Hệ thống (Implemented — Khớp `PLAN.md v3.1`)
 
 | Hạng mục / Phân hệ | Trạng thái | Chi tiết thực tế |
 | :--- | :--- | :--- |
@@ -27,25 +27,25 @@
 | **Booking, Vouchers & Sandbox Payment** | ✅ **Implemented (Phase 0–2)** | Atomic lock (`SELECT ... FOR UPDATE`), `deriveBookingQuote`, `/bookings`, `/bookings/[bookingId]`, `/payments/[transactionId]` + HMAC webhook |
 | **Auth, OTP, Favorites & Locale** | ✅ **Implemented (Phase 2 & 3B)** | Email/password + OTP challenges, cookie session (`guest`/`host`/`admin`), `user_favorites`, `vi`/`en` & `VND`/`USD` currency |
 | **Host Portal (RBAC `/host`)** | ✅ **Implemented (Phase 3B)** | Tạo/sửa/xóa chỗ nghỉ (`host`/`admin`), ghi đè tồn kho/giá theo ngày, theo dõi booking & thống kê doanh thu |
-| **Promotions Hub, `/deals`, Media & Mobile** | ✅ **Implemented (Phase 4A–4C)** | 3-tier `PromotionsHub`, `/deals`, `/deals/[slug]`, **141/141 ảnh duy nhất**, `retiredImages.ts`, Mobile `360px+` `overflow-x: clip` & `E2E-6` |
-| **Activities, Tours & Transfers** | 📋 **Planned (Phase 5 / Epic 9)** | Mở rộng cross-sell trải nghiệm/đưa đón (`/activities`, `0005_travel_activities.sql`, `activitiesPort.ts`) kèm bundle checkout & `E2E-7` (chưa kích hoạt ở production hiện tại) |
+| **Promotions Hub, `/deals`, Media & Mobile** | ✅ **Implemented (Phase 4A–4C)** | 3-tier `PromotionsHub`, `/deals`, `/deals/[slug]`, **141/141 ảnh lưu trú/ưu đãi duy nhất**, `retiredImages.ts`, Mobile `360px+` `overflow-x: clip` & `E2E-6` |
+| **Activities, Tours & Transfers** | ✅ **Implemented (Phase 5 / Epic 9)** | **12 dịch vụ** (`4` transfers, `4` tours, `4` experiences), `/activities` & `/activities/[slug]` SSR, `0005_travel_activities.sql` (24 bảng), `activitiesPort.ts`, đặt độc lập `ACT-XXXXXX` + cross-sell bundle & partial cancel, `153/153` ảnh duy nhất & `E2E-7` |
 
 ---
 
 ## 2. Personas & Hành trình Người dùng
 
 1. **Khách du lịch / Guest Finder:**
-   - Truy cập `/`, khám phá 8 điểm đến nổi bật, lọc theo 9 danh mục hoặc từ khóa/ngày/khách, xem chi tiết tại modal hoặc `/stays/[id]`, tạo booking nhanh (họ tên, SĐT Việt Nam `VN_PHONE_REGEX`, email) và tra cứu qua `/bookings/[bookingId]`.
+   - Truy cập `/`, khám phá 8 điểm đến nổi bật, lọc theo 9 danh mục hoặc từ khóa/ngày/khách, xem chi tiết tại modal hoặc `/stays/[id]`, ghép thêm xe đón sân bay/tour địa phương hoặc đặt riêng tại `/activities`, tạo booking nhanh (họ tên, SĐT Việt Nam `VN_PHONE_REGEX`, email) và tra cứu cả `LX-` lẫn `ACT-` qua `/bookings`.
 2. **Thành viên đăng nhập / Loyalty Member:**
-   - Đăng ký/đăng nhập (mật khẩu hoặc OTP), lưu danh sách yêu thích vào `user_favorites` (`FavoritesDrawer`), đủ điều kiện sử dụng voucher giới hạn như `NEW_USER_ONLY`, và quản lý lịch sử đơn trong `/bookings`.
+   - Đăng ký/đăng nhập (mật khẩu hoặc OTP), lưu danh sách yêu thích vào `user_favorites` (`FavoritesDrawer`), đủ điều kiện sử dụng voucher giới hạn như `NEW_USER_ONLY`, và quản lý lịch sử đơn phòng lẫn đơn trải nghiệm trong `/bookings`.
 3. **Chủ nhà / Partner Host (`role = "host"`):**
    - Truy cập `/host` (bảo vệ bằng RBAC), thêm mới hoặc cập nhật thông tin chỗ nghỉ, thiết lập block ngày / phụ phí mùa tại `property_availability`, xem đơn đặt phòng đến và tổng quan doanh thu.
 4. **Admin / Release & QA Operations:**
-   - Vận hành `db:prepare` (`vercelPrepare.ts`) không ghi đè dữ liệu host/user, kiểm định 0% trùng lặp ảnh qua `scripts/verify-seed-images.mjs`, và giữ bộ kiểm thử `117` tests + `6` E2E flows xanh trước mỗi lần release.
+   - Vận hành `db:prepare` (`vercelPrepare.ts`) không ghi đè dữ liệu host/user, kiểm định 0% trùng lặp ảnh qua `scripts/verify-seed-images.mjs` (153 slots), và giữ bộ kiểm thử `128` tests + `7` E2E flows xanh trước mỗi lần release.
 
 ---
 
-## 3. Functional Requirements (`FR-01` – `FR-16`)
+## 3. Functional Requirements (`FR-01` – `FR-17`)
 
 ### `FR-01`: Catalog Discovery & Progressive Listing
 - Hiển thị **42 chỗ nghỉ** trên **14 thành phố** cùng **8 Trending Destinations**, **9 Categories**, và **3 Testimonials**.
@@ -115,43 +115,38 @@
 - Ảnh thay thế cũ được ghi sổ tại [`retiredImages.ts`](../packages/domain/src/seed/retiredImages.ts) để `repairRetiredSeedImages(db)` sửa dữ liệu trên Neon có điều kiện an toàn; quy trình kiểm chứng tự động qua [`verify-seed-images.mjs`](../scripts/verify-seed-images.mjs).
 
 ### `FR-16`: Mobile Responsive Stability (`360×800` & `390×844`)
-- Giao diện trang chủ và luồng đặt phòng phải duy trì `document.documentElement.scrollWidth <= window.innerWidth` ở các kích thước màn hình hẹp (`360×800`, `390×844`).
-- Áp dụng `overflow-x: clip` trên `html, body` tại [`globals.css`](../apps/web/src/app/globals.css), `w-full min-w-0` cho mọi section/grid/carousel (`PromotionsHub`, `HorizontalCarouselShell`, `PropertyList`, `TestimonialsSection`), giới hạn chiều rộng popover `SearchBar` theo viewport, và khóa chống hồi quy bằng Playwright `E2E-6`.
+- Giao diện trang chủ, trang hoạt động/đưa đón và luồng đặt phòng phải duy trì `document.documentElement.scrollWidth <= window.innerWidth` ở các kích thước màn hình hẹp (`360×800`, `390×844`).
+- Áp dụng `overflow-x: clip` trên `html, body` tại [`globals.css`](../apps/web/src/app/globals.css), `w-full min-w-0` cho mọi section/grid/carousel (`PromotionsHub`, `HorizontalCarouselShell`, `PropertyList`, `TestimonialsSection`), giới hạn chiều rộng popover `SearchBar` theo viewport, và khóa chống hồi quy bằng Playwright `E2E-6` & `E2E-7`.
+
+### `FR-17`: Activities, Tours, Airport Transfers & Stay Bundle Cross-Sell
+- Danh mục **12 dịch vụ** (`act-01`..`act-12`: 4 đưa đón sân bay/limousine, 4 tour khám phá, 4 trải nghiệm/wellness/ẩm thực) với bộ lọc theo thành phố, danh mục, khung giờ (`morning`/`afternoon`/`evening`/`full-day`), tìm kiếm tiếng Việt không dấu và sắp xếp tại `/activities` ([`ActivitiesHubView.tsx`](../apps/web/src/features/activities/ActivitiesHubView.tsx)).
+- Trang chi tiết SSR `/activities/[slug]` ([`ActivityDetailView.tsx`](../apps/web/src/features/activities/ActivityDetailView.tsx)) hiển thị lịch khung giờ + sức chứa, thông số tuyến xe riêng (`TransferDetails` cho `transfer`), áp dụng mã ưu đãi Promotions Hub và tạo đơn độc lập `ACT-XXXXXX` xác nhận tức thì (khóa suất nguyên tử chống vượt sức chứa) kèm hủy đơn và tra cứu thống nhất cùng `LX-` trên `/bookings`.
+- Gợi ý cross-sell theo điểm đến ([`StayActivitiesCrossSell.tsx`](../apps/web/src/features/activities/StayActivitiesCrossSell.tsx)) tích hợp ngay trên `/stays/[id]` và `BookingCheckoutModal`: cộng `activitiesFee` vào báo giá tổng server-authoritative, thanh toán 1 lần qua `/payments/[transactionId]`, và cho phép **hủy riêng từng dịch vụ đính kèm** (`PATCH /api/v1/reservations/:bookingId/activities/:itemId/cancel`) trên `/bookings/[bookingId]` trong khi giữ nguyên trạng thái `confirmed` của phòng.
 
 ---
 
 ## 4. Non-Functional Requirements (`NFR-01` – `NFR-06`)
 
-1. **`NFR-01` Data Consistency & Fail-Fast:** Trong `NEXT_PUBLIC_DATA_MODE=api`, UI không âm thầm fallback sang mock khi API lỗi; mọi thao tác giữ/đặt phòng có tranh chấp đồng thời phải được giải quyết bằng row lock DB.
-2. **`NFR-02` Performance & Progressive Loading:** Trang chủ chia lô hiển thị 12 chỗ nghỉ mỗi bước (*Load More*); toàn bộ suite 6 kịch bản E2E Playwright hoàn tất trong ngưỡng ~20s trên môi trường cục bộ.
+1. **`NFR-01` Data Consistency & Fail-Fast:** Trong `NEXT_PUBLIC_DATA_MODE=api`, UI không âm thầm fallback sang mock khi API lỗi; mọi thao tác giữ/đặt phòng và đặt suất hoạt động có tranh chấp đồng thời phải được giải quyết bằng row lock DB / mutex.
+2. **`NFR-02` Performance & Progressive Loading:** Trang chủ chia lô hiển thị 12 chỗ nghỉ mỗi bước (*Load More*); toàn bộ suite 7 kịch bản E2E Playwright hoàn tất ổn định trên cổng cô lập (`4100/3100`).
 3. **`NFR-03` Security & Boundary Validation:** Mọi đầu vào API kiểm tra qua Zod schemas của `@luxestay/contracts`; API Host kiểm tra role `host`; webhook thanh toán xác thực chữ ký HMAC; `.env*` và `.vercel/` tuyệt đối không lọt vào Git.
 4. **`NFR-04` Viewport & Responsive Ergonomics:** Không bị cắt lệch nội dung, không phát sinh cuộn ngang ngoài ý muốn khi zoom hoặc mở trang trên điện thoại màn hình nhỏ (`360px`–`390px`).
-5. **`NFR-05` Idempotent Schema & Data Evolution:** Hệ thống migration `0000`–`0004` + `vercelPrepare.ts` (`db:prepare`) có thể chạy lặp lại nhiều lần trên môi trường Neon production mà không phá vỡ dữ liệu vận hành hiện có.
-6. **`NFR-06` Continuous Quality Verification:** Mọi thay đổi trước khi merge phải vượt qua `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` (`117` tests), `verify-seed-images.mjs` (khi chạm media/seed), và `npm run test:e2e` (`E2E-1`–`E2E-6`).
+5. **`NFR-05` Idempotent Schema & Data Evolution:** Hệ thống migration `0000`–`0005` + `vercelPrepare.ts` (`db:prepare`, gồm `backfillMissingSeedProperties` & `backfillMissingSeedActivities`) có thể chạy lặp lại nhiều lần trên môi trường Neon production mà không phá vỡ dữ liệu vận hành hiện có.
+6. **`NFR-06` Continuous Quality Verification:** Mọi thay đổi trước khi merge phải vượt qua `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` (`128` tests), `verify-seed-images.mjs` (`153` slots), và `npm run test:e2e` (`E2E-1`–`E2E-7`).
 
 ---
 
-## 5. Roadmap Sync ([`PLAN.md v3.0`](./PLAN.md))
+## 5. Roadmap Sync ([`PLAN.md v3.1`](./PLAN.md))
 
 ### 5.1 Các Phase đã hoàn thành (✅ Completed)
 - **Phase 0 – Phase 1 (`M0`–`M8`):** Khởi tạo Monorepo, Contracts + Domain seams, Overlay stack, Hono API + Postgres/Drizzle + Ports.
 - **Phase 2 (`M9`–`M10`):** Custom Session Auth + OTP, Favorites sync, Payment Sandbox + HMAC Webhooks + Notification logs.
 - **Phase 3A – 3B (`M11`–`M12`):** Availability Engine, Seasonal Pricing, Verified Reviews, `/stays/[id]`, Host Portal RBAC `/host`, i18n `vi`/`en` & Playwright E2E nền tảng.
 - **Phase 4A – 4C (`M13`–`M15`) & Mobile Polish:** Promotions Hub 3 tầng + `/deals` + `/deals/[slug]` (`E2E-4`), mở rộng 42 chỗ nghỉ + Load More 12/lần (`E2E-5`), audit 141/141 ảnh duy nhất chuẩn 4 trục + `repairRetiredSeedImages`, và sửa triệt để lỗi tràn ngang mobile (`E2E-6`).
-
-### 5.2 Roadmap tiếp theo — Epic 9: Phase 5 — Activities, Tours & Transfers (📋 Planned)
-
-> *Mục tiêu: Mở rộng từ nền tảng đặt phòng thuần túy sang mô hình cross-sell trải nghiệm địa phương & đưa đón sân bay đồng bộ trực tiếp với [`PLAN.md v3.0`](./PLAN.md).*
-
-- **`P5.1` — Experiences & Transfers Catalog (`📋 Planned`):**
-  - Định nghĩa contracts cho trải nghiệm/tour/đưa đón trong `@luxestay/contracts` và seed dữ liệu tại `packages/domain/src/seed/activities/*` (giữ chuẩn 0% trùng ảnh).
-  - Mở rộng schema DB với migration `0005_travel_activities.sql` lưu danh mục hoạt động, khung giờ & liên kết dịch vụ đính kèm.
-  - Thêm module `apps/api/src/modules/activities/*`, port mới `activitiesPort.ts` (độc lập với `experiencePort.ts` đang dùng cho `PropertyExperiencePort` từ Phase 3A), và trang `/activities`, `/activities/[slug]`.
-- **`P5.2` — Cross-sell Checkout Bundle & Payments (`📋 Planned`):**
-  - Bổ sung gợi ý trải nghiệm/đưa đón theo điểm đến ngay trong `/stays/[id]` và bước Checkout.
-  - Tính tổng đơn gói gộp server-authoritative và hỗ trợ thanh toán/hủy riêng từng hạng mục trong `/bookings/[bookingId]`.
-- **`P5.3` — Bundle E2E Verification (`📋 Planned`):**
-  - Triển khai kịch bản Playwright **`E2E-7`** kiểm chứng trọn vẹn luồng đặt phòng + đặt kèm đưa đón sân bay -> thanh toán sandbox -> hủy một phần dịch vụ.
+- **Phase 5 / Epic 9 (`M16`, `P5.1`–`P5.3` — ✅ Completed):**
+  - `P5.1`: Contracts `activities.ts`, pure domain `activities.ts`, modular seed `seed/activities/*` (12 dịch vụ, nâng tổng lên `153/153` ảnh duy nhất 0% trùng lặp).
+  - `P5.2`: Migration `0005_travel_activities.sql` (24 bảng), backfill idempotent `backfillMissingSeedActivities`, API `modules/activities/*` (6 routes) & partial bundle cancel trong `modules/reservations/*`.
+  - `P5.3`: `activitiesPort.ts`, giao diện `/activities`, `/activities/[slug]`, `StayActivitiesCrossSell` trên `/stays/[id]` + Checkout, tra cứu `ACT-`/`LX-` tại `/bookings`, và Playwright **`E2E-7`**.
 
 ---
 
@@ -164,5 +159,5 @@
 | **`FR-07` (Promotions Hub & Deals)** | `deals.ts`, `vouchers.ts`, `deals` & `catalog` API, `features/promotions`, `/deals`, `/deals/[slug]` | `deals.test.ts`, `promotions-hub.test.ts`, `api.test.ts`, `E2E-4` | `M13` |
 | **`FR-08` – `FR-11` (Payment, Auth, Favorites, Reviews)** | `auth`, `payments`, `favorites`, `reviews`, `notifications` API + web features tương ứng | `api.test.ts`, `availability-reviews.test.ts`, `E2E-2`, `E2E-3` | `M9`, `M10`, `M11` |
 | **`FR-12` – `FR-14` (Host Portal, Locale, Overlays)** | `host.ts`, `locale.ts`, `host` API, `/host`, `OverlayContext` (`overlayStack.ts`) | `host-locale.test.ts`, `overlay-stack.test.ts`, `api.test.ts`, `E2E-1`, `E2E-3` | `M4`, `M12` |
-| **`FR-15` – `FR-16` (4-Axis Media & Mobile Viewport)** | `seed/properties/*`, `retiredImages.ts`, `vercelPrepare.ts`, `globals.css`, home layout grids | [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `verify-seed-images.mjs` (141 slots), `E2E-5`, `E2E-6` (`390×844` & `360×800`) | `M15` + Mobile Hotfix |
-| **Epic 9 / Phase 5 (`P5.1`–`P5.3`)** | `@luxestay/contracts`, `seed/activities/*`, `0005_travel_activities.sql`, `activitiesPort.ts`, `/activities`, `/activities/[slug]`, bundle checkout | **`E2E-7`** *(📋 Planned)* | Phase 5 (`PLAN.md`) |
+| **`FR-15` – `FR-16` (4-Axis Media & Mobile Viewport)** | `seed/properties/*`, `seed/activities/*`, `retiredImages.ts`, `vercelPrepare.ts`, `globals.css`, home layout grids | [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `verify-seed-images.mjs` (153 slots), `E2E-5`, `E2E-6` (`390×844` & `360×800`) | `M15` + Mobile Hotfix |
+| **`FR-17` (Epic 9 / Phase 5 — Activities, Transfers & Bundle)** | `contracts/activities.ts`, `domain/activities.ts`, `seed/activities/*`, `0005_travel_activities.sql`, `modules/activities/*`, `activitiesPort.ts`, `/activities`, `/activities/[slug]`, `StayActivitiesCrossSell` | `contracts.test.ts`, `activities.test.ts`, `api.test.ts`, `activities-port.test.ts`, `verify-seed-images.mjs`, **`E2E-7`** | `M16` (`P5.1`–`P5.3`) |

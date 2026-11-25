@@ -1,4 +1,8 @@
 import type {
+  ActivitiesCatalogResponse,
+  ActivitiesQueryParams,
+  ActivityBooking,
+  ActivityDetailResponse,
   AuthUser,
   BookingDetails,
   CatalogSnapshot,
@@ -18,6 +22,7 @@ import type {
   PropertyAvailabilityData,
   RegisterInput,
   ReservationSubmitter,
+  ServiceBookingIntent,
   ValidateVoucherInput,
   VoucherValidationResult,
 } from "@luxestay/contracts";
@@ -65,6 +70,12 @@ export interface ReservationManagerPort {
     input: { contact?: string; reason?: string },
     options?: { signal?: AbortSignal }
   ): Promise<BookingDetails>;
+  cancelActivityItem(
+    bookingId: string,
+    itemId: string,
+    input: { contact?: string; reason?: string },
+    options?: { signal?: AbortSignal }
+  ): Promise<BookingDetails>;
   complete(
     bookingId: string,
     input?: { contact?: string },
@@ -76,6 +87,32 @@ export interface ReservationManagerPort {
     contact?: string,
     options?: { signal?: AbortSignal }
   ): Promise<readonly NotificationLog[]>;
+}
+
+export interface ActivitiesPort {
+  listActivities(
+    query?: ActivitiesQueryParams,
+    options?: { signal?: AbortSignal }
+  ): Promise<ActivitiesCatalogResponse>;
+  getActivityBySlug(
+    slug: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<ActivityDetailResponse | null>;
+  createBooking(
+    intent: ServiceBookingIntent,
+    options?: { signal?: AbortSignal }
+  ): Promise<ActivityBooking>;
+  lookupBooking(
+    bookingId: string,
+    contact?: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<ActivityBooking>;
+  listMyBookings(options?: { signal?: AbortSignal }): Promise<readonly ActivityBooking[]>;
+  cancelBooking(
+    bookingId: string,
+    input: { contact?: string; reason?: string },
+    options?: { signal?: AbortSignal }
+  ): Promise<ActivityBooking>;
 }
 
 export interface PropertyExperiencePort {
@@ -132,4 +169,5 @@ export interface AppPorts {
   reservationManager: ReservationManagerPort;
   paymentGateway: PaymentGatewayPort;
   propertyExperience: PropertyExperiencePort;
+  activities: ActivitiesPort;
 }

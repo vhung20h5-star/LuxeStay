@@ -13,6 +13,12 @@ import {
 } from "./catalog.js";
 import { NightlyPriceBreakdownSchema } from "./availability.js";
 import { PaymentTransactionSchema } from "./payment.js";
+import {
+  BookedBundleActivitySchema,
+  SelectedBundleActivityInputSchema,
+  type BookedBundleActivity,
+  type SelectedBundleActivityInput,
+} from "./activities.js";
 
 export const VN_PHONE_REGEX = /^(?:\+?84|0)\d{8,10}$/;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -44,6 +50,7 @@ export const BookingPricingSchema = z.object({
   cleaningFee: z.number().nonnegative(),
   serviceFee: z.number().nonnegative(),
   amenitiesFee: z.number().nonnegative(),
+  activitiesFee: z.number().nonnegative().default(0),
   discount: z.number().nonnegative(),
   appliedPromoCode: z.string().min(1).optional(),
   total: z.number().nonnegative(),
@@ -105,6 +112,7 @@ export const ServerReservationIntentSchema = z.object({
     rooms: z.number().finite().default(1),
   }),
   selectedAmenityIds: z.array(z.string()).default([]),
+  selectedActivities: z.array(SelectedBundleActivityInputSchema).optional(),
   guestInfo: GuestInfoSchema,
   paymentMethod: PaymentMethodSchema,
   promoCode: z
@@ -154,6 +162,7 @@ export const BookingDetailsSchema = z.object({
   guests: GuestsSchema,
   pricing: BookingPricingSchema,
   selectedAmenities: z.array(SelectedBookingAmenitySchema).readonly(),
+  selectedActivities: z.array(BookedBundleActivitySchema).readonly().default([]),
   guestInfo: z.object({
     fullName: z.string().min(1),
     email: z.string().min(1),
@@ -182,6 +191,7 @@ export interface BookingSessionState {
   nights: number;
   guests: Guests;
   selectedAmenityIds: string[];
+  selectedActivities?: SelectedBundleActivityInput[];
   promoCode?: string;
   confirmedBooking: BookingDetails | null;
 }
@@ -195,6 +205,7 @@ export interface BookingQuote {
   resolvedAmenities: ResolvedPropertyAmenity[];
   selectedAmenityIds: string[];
   selectedAmenities: SelectedBookingAmenity[];
+  selectedActivities?: BookedBundleActivity[];
   pricing: BookingPricing;
 }
 
@@ -208,6 +219,7 @@ export interface ReservationSubmissionRequest {
   };
   paymentMethod: PaymentMethod;
   promoCode?: string;
+  selectedActivities?: SelectedBundleActivityInput[];
 }
 
 export interface ReservationSubmitter {

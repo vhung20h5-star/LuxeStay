@@ -4,6 +4,9 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ActivitiesCatalogResponseSchema,
+  ActivityBookingSchema,
+  ActivityDetailResponseSchema,
   API_ENDPOINTS,
   ApiErrorResponseSchema,
   AuthSessionDataSchema,
@@ -35,6 +38,7 @@ import {
   RETIRED_SEED_DESTINATION_IMAGES,
   RETIRED_SEED_PROPERTY_IMAGES,
   SEED_CATALOG_SNAPSHOT,
+  TRAVEL_ACTIVITIES,
 } from "@luxestay/domain/seed";
 import { createApiApp } from "../dist/app.js";
 import { loadApiEnv } from "../dist/config/env.js";
@@ -48,8 +52,10 @@ import {
   propertyAvailabilityTable,
   reservationsTable,
   reviewsTable,
+  travelActivitiesTable,
 } from "../dist/db/schema/index.js";
 import {
+  backfillMissingSeedActivities,
   backfillMissingSeedProperties,
   backfillPromotionsIfNeeded,
   prepareDatabaseIfConfigured,
@@ -2528,4 +2534,174 @@ test("In-lock hasPriorSuccessfulBookings and lightweight hasSuccessfulBookingByU
     reservationsTable,
   ]);
   assert.equal(snapshotCalls, 0);
+});
+
+test("Phase 5 Activities & Transfers API supports catalog filtering, standalone bookings with slot lock + vouchers, and cancellation", async () => {
+  const { app } = createApiApp({ nodeEnv: "test" });
+
+  // 1. Catalog list & filters
+  const allRes = await app.request(API_ENDPOINTS.activities);
+  assert.equal(allRes.status, 200);
+  const catalog = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
+    await allRes.json()
+  ).data;
+  assert.equal(catalog.activities.length, 12);
+
+  const transferRes = await app.request(`${API_ENDPOINTS.activities}?category=transfer&city=Da%20Lat`);
+  assert.equal(transferRes.status, 200);
+  const filtered = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
+    await transferRes.json()
+  ).data;
+  assert.equal(filtered.activities.length, 1);
+  assert.equal(filtered.activities[0].id, "act-01");
+
+  // 2. Detail by slug & 404
+  const detailRes = await app.request(
+    API_ENDPOINTS.activityBySlug("xe-rieng-san-bay-lien-khuong-da-lat")
+  );
+  assert.equal(detailRes.status, 200);
+  const detail = createApiSuccessSchema(ActivityDetailResponseSchema).parse(
+    await detailRes.json()
+  ).data;
+  assert.ok(detail.relatedStays.length >= 1);
+  assert.ok(detail.availableVouchers.length >= 1);
+
+  const missingRes = await app.request(API_ENDPOINTS.activityBySlug("does-not-exist"));
+  assert.equal(missingRes.status, 404);
+
+  // 3. Standalone booking with WELCOME150 (-150k) & concurrent slot capacity check (maxCapacity = 8)
+  const makeBook = (qty: number, email: string, promoCode?: string) =>
+    app.request(API_ENDPOINTS.activityBookings, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        activityId: "act-01",
+        slotId: "slot-dli-morning",
+        dateIso: "2027-03-10",
+        quantity: qty,
+        guestInfo: { fullName: "Khách Trải Nghiệm", phone: "0912345678", email },
+        paymentMethod: "hotel",
+        ...(promoCode ? { promoCode } : {}),
+      }),
+    });
+
+  const [b1, b2] = await Promise.all([
+    makeBook(5, "first@luxestay.vn", "WELCOME150"),
+    makeBook(5, "second@luxestay.vn"),
+  ]);
+  const statuses = [b1.status, b2.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [201, 409]);
+
+  const winnerRes = b1.status === 201 ? b1 : b2;
+  const booked = createApiSuccessSchema(ActivityBookingSchema).parse(await winnerRes.json()).data;
+  assert.match(booked.bookingId, /^ACT-[A-F0-9]{6}$/);
+
+  // 4. Lookup & Cancel releases slot capacity -> 5 slots now bookable again
+  const lookupRes = await app.request(
+    `${API_ENDPOINTS.activityBookingById(booked.bookingId)}?contact=${encodeURIComponent(
+      booked.guestInfo.email
+    )}`
+  );
+  assert.equal(lookupRes.status, 200);
+
+  const cancelRes = await app.request(API_ENDPOINTS.cancelActivityBooking(booked.bookingId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact: booked.guestInfo.email, reason: "Đổi lịch bay" }),
+  });
+  assert.equal(cancelRes.status, 200);
+  const cancelled = createApiSuccessSchema(ActivityBookingSchema).parse(await cancelRes.json()).data;
+  assert.equal(cancelled.status, "cancelled");
+
+  const rebookRes = await makeBook(5, "third@luxestay.vn");
+  assert.equal(rebookRes.status, 201);
+});
+
+test("Phase 5 Stay + Transfer bundle reservation includes activitiesFee and supports per-item partial cancellation", async () => {
+  const { app } = createApiApp({ nodeEnv: "test" });
+
+  const createRes = await app.request(API_ENDPOINTS.reservations, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      propertyId: "stay-02",
+      checkInSeed: "2027-04-12",
+      nights: 2,
+      guests: { adults: 2, children: 0, rooms: 1 },
+      selectedAmenityIds: [],
+      selectedActivities: [
+        {
+          activityId: "act-01",
+          slotId: "slot-dli-morning",
+          dateIso: "2027-04-12",
+          quantity: 1,
+        },
+      ],
+      guestInfo: {
+        fullName: "Khách Combo",
+        phone: "0988112233",
+        email: "combo@luxestay.vn",
+      },
+      paymentMethod: "hotel",
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const bundle = createApiSuccessSchema(BookingDetailsSchema).parse(await createRes.json()).data;
+  assert.equal(bundle.status, "confirmed");
+  assert.equal(bundle.pricing.activitiesFee, 380_000);
+  assert.equal(bundle.selectedActivities.length, 1);
+
+  const itemId = bundle.selectedActivities[0].id;
+  const originalTotal = bundle.pricing.total;
+
+  // Partial cancel ONLY the attached transfer item
+  const cancelItemRes = await app.request(
+    API_ENDPOINTS.cancelReservationActivityItem(bundle.bookingId!, itemId),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact: "combo@luxestay.vn", reason: "Đổi sang tự lái" }),
+    }
+  );
+  assert.equal(cancelItemRes.status, 200);
+  const updated = createApiSuccessSchema(BookingDetailsSchema).parse(await cancelItemRes.json()).data;
+  assert.equal(updated.status, "confirmed");
+  assert.equal(updated.pricing.activitiesFee, 0);
+  assert.equal(updated.pricing.total, originalTotal - 380_000);
+  assert.equal(updated.selectedActivities[0].status, "cancelled");
+});
+
+test("Phase 5 Migration 0005 exists and backfillMissingSeedActivities inserts only missing rows idempotently", async () => {
+  const migrationPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/db/migrations/0005_travel_activities.sql"
+  );
+  assert.equal(existsSync(migrationPath), true);
+  const sqlText = readFileSync(migrationPath, "utf8");
+  assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "travel_activities"/);
+  assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "activity_bookings"/);
+  assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "reservation_activities"/);
+
+  const insertedRows: unknown[] = [];
+  const fakeDb = {
+    select: () => ({
+      from: (table: unknown) => {
+        assert.equal(table, travelActivitiesTable);
+        return Promise.resolve([{ id: "act-01" }, { id: "act-02" }]);
+      },
+    }),
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+      fn({
+        insert: () => ({
+          values: (rows: unknown[]) => {
+            insertedRows.push(...rows);
+            return { onConflictDoNothing: () => Promise.resolve() };
+          },
+        }),
+      }),
+  } as unknown as LuxeStayDb;
+
+  const { insertedCount } = await backfillMissingSeedActivities(fakeDb);
+  assert.equal(insertedCount, TRAVEL_ACTIVITIES.length - 2);
+  assert.equal(insertedRows.length, TRAVEL_ACTIVITIES.length - 2);
 });

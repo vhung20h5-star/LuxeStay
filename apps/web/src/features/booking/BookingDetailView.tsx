@@ -98,6 +98,7 @@ export function BookingDetailView({
   const {
     lookupReservation,
     cancelReservation,
+    cancelReservationActivityItem,
     completeReservation,
     listReservationNotifications,
     propertyExperience,
@@ -116,6 +117,8 @@ export function BookingDetailView({
   const [cancelReason, setCancelReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancellingActivityItemId, setCancellingActivityItemId] = useState<string | null>(null);
+  const [activityCancelError, setActivityCancelError] = useState<string | null>(null);
 
   // Stay completion (sandbox) & Verified Review state
   const [isCompleting, setIsCompleting] = useState(false);
@@ -606,6 +609,113 @@ export function BookingDetailView({
               </div>
             )}
 
+            {/* Selected Bundle Activities & Transfers */}
+            {(booking.selectedActivities?.length ?? 0) > 0 && (
+              <div
+                data-testid="booking-bundle-activities"
+                className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2.5"
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-sky-950">
+                  <span>
+                    Trải nghiệm &amp; Đưa đón đi kèm ({booking.selectedActivities?.length ?? 0})
+                  </span>
+                  <span className="text-sky-700">
+                    {formatVND(booking.pricing.activitiesFee ?? 0)}
+                  </span>
+                </div>
+                {activityCancelError && (
+                  <p className="text-xs font-semibold text-rose-700">{activityCancelError}</p>
+                )}
+                <div className="space-y-2">
+                  {(booking.selectedActivities ?? []).map((item) => {
+                    const isItemCancelled = item.status === "cancelled";
+                    const canCancelItem =
+                      !isItemCancelled &&
+                      booking.status !== "cancelled" &&
+                      booking.status !== "completed";
+
+                    return (
+                      <div
+                        key={item.id}
+                        data-testid={`bundle-activity-row-${item.id}`}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-white px-3.5 py-2.5 rounded-xl border border-sky-100"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`font-bold ${
+                                isItemCancelled ? "line-through text-slate-400" : "text-slate-900"
+                              }`}
+                            >
+                              {item.activityTitle}
+                            </span>
+                            <span
+                              data-testid={`bundle-activity-status-${item.id}`}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isItemCancelled
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-emerald-100 text-emerald-700"
+                              }`}
+                            >
+                              {isItemCancelled ? "Đã hủy" : "Đã xác nhận"}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {item.dateIso} • {item.slotLabel} • {item.quantity} {item.unitLabel}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span
+                            className={`font-bold ${
+                              isItemCancelled ? "line-through text-slate-400" : "text-sky-800"
+                            }`}
+                          >
+                            {formatVND(item.totalPrice)}
+                          </span>
+                          {canCancelItem && (
+                            <button
+                              type="button"
+                              data-testid={`cancel-bundle-activity-${item.id}`}
+                              disabled={cancellingActivityItemId === item.id}
+                              onClick={async () => {
+                                setCancellingActivityItemId(item.id);
+                                setActivityCancelError(null);
+                                try {
+                                  const updated = await cancelReservationActivityItem(
+                                    booking.bookingId ?? bookingId,
+                                    item.id,
+                                    {
+                                      contact: verifiedContact || booking.guestInfo.email,
+                                      reason: "Khách hủy riêng dịch vụ đi kèm",
+                                    }
+                                  );
+                                  setBooking(updated);
+                                } catch (err) {
+                                  setActivityCancelError(
+                                    err instanceof HttpApiError
+                                      ? err.message
+                                      : "Không thể hủy dịch vụ đi kèm lúc này."
+                                  );
+                                } finally {
+                                  setCancellingActivityItemId(null);
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-[11px] cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              {cancellingActivityItemId === item.id
+                                ? "Đang hủy..."
+                                : "Hủy dịch vụ này"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Pricing Breakdown */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 text-xs">
               <SeasonalPricingSummary
@@ -623,6 +733,14 @@ export function BookingDetailView({
                   <span>{formatVND(booking.pricing.amenitiesFee)}</span>
                 </div>
               )}
+              {(booking.pricing.activitiesFee ?? 0) > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Phí trải nghiệm &amp; đưa đón</span>
+                  <span data-testid="booking-activities-fee">
+                    {formatVND(booking.pricing.activitiesFee ?? 0)}
+                  </span>
+                </div>
+              )}
               {booking.pricing.discount > 0 && (
                 <div className="flex justify-between text-emerald-700 font-semibold">
                   <span>
@@ -636,7 +754,7 @@ export function BookingDetailView({
               )}
               <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-bold text-slate-900">
                 <span>Tổng thanh toán</span>
-                <span className="text-lg font-black text-emerald-700">
+                <span className="text-lg font-black text-emerald-700" data-testid="booking-detail-total">
                   {formatVND(booking.pricing.total)}
                 </span>
               </div>

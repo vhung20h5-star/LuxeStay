@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
+  BookedBundleActivity,
   BookingDetails,
   NightlyPriceBreakdown,
   PaymentTransaction,
@@ -12,6 +13,7 @@ import {
   paymentTransactionsTable,
   propertiesTable,
   propertyAvailabilityTable,
+  reservationActivitiesTable,
   reservationAmenitiesTable,
   reservationsTable,
 } from "../../db/schema/index.js";
@@ -21,6 +23,7 @@ import type { ApiReservationRepository } from "./repository.js";
 
 export type ReservationRow = typeof reservationsTable.$inferSelect;
 export type ReservationAmenityRow = typeof reservationAmenitiesTable.$inferSelect;
+export type ReservationActivityRow = typeof reservationActivitiesTable.$inferSelect;
 export type PaymentTransactionRow = typeof paymentTransactionsTable.$inferSelect;
 
 export function mapPaymentRowToDomain(row: PaymentTransactionRow): PaymentTransaction {
@@ -44,7 +47,8 @@ export function mapReservationRowsToBookingDetails(
   row: ReservationRow,
   property: Property,
   amenityRows: readonly ReservationAmenityRow[],
-  paymentRow?: PaymentTransactionRow
+  paymentRow?: PaymentTransactionRow,
+  activityRows: readonly ReservationActivityRow[] = []
 ): BookingDetails {
   const selectedAmenities: readonly SelectedBookingAmenity[] = Object.freeze(
     amenityRows.map((item) =>
@@ -55,6 +59,28 @@ export function mapReservationRowsToBookingDetails(
         pricingType: item.pricingType,
         price: item.price,
         priceUnit: item.priceUnit ?? undefined,
+      })
+    )
+  );
+
+  const selectedActivities: readonly BookedBundleActivity[] = Object.freeze(
+    activityRows.map((item) =>
+      Object.freeze({
+        id: item.id,
+        activityId: item.activityId,
+        activitySlug: item.activitySlug,
+        activityTitle: item.activityTitle,
+        activityCategory: item.activityCategory,
+        slotId: item.slotId,
+        slotLabel: item.slotLabel,
+        dateIso: item.dateIso,
+        quantity: item.quantity,
+        unitLabel: item.unitLabel,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        status: item.status,
+        ...(item.cancelledAt ? { cancelledAt: item.cancelledAt.toISOString() } : {}),
+        ...(item.cancellationReason ? { cancellationReason: item.cancellationReason } : {}),
       })
     )
   );
@@ -83,11 +109,13 @@ export function mapReservationRowsToBookingDetails(
       cleaningFee: row.cleaningFee,
       serviceFee: row.serviceFee,
       amenitiesFee: row.amenitiesFee,
+      activitiesFee: row.activitiesFee ?? 0,
       discount: row.discount,
       ...(row.appliedPromoCode ? { appliedPromoCode: row.appliedPromoCode } : {}),
       total: row.total,
     }),
     selectedAmenities,
+    selectedActivities,
     guestInfo: Object.freeze({
       fullName: row.guestFullName,
       email: row.guestEmail,
@@ -152,6 +180,7 @@ function buildReservationInsertValues(bookingId: string, booking: BookingDetails
     cleaningFee: booking.pricing.cleaningFee,
     serviceFee: booking.pricing.serviceFee,
     amenitiesFee: booking.pricing.amenitiesFee,
+    activitiesFee: booking.pricing.activitiesFee ?? 0,
     discount: booking.pricing.discount,
     appliedPromoCode: booking.pricing.appliedPromoCode ?? null,
     total: booking.pricing.total,
@@ -198,12 +227,17 @@ export function createPostgresReservationRepository(deps: {
   async function hydrateRows(rows: readonly ReservationRow[]): Promise<readonly BookingDetails[]> {
     if (rows.length === 0) return Object.freeze([]);
     const bookingIds = rows.map((r) => r.bookingId);
-    const [amenityRows, paymentRows, snapshot] = await Promise.all([
+    const [amenityRows, activityRows, paymentRows, snapshot] = await Promise.all([
       db
         .select()
         .from(reservationAmenitiesTable)
         .where(inArray(reservationAmenitiesTable.bookingId, bookingIds))
         .orderBy(asc(reservationAmenitiesTable.sortOrder)),
+      db
+        .select()
+        .from(reservationActivitiesTable)
+        .where(inArray(reservationActivitiesTable.bookingId, bookingIds))
+        .orderBy(asc(reservationActivitiesTable.sortOrder)),
       db
         .select()
         .from(paymentTransactionsTable)
@@ -218,6 +252,12 @@ export function createPostgresReservationRepository(deps: {
       const list = amenitiesByBooking.get(row.bookingId);
       if (list) list.push(row);
       else amenitiesByBooking.set(row.bookingId, [row]);
+    }
+    const activitiesByBooking = new Map<string, ReservationActivityRow[]>();
+    for (const row of activityRows) {
+      const list = activitiesByBooking.get(row.bookingId);
+      if (list) list.push(row);
+      else activitiesByBooking.set(row.bookingId, [row]);
     }
     const latestPaymentByBooking = new Map<string, PaymentTransactionRow>();
     for (const pay of paymentRows) {
@@ -235,7 +275,8 @@ export function createPostgresReservationRepository(deps: {
           row,
           property,
           amenitiesByBooking.get(row.bookingId) ?? [],
-          latestPaymentByBooking.get(row.bookingId)
+          latestPaymentByBooking.get(row.bookingId),
+          activitiesByBooking.get(row.bookingId) ?? []
         )
       );
     }
@@ -263,6 +304,31 @@ export function createPostgresReservationRepository(deps: {
               pricingType: item.pricingType,
               price: item.price,
               priceUnit: item.priceUnit ?? null,
+            }))
+          );
+        }
+
+        const activities = booking.selectedActivities ?? [];
+        if (activities.length > 0) {
+          await tx.insert(reservationActivitiesTable).values(
+            activities.map((item, idx) => ({
+              id: item.id,
+              bookingId,
+              activityId: item.activityId,
+              sortOrder: idx,
+              activitySlug: item.activitySlug,
+              activityTitle: item.activityTitle,
+              activityCategory: item.activityCategory,
+              slotId: item.slotId,
+              slotLabel: item.slotLabel,
+              dateIso: item.dateIso,
+              quantity: item.quantity,
+              unitLabel: item.unitLabel,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+              status: item.status,
+              cancelledAt: item.cancelledAt ? new Date(item.cancelledAt) : null,
+              cancellationReason: item.cancellationReason ?? null,
             }))
           );
         }
@@ -371,6 +437,31 @@ export function createPostgresReservationRepository(deps: {
           );
         }
 
+        const activities = booking.selectedActivities ?? [];
+        if (activities.length > 0) {
+          await tx.insert(reservationActivitiesTable).values(
+            activities.map((item, idx) => ({
+              id: item.id,
+              bookingId,
+              activityId: item.activityId,
+              sortOrder: idx,
+              activitySlug: item.activitySlug,
+              activityTitle: item.activityTitle,
+              activityCategory: item.activityCategory,
+              slotId: item.slotId,
+              slotLabel: item.slotLabel,
+              dateIso: item.dateIso,
+              quantity: item.quantity,
+              unitLabel: item.unitLabel,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+              status: item.status,
+              cancelledAt: item.cancelledAt ? new Date(item.cancelledAt) : null,
+              cancellationReason: item.cancellationReason ?? null,
+            }))
+          );
+        }
+
         return prepared;
       });
     },
@@ -388,13 +479,18 @@ export function createPostgresReservationRepository(deps: {
       const row = rows[0];
       if (!row) return null;
 
-      const [property, amenityRows, paymentRows] = await Promise.all([
+      const [property, amenityRows, activityRows, paymentRows] = await Promise.all([
         catalogRepository.getPropertyById(row.propertyId),
         db
           .select()
           .from(reservationAmenitiesTable)
           .where(eq(reservationAmenitiesTable.bookingId, normalized))
           .orderBy(asc(reservationAmenitiesTable.sortOrder)),
+        db
+          .select()
+          .from(reservationActivitiesTable)
+          .where(eq(reservationActivitiesTable.bookingId, normalized))
+          .orderBy(asc(reservationActivitiesTable.sortOrder)),
         db
           .select()
           .from(paymentTransactionsTable)
@@ -404,7 +500,13 @@ export function createPostgresReservationRepository(deps: {
       ]);
 
       if (!property) return null;
-      return mapReservationRowsToBookingDetails(row, property, amenityRows, paymentRows[0]);
+      return mapReservationRowsToBookingDetails(
+        row,
+        property,
+        amenityRows,
+        paymentRows[0],
+        activityRows
+      );
     },
 
     async findByUserId(userId: string): Promise<readonly BookingDetails[]> {
@@ -430,15 +532,37 @@ export function createPostgresReservationRepository(deps: {
         throw new Error("Cannot update reservation without bookingId.");
       }
 
-      await db
-        .update(reservationsTable)
-        .set({
-          status: booking.status ?? "confirmed",
-          completedAt: booking.completedAt ? new Date(booking.completedAt) : null,
-          cancelledAt: booking.cancelledAt ? new Date(booking.cancelledAt) : null,
-          cancellationReason: booking.cancellationReason ?? null,
-        })
-        .where(eq(reservationsTable.bookingId, bookingId));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(reservationsTable)
+          .set({
+            status: booking.status ?? "confirmed",
+            activitiesFee: booking.pricing.activitiesFee ?? 0,
+            discount: booking.pricing.discount,
+            appliedPromoCode: booking.pricing.appliedPromoCode ?? null,
+            total: booking.pricing.total,
+            completedAt: booking.completedAt ? new Date(booking.completedAt) : null,
+            cancelledAt: booking.cancelledAt ? new Date(booking.cancelledAt) : null,
+            cancellationReason: booking.cancellationReason ?? null,
+          })
+          .where(eq(reservationsTable.bookingId, bookingId));
+
+        for (const item of booking.selectedActivities ?? []) {
+          await tx
+            .update(reservationActivitiesTable)
+            .set({
+              status: item.status,
+              cancelledAt: item.cancelledAt ? new Date(item.cancelledAt) : null,
+              cancellationReason: item.cancellationReason ?? null,
+            })
+            .where(
+              and(
+                eq(reservationActivitiesTable.id, item.id),
+                eq(reservationActivitiesTable.bookingId, bookingId)
+              )
+            );
+        }
+      });
 
       return booking;
     },

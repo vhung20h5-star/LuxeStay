@@ -296,4 +296,88 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
       await page.getByLabel("Menu").click();
     }
   });
+
+  test("E2E-7: Phase 5 Activities & Transfers discovery, standalone booking + cancel, stay+transfer bundle partial cancel, and mobile check", async ({
+    page,
+  }) => {
+    // 1. Navigate to /activities from Navbar & filter transfers
+    await page.goto("/");
+    await page.getByTestId("nav-activities").click();
+    await expect(page).toHaveURL(/\/activities$/);
+    await expect(page.getByTestId("activities-count")).toContainText("12");
+
+    await page.getByTestId("activity-category-transfer").click();
+    await expect(page.getByTestId("activities-count")).toContainText("4");
+
+    // 2. Open Da Lat Airport Transfer SSR detail page -> book 3 units with WELCOME150 (-150k) -> verify & cancel
+    await page.getByTestId("activity-card-act-01").click();
+    await expect(page).toHaveURL(/\/activities\/xe-rieng-san-bay-lien-khuong-da-lat$/);
+    await expect(page.getByText("Thông số tuyến xe riêng")).toBeVisible();
+
+    // Increase quantity to 3 (3 * 380,000 = 1,140,000) -> apply WELCOME150 (-150,000 -> 990,000)
+    await page.getByTestId("activity-quantity-inc").click();
+    await page.getByTestId("activity-quantity-inc").click();
+    await expect(page.getByTestId("activity-quantity-value")).toHaveText("3");
+
+    await page.getByTestId("activity-promo-input").fill("WELCOME150");
+    await page.getByTestId("activity-promo-apply").click();
+    await expect(page.getByText(/Đã áp dụng mã WELCOME150/)).toBeVisible();
+
+    await page.getByTestId("activity-fill-demo").click();
+    await page.getByTestId("activity-submit-btn").click();
+
+    await expect(page.getByTestId("activity-booking-receipt")).toBeVisible();
+    const actBookingId = (await page.getByTestId("activity-booking-id").textContent())?.trim() ?? "";
+    expect(actBookingId).toMatch(/^ACT-[A-F0-9]{6}$/);
+
+    // Cancel standalone activity booking cleanly
+    await page.getByTestId("cancel-standalone-activity-btn").click();
+    await expect(page.getByText("Đơn dịch vụ đã được hủy")).toBeVisible();
+
+    // 3. Stay + Airport Transfer cross-sell bundle on /stays/stay-04 (Đà Lạt) -> checkout -> MoMo sandbox -> partial cancel transfer
+    await page.goto("/stays/stay-04");
+    await expect(page.getByTestId("stay-activities-cross-sell")).toBeVisible();
+    await page.getByTestId("toggle-bundle-activity-act-01").click();
+    await expect(page.getByTestId("toggle-bundle-activity-act-01")).toContainText("Đã thêm");
+
+    await page.getByRole("button", { name: "Đặt phòng ngay" }).click();
+    const dialog = page.getByRole("dialog", { name: "Xác nhận đặt phòng" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Trải nghiệm & Đưa đón đã chọn (1)")).toBeVisible();
+
+    await dialog.getByRole("button", { name: /Điền nhanh thông tin mẫu/i }).click();
+    await dialog.getByRole("button", { name: /Ví Điện Tử MoMo/i }).click();
+    await dialog.getByRole("button", { name: /Tiếp tục thanh toán/i }).click();
+
+    // Redirected to sandbox MoMo payment page -> simulate success
+    await expect(page).toHaveURL(/\/payments\/TXN-/);
+    await page.getByRole("button", { name: /Thanh toán thành công/i }).click();
+    await expect(page).toHaveURL(/\/bookings\/LX-/);
+
+    // BookingDetailView displays confirmed stay + attached transfer item -> partial cancel transfer only
+    await expect(page.getByText("Đã xác nhận").first()).toBeVisible();
+    await expect(page.getByTestId("booking-bundle-activities")).toBeVisible();
+    const totalBefore = (await page.getByTestId("booking-detail-total").textContent()) ?? "";
+
+    const cancelItemBtn = page.locator('[data-testid^="cancel-bundle-activity-"]').first();
+    await cancelItemBtn.click();
+
+    await expect(page.locator('[data-testid^="bundle-activity-status-"]').first()).toHaveText("Đã hủy");
+    await expect(page.getByText("Đã xác nhận").first()).toBeVisible();
+    const totalAfter = (await page.getByTestId("booking-detail-total").textContent()) ?? "";
+    expect(totalAfter).not.toBe(totalBefore);
+
+    // 4. Mobile 390x844 horizontal overflow check on /activities and /activities/[slug]
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const route of ["/activities", "/activities/xe-rieng-san-bay-lien-khuong-da-lat"]) {
+      await page.goto(route);
+      const metrics = await page.evaluate(() => ({
+        innerWidth: window.innerWidth,
+        docScrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+      }));
+      expect(metrics.docScrollWidth, `Overflow on ${route}`).toBeLessThanOrEqual(metrics.innerWidth);
+      expect(metrics.bodyScrollWidth, `Body overflow on ${route}`).toBeLessThanOrEqual(metrics.innerWidth);
+    }
+  });
 });

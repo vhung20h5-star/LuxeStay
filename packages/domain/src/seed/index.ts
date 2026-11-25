@@ -24,6 +24,12 @@ export {
 } from "./promotions.js";
 export { PROPERTIES } from "./properties.js";
 export {
+  EXPERIENCE_ACTIVITIES,
+  TOUR_ACTIVITIES,
+  TRANSFER_ACTIVITIES,
+  TRAVEL_ACTIVITIES,
+} from "./activities/index.js";
+export {
   RETIRED_SEED_CAMPAIGN_IMAGES,
   RETIRED_SEED_DESTINATION_IMAGES,
   RETIRED_SEED_PROPERTY_IMAGES,

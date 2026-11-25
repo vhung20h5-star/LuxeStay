@@ -1,6 +1,6 @@
 # LuxeStay Domain Glossary
 
-Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo v0.6.0)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
+Tài liệu này định nghĩa ngôn ngữ miền (domain vocabulary) chuẩn của dự án **LuxeStay (`travel-service` Monorepo — Phase 5)**. Các workspace (`@luxestay/contracts`, `@luxestay/domain`, `@luxestay/api`, `@luxestay/web`), tài liệu thiết kế và bài test sử dụng thống nhất các thuật ngữ dưới đây.
 
 ---
 
@@ -84,7 +84,7 @@ Seam tại `apps/web/src/shared/ports/persistencePort.ts` cung cấp `lookup(boo
 Cặp hàm thuần `serializeCatalogQueryToSearchParams` & `parseCatalogQueryFromSearchParams` (`packages/domain/src/catalogQuery.ts`) kết hợp component `CatalogUrlSync` (`apps/web/src/features/catalog/CatalogUrlSync.tsx`) giúp đồng bộ 2 chiều giữa bộ lọc trang chủ `/` và query string URL (tự loại bỏ giá trị mặc định và sanitize tham số sai lệch).
 
 ### Storage Driver (`memory` | `database`)
-Biến môi trường `STORAGE_DRIVER` trên `@luxestay/api` điều khiển lớp lưu trữ của Backend: `memory` chạy in-memory/seed (mặc định cho test & CI không cần Docker), còn `database` kích hoạt PostgreSQL 16 + Drizzle ORM (`apps/api/src/db/`, 19 bảng chuẩn hóa) theo [ADR-0008](./docs/adr/0008-postgresql-drizzle-database-layer.md).
+Biến môi trường `STORAGE_DRIVER` trên `@luxestay/api` điều khiển lớp lưu trữ của Backend: `memory` chạy in-memory/seed (mặc định cho test & CI không cần Docker), còn `database` kích hoạt PostgreSQL 16 + Drizzle ORM (`apps/api/src/db/`, 24 bảng chuẩn hóa qua migrations `0000`–`0005`) theo [ADR-0008](./docs/adr/0008-postgresql-drizzle-database-layer.md).
 
 ### Auth Session & Remote Wishlist Sync (`AuthContext`, `AuthPort`)
 Hệ thống xác thực tự chủ của LuxeStay ([ADR-0009](./docs/adr/0009-custom-session-auth-and-wishlist-sync.md)): băm mật khẩu bằng `crypto.scrypt`, hỗ trợ đăng nhập OTP 6 số, lưu phiên bằng `HttpOnly` cookie `luxestay_session` (hash SHA-256 trong `user_sessions`), tự động hợp nhất Wishlist từ `localStorage` lên `user_favorites` khi đăng nhập, và gắn `userId` vào đơn đặt phòng mới.
@@ -114,4 +114,16 @@ Mô hình phân quyền dựa trên vai trò ([ADR-0012](./docs/adr/0012-rbac-ho
 Context độc lập tại `apps/web/src/features/locale/LocaleContext.tsx` dùng `useSyncExternalStore` với `localStorage` và module thuần `packages/domain/src/locale.ts` (`translate`, `formatMoney`, tỷ giá chuẩn `25.000 VNĐ/USD`), cho phép chuyển đổi ngôn ngữ và tiền tệ trực tiếp trên `Navbar` mà không đổi URL và không gây lệch SSR Hydration.
 
 ### Playwright E2E Suite (`e2e/`)
-Bộ kiểm thử đầu-cuối trên trình duyệt Chromium thật (`playwright.config.ts`, `e2e/luxestay.spec.ts`, `npm run test:e2e`) khởi chạy đồng thời `@luxestay/api` và `@luxestay/web` bản production để xác thực luồng khám phá/đa ngôn ngữ, đặt phòng + đánh giá xác thực, và RBAC Cổng Chủ nhà `/host`.
+Bộ kiểm thử đầu-cuối trên trình duyệt Chromium thật (`playwright.config.ts`, `e2e/luxestay.spec.ts`, `npm run test:e2e`) khởi chạy đồng thời `@luxestay/api` và `@luxestay/web` bản production trên cổng cô lập (`E2E_API_PORT=4100`, `E2E_WEB_PORT=3100`) để xác thực 7 luồng (`E2E-1`–`E2E-7`): khám phá/đa ngôn ngữ, đặt phòng + đánh giá xác thực, RBAC Cổng Chủ nhà `/host`, Promotions Hub `/deals`, danh mục 42 chỗ nghỉ + Load More, Mobile Responsive `360px/390px`, và Hoạt động/Đưa đón + Stay Bundle partial cancel.
+
+### Travel Activity & Transfer Service (`TravelActivity`, `TransferService`)
+Dịch vụ du lịch địa phương mở rộng tại Phase 5 (`@luxestay/contracts/src/activities.ts`, `packages/domain/src/seed/activities/*`): gồm 5 phân loại (`transfer`, `tour`, `experience`, `wellness`, `culinary`), danh sách khung giờ có sức chứa (`ActivitySlot`), chính sách `freeCancellation`, và thông số tuyến xe riêng (`TransferDetails` cho `transfer`: `vehicleType`, `pickupZone`, `dropoffZone`, `maxPassengers`, `maxLuggage`).
+
+### Activity Booking (`ACT-XXXXXX`)
+Đơn đặt trải nghiệm hoặc đưa đón độc lập lưu tại bảng `activity_bookings` (Migration `0005`), tạo qua `POST /api/v1/activity-bookings` với khóa sức chứa khung giờ nguyên tử và áp dụng mã ưu đãi từ Promotions Hub, xác nhận tức thì (`confirmed`), hỗ trợ tra cứu chung cùng đơn phòng `LX-` trên `/bookings` và hủy đơn qua `PATCH /api/v1/activity-bookings/:bookingId/cancel`.
+
+### Stay + Activity Bundle & Partial Cancellation (`reservation_activities`)
+Cơ chế ghép gói cross-sell cho phép đính kèm các trải nghiệm/đưa đón theo điểm đến vào đơn đặt phòng (`BookingSession.selectedActivities`, `BookingPricing.activitiesFee`, bảng `reservation_activities` với `ON DELETE CASCADE`). Gói dùng chung cổng thanh toán `/payments/[transactionId]` và hỗ trợ hủy riêng từng hạng mục (`PATCH /api/v1/reservations/:bookingId/activities/:itemId/cancel`) với tính lại `activitiesFee`/`discount`/`total` mà vẫn giữ nguyên trạng thái `confirmed` của phòng.
+
+### Activities Port (`ActivitiesPort`)
+Seam tại `apps/web/src/shared/ports/activitiesPort.ts` (độc lập với `PropertyExperiencePort` của Phase 3A) cung cấp `listActivities`, `getActivityBySlug`, `createBooking`, `lookupBooking`, `listMyBookings` và `cancelBooking` thống nhất giữa `api` mode (`createHttpActivitiesPort`, fail-fast) và `mock` mode (`createMockActivitiesPort`).
