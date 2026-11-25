@@ -79,7 +79,7 @@ export function PropertyList() {
   };
 
   return (
-    <section id="properties-section" className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="properties-section" className="py-12 w-full min-w-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* List Header with Count & Sort Options */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>

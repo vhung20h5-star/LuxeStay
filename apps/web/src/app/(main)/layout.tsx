@@ -30,7 +30,7 @@ export default async function MainLayout({
           apiBaseUrl={publicApiBaseUrl}
         >
           <Navbar />
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 w-full min-w-0">{children}</main>
           <Footer />
 
           {/* Global Modals & Drawers */}

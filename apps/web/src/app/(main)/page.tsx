@@ -36,7 +36,7 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen w-full min-w-0">
       <Suspense fallback={null}>
         <CatalogUrlSync />
       </Suspense>

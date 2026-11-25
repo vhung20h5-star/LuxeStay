@@ -61,7 +61,7 @@ export function PromotionsHub({ initialDeals, error = null, nowIso }: Promotions
       <section
         id="deals-section"
         data-testid="promotions-hub"
-        className="py-10 sm:py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10"
+        className="py-10 sm:py-12 w-full min-w-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10"
       >
         <div
           role="alert"
@@ -125,11 +125,11 @@ export function PromotionsHub({ initialDeals, error = null, nowIso }: Promotions
     <section
       id="deals-section"
       data-testid="promotions-hub"
-      className="py-10 sm:py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10"
+      className="py-10 sm:py-12 w-full min-w-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-10"
     >
       {/* Tier 1: New User & General Vouchers Strip */}
       {tier1Vouchers.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
             <div>
               <div className="flex items-center gap-2">
@@ -157,13 +157,13 @@ export function PromotionsHub({ initialDeals, error = null, nowIso }: Promotions
 
       {/* Tier 2 & 3: Ongoing Hero Banner & 3-Up Campaign Carousel */}
       {hasCampaigns && (
-        <div className="space-y-5">
-          <div className="flex items-center justify-between gap-3">
+        <div className="space-y-5 min-w-0">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
                 <Sparkles className="w-4 h-4" aria-hidden="true" />
               </span>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight truncate">
+              <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
                 {t("deals.ongoingTitle")}
               </h2>
             </div>
@@ -171,7 +171,7 @@ export function PromotionsHub({ initialDeals, error = null, nowIso }: Promotions
             <Link
               href="/deals"
               data-testid="deals-view-all-link"
-              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-emerald-700 hover:text-emerald-800 whitespace-nowrap shrink-0 px-3 py-1.5 rounded-full hover:bg-emerald-50 transition-colors"
+              className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-emerald-700 hover:text-emerald-800 whitespace-nowrap shrink-0 px-2 sm:px-3 py-1.5 rounded-full hover:bg-emerald-50 transition-colors"
             >
               <span>{t("deals.viewAll")}</span>
               <ArrowRight className="w-4 h-4" aria-hidden="true" />

@@ -189,7 +189,7 @@ export function SearchBar() {
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                  className="absolute top-full left-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50"
+                  className="absolute top-full left-0 mt-2 w-full max-w-[calc(100vw-2.5rem)] sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50"
                 >
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -270,7 +270,7 @@ export function SearchBar() {
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                  className="absolute top-full left-0 sm:left-auto sm:right-0 md:left-0 mt-2 w-80 sm:w-88 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50"
+                  className="absolute top-full left-0 sm:left-auto sm:right-0 md:left-0 mt-2 w-full max-w-[calc(100vw-2.5rem)] sm:w-88 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50"
                 >
                   <span className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                     Chọn lịch trình nhanh
@@ -354,7 +354,7 @@ export function SearchBar() {
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                  className="absolute top-full right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50 space-y-4"
+                  className="absolute top-full right-0 mt-2 w-full max-w-[calc(100vw-2.5rem)] sm:w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-50 space-y-4"
                 >
                   {/* Adults */}
                   <div className="flex items-center justify-between">
