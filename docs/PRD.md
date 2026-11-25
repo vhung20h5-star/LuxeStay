@@ -1,24 +1,24 @@
 # Product Requirements Document (PRD) — LuxeStay
 
-> **Version:** `2.2`  
+> **Version:** `2.3`  
 > **Last Updated:** `2026-11-25`  
-> **Trạng thái Scope:** `Phase 0 – Phase 5B (Completed)`  
-> **Tài liệu liên quan:** [ARCHITECTURE.md](./ARCHITECTURE.md) (`v3.2`) · [PLAN.md](./PLAN.md) (`v3.2`) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [GLOSSARY.md](../GLOSSARY.md)
+> **Trạng thái Scope:** `Phase 0 – Phase 5C (Completed)`  
+> **Tài liệu liên quan:** [ARCHITECTURE.md](./ARCHITECTURE.md) (`v3.3`) · [PLAN.md](./PLAN.md) (`v3.3`) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [GLOSSARY.md](../GLOSSARY.md)
 
 ---
 
 ## 1. Tầm nhìn & Phạm vi Sản phẩm
 
 ### 1.1 Tổng quan
-**LuxeStay** là nền tảng đặt phòng khách sạn, villa, resort, homestay, glamping kết hợp hệ sinh thái **"Hoạt động & Vui chơi Việt Nam"** (điểm tham quan, công viên giải trí, tour bản địa, tiện ích du lịch thiết yếu, show diễn & đưa đón sân bay) với triết lý minh bạch chi phí, kiểm soát tồn kho/suất nguyên tử theo ngày, trải nghiệm ưu đãi tập trung và khả năng vận hành ổn định trên cả desktop lẫn thiết bị di động (`360px+`).
+**LuxeStay** là nền tảng đặt phòng khách sạn, villa, resort, homestay, glamping kết hợp hệ sinh thái **"Hoạt động & Vui chơi Việt Nam"** (điểm tham quan, công viên giải trí, tour bản địa, tiện ích du lịch thiết yếu, show diễn & đưa đón sân bay) với triết lý minh bạch chi phí, kiểm soát tồn kho/suất nguyên tử theo ngày, bộ sưu tập nhiều hình ảnh thực tế, thông tin "Điều bạn cũng nên biết" chuẩn OTA và khả năng vận hành ổn định trên cả desktop lẫn thiết bị di động (`360px+`).
 
 ### 1.2 Giá trị cốt lõi (Value Proposition)
-- **Kho chỗ nghỉ & Trải nghiệm tuyển chọn, xác thực hình ảnh:** **42 chỗ nghỉ** (`stay-01`..`stay-42`) phủ **14 thành phố** du lịch trọng điểm kết hợp **38 dịch vụ Hoạt động & Vui chơi** (`act-01`..`act-38` phủ kín cả **14/14 thành phố**), phân tách **179 media slots** duy nhất (0% trùng lặp toàn cục) căn chỉnh theo 4 trục chất lượng.
+- **Kho chỗ nghỉ & Trải nghiệm tuyển chọn, xác thực hình ảnh:** **42 chỗ nghỉ** (`stay-01`..`stay-42`) phủ **14 thành phố** du lịch trọng điểm kết hợp **56 dịch vụ Hoạt động & Vui chơi** (`act-01`..`act-56` phủ **14/14 thành phố** với tối thiểu **3 dịch vụ/thành phố** và **3 ảnh thật/dịch vụ**), phân tách **309 media slots** duy nhất (0% trùng lặp toàn cục) căn chỉnh theo 4 trục chất lượng.
 - **Minh bạch tài chính 100% (Server-Authoritative):** Tách bạch giá cơ bản, phụ phí cuối tuần/mùa cao điểm theo từng đêm (`nightlyBreakdown`), phí dọn phòng (`150.000đ`), tiện ích trả phí đính kèm, phí trải nghiệm/đưa đón (`activitiesFee`), và giảm giá voucher hợp lệ được kiểm chứng trực tiếp trên server.
 - **Promotions Hub & Deep-Link Campaign:** Trải nghiệm ưu đãi 3 tầng ngay trang chủ kèm trung tâm `/deals` và landing page `/deals/[slug]` truyền thẳng mã ưu đãi qua `BookingContext` vào modal chi tiết/giỏ đặt phòng, áp dụng xuyên suốt cả lưu trú lẫn đặt dịch vụ hoạt động.
-- **Khép kín giao dịch đa dịch vụ & Quản trị Chủ nhà:** Hỗ trợ đặt phòng độc lập, đặt vé tham quan/eSIM/tour/xe riêng độc lập (`ACT-XXXXXX`), hoặc ghép gói Stay + Activity Bundle thanh toán 1 lần qua cổng sandbox (`pending_payment` -> webhook HMAC) và hủy riêng từng dịch vụ đính kèm mà vẫn giữ nguyên phòng, cùng Cổng Chủ nhà/Quản trị `/host` (RBAC).
+- **Khép kín giao dịch đa dịch vụ & Quản trị Chủ nhà:** Hỗ trợ đặt phòng độc lập, đặt vé tham quan/eSIM/Pocket WiFi/tour/xe riêng độc lập (`ACT-XXXXXX`), hoặc ghép gói Stay + Activity Bundle thanh toán 1 lần qua cổng sandbox (`pending_payment` -> webhook HMAC) và hủy riêng từng dịch vụ đính kèm mà vẫn giữ nguyên phòng, cùng Cổng Chủ nhà/Quản trị `/host` (RBAC).
 
-### 1.3 Phạm vi Hệ thống (Implemented — Khớp `PLAN.md v3.2`)
+### 1.3 Phạm vi Hệ thống (Implemented — Khớp `PLAN.md v3.3`)
 
 | Hạng mục / Phân hệ | Trạng thái | Chi tiết thực tế |
 | :--- | :--- | :--- |
@@ -28,7 +28,7 @@
 | **Auth, OTP, Favorites & Locale** | ✅ **Implemented (Phase 2 & 3B)** | Email/password + OTP challenges, cookie session (`guest`/`host`/`admin`), `user_favorites`, `vi`/`en` & `VND`/`USD` currency |
 | **Host Portal (RBAC `/host`)** | ✅ **Implemented (Phase 3B)** | Tạo/sửa/xóa chỗ nghỉ (`host`/`admin`), ghi đè tồn kho/giá theo ngày, theo dõi booking & thống kê doanh thu |
 | **Promotions Hub, `/deals`, Media & Mobile** | ✅ **Implemented (Phase 4A–4C)** | 3-tier `PromotionsHub`, `/deals`, `/deals/[slug]`, **141/141 ảnh lưu trú/ưu đãi duy nhất**, `retiredImages.ts`, Mobile `360px+` `overflow-x: clip` & `E2E-6` |
-| **Activities & Things to Do Vietnam** | ✅ **Implemented (Phase 5 & 5B / Epic 9)** | **38 dịch vụ** phủ **14/14 thành phố** (`8` điểm tham quan, `13` tour & hoạt động, `10` cần thiết cho du lịch, `7` giải trí & thư giãn), điều hướng 2 tầng + URL sync + Xem thêm 12/lượt, `/activities` & `/activities/[slug]` SSR kèm `attractionDetails`/`essentialDetails`/`transferDetails`, teaser Trang chủ `/`, `0005` + `0006_activities_things_to_do.sql` (24 bảng), đặt độc lập `ACT-XXXXXX` + smart Cross-Sell `1+2` & partial cancel, **179/179** ảnh duy nhất & `E2E-7` |
+| **Activities & Things to Do Vietnam** | ✅ **Implemented (Phase 5, 5B & 5C / Epic 9)** | **56 dịch vụ** phủ **14/14 thành phố (`≥ 3`/TP)** (`11` điểm tham quan, `17` tour & hoạt động, `15` cần thiết cho du lịch, `13` giải trí & thư giãn), **3 ảnh thật/dịch vụ** với Bento Gallery + Lightbox (`OverlayContext`) + lướt ảnh trên `ActivityCard`, trọn bộ **6 phần "Điều bạn cũng nên biết"** (Bao gồm/Không bao gồm, Lịch trình, Lưu ý, Hướng dẫn vé, Chính sách hủy, Nhãn nhanh + Sticky Jump Bar & Accordion), `0005`–`0007` (24 bảng), đặt độc lập `ACT-XXXXXX` + smart Cross-Sell `1+2` & partial cancel, **309/309** ảnh duy nhất & `E2E-7` |
 
 ---
 
@@ -41,7 +41,7 @@
 3. **Chủ nhà / Partner Host (`role = "host"`):**
    - Truy cập `/host` (bảo vệ bằng RBAC), thêm mới hoặc cập nhật thông tin chỗ nghỉ, thiết lập block ngày / phụ phí mùa tại `property_availability`, xem đơn đặt phòng đến và tổng quan doanh thu.
 4. **Admin / Release & QA Operations:**
-   - Vận hành `db:prepare` (`vercelPrepare.ts`) không ghi đè dữ liệu host/user, kiểm định 0% trùng lặp ảnh qua `scripts/verify-seed-images.mjs` (179 slots), và giữ bộ kiểm thử `128` tests + `7` E2E flows xanh trước mỗi lần release.
+   - Vận hành `db:prepare` (`vercelPrepare.ts`) không ghi đè dữ liệu host/user, kiểm định 0% trùng lặp ảnh qua `scripts/verify-seed-images.mjs` (309 slots), và giữ bộ kiểm thử `128` tests + `7` E2E flows xanh trước mỗi lần release.
 
 ---
 
@@ -118,12 +118,15 @@
 - Giao diện trang chủ, trang hoạt động/đưa đón và luồng đặt phòng phải duy trì `document.documentElement.scrollWidth <= window.innerWidth` ở các kích thước màn hình hẹp (`360×800`, `390×844`).
 - Áp dụng `overflow-x: clip` trên `html, body` tại [`globals.css`](../apps/web/src/app/globals.css), `w-full min-w-0` cho mọi section/grid/carousel (`PromotionsHub`, `HorizontalCarouselShell`, `PropertyList`, `TestimonialsSection`), giới hạn chiều rộng popover `SearchBar` theo viewport, và khóa chống hồi quy bằng Playwright `E2E-6` & `E2E-7`.
 
-### `FR-17`: Activities, Things to Do Vietnam (38 Services · 14 Cities), Specialized Detail Specs & Bundle Cross-Sell
-- Danh mục **38 dịch vụ** (`act-01`..`act-38`) phủ kín **14 thành phố Việt Nam** (Đà Lạt, Phú Quốc, Đà Nẵng, Sa Pa, Ninh Bình, Hạ Long, Hội An, Huế, Quy Nhơn, Hà Nội, TP. Hồ Chí Minh, Nha Trang, Mộc Châu, Vũng Tàu) tổ chức theo **điều hướng 2 tầng** trên `/activities` ([`ActivitiesHubView.tsx`](../apps/web/src/features/activities/ActivitiesHubView.tsx)):
-  - **Tầng 1 (5 mục lớn):** `Khám phá` (hiển thị 4 dải tuyển chọn theo chủ đề nổi tiếng Việt Nam + lưới Xem thêm `12/lượt`), `Điểm tham quan` (`8`), `Tour & Hoạt động` (`13`), `Cần thiết cho du lịch` (`10`), `Giải trí & Thư giãn` (`7`).
-  - **Tầng 2 (11 danh mục con chi tiết):** Công viên giải trí & Cáp treo, Di sản & Văn hóa, Tour đảo & Biển, Săn mây & Thiên nhiên, Trải nghiệm bản địa, Đưa đón sân bay & Limousine, SIM/eSIM 4G & WiFi, Fast-Track & Phòng chờ, Show diễn & Nghệ thuật, Spa & Tắm bùn, Ẩm thực & Du thuyền tối — đồng bộ 2 chiều qua URL query (`?section=&sub=&city=&period=&q=&sort=`).
-- Trang chi tiết SSR `/activities/[slug]` ([`ActivityDetailView.tsx`](../apps/web/src/features/activities/ActivityDetailView.tsx)) hiển thị khối thông số chuyên biệt theo từng loại hình (`transferDetails`, `attractionDetails` với giờ mở cửa/vào cổng QR/địa chỉ, và `essentialDetails` với hình thức giao nhận QR Email/quầy sân bay/hiệu lực), chọn hạng vé/gói eSIM/khung giờ, áp mã ưu đãi Promotions Hub và đặt độc lập `ACT-XXXXXX`.
-- Dải teaser **"Hoạt động & Vui chơi nổi tiếng Việt Nam"** ([`HomeThingsToDoTeaser.tsx`](../apps/web/src/features/activities/HomeThingsToDoTeaser.tsx)) trên Trang chủ `/` kết nối trực tiếp vào 4 mục lớn của `/activities`; gợi ý cross-sell thông minh ([`StayActivitiesCrossSell.tsx`](../apps/web/src/features/activities/StayActivitiesCrossSell.tsx)) trên `/stays/[id]` chọn **1 Đưa đón + 2 Điểm tham quan/Tour cùng thành phố**, thanh toán 1 lần qua `/payments/[transactionId]` và cho phép **hủy riêng từng dịch vụ đính kèm** (`PATCH /api/v1/reservations/:bookingId/activities/:itemId/cancel`) trên `/bookings/[bookingId]` trong khi giữ nguyên trạng thái `confirmed` của phòng.
+### `FR-17`: Activities, Things to Do Vietnam (56 Services · 14 Cities · 3-Photo Gallery & "Điều bạn cũng nên biết") & Bundle Cross-Sell
+- Danh mục **56 dịch vụ** (`act-01`..`act-56`) phủ kín **14/14 thành phố Việt Nam** với tối thiểu **3 dịch vụ/thành phố**, tổ chức theo **điều hướng 2 tầng** trên `/activities` ([`ActivitiesHubView.tsx`](../apps/web/src/features/activities/ActivitiesHubView.tsx)):
+  - **Tầng 1 (5 mục lớn):** `Khám phá` (4 dải tuyển chọn theo chủ đề + lưới Xem thêm `12/lượt`), `Điểm tham quan` (`11`), `Tour & Hoạt động` (`17`), `Cần thiết cho du lịch` (`15`), `Giải trí & Thư giãn` (`13`).
+  - **Tầng 2 (11 danh mục con chi tiết)** đồng bộ 2 chiều qua URL query (`?section=&sub=&city=&period=&q=&sort=`). Thẻ [`ActivityCard.tsx`](../apps/web/src/features/activities/ActivityCard.tsx) hiển thị badge số ảnh (`"3 ảnh"`) và nút chuyển nhanh 3 góc ảnh ngay trên danh sách.
+- Trang chi tiết SSR `/activities/[slug]` ([`ActivityDetailView.tsx`](../apps/web/src/features/activities/ActivityDetailView.tsx)) trang bị:
+  - **Bento Gallery 3 ảnh + Lightbox toàn màn hình** ([`ActivityGallery.tsx`](../apps/web/src/features/activities/ActivityGallery.tsx)) tích hợp `OverlayContext` (`kind: "activity-lightbox"`, hỗ trợ phím mũi tên/`Escape` và chú thích từng góc ảnh `imageCaptions`).
+  - **Trọn bộ 6 phần "Điều bạn cũng nên biết" chuẩn OTA** ([`ActivityKnowBeforeYouGo.tsx`](../apps/web/src/features/activities/ActivityKnowBeforeYouGo.tsx)): Dải nhãn nhanh (*Phù hợp cho*, *Ngôn ngữ*, *Hủy miễn phí*), **Sticky Section Jump Bar**, **Lịch trình / Quy trình từng bước**, **Bao gồm & Không bao gồm** 2 cột, và **Accordion thông minh** (mở sẵn *Lưu ý quan trọng trước khi đi* & *Hướng dẫn sử dụng vé*, thu gọn/mở *Chính sách hủy & đổi lịch chi tiết* & *Điểm tập trung*).
+  - Khối thông số chuyên biệt (`transferDetails`, `attractionDetails`, `essentialDetails`), chọn hạng vé/gói eSIM/phòng chờ thương gia/khung giờ, áp mã ưu đãi Promotions Hub và đặt độc lập `ACT-XXXXXX`.
+- Dải teaser **"Hoạt động & Vui chơi nổi tiếng Việt Nam"** ([`HomeThingsToDoTeaser.tsx`](../apps/web/src/features/activities/HomeThingsToDoTeaser.tsx)) trên Trang chủ `/` kết nối trực tiếp vào 4 mục lớn; gợi ý cross-sell thông minh ([`StayActivitiesCrossSell.tsx`](../apps/web/src/features/activities/StayActivitiesCrossSell.tsx)) trên `/stays/[id]` chọn **1 Đưa đón + 2 Điểm tham quan/Tour cùng thành phố**, thanh toán 1 lần qua `/payments/[transactionId]` và cho phép **hủy riêng từng dịch vụ đính kèm** (`PATCH /api/v1/reservations/:bookingId/activities/:itemId/cancel`) trên `/bookings/[bookingId]`.
 
 ---
 
@@ -133,12 +136,12 @@
 2. **`NFR-02` Performance & Progressive Loading:** Trang chủ chia lô hiển thị 12 chỗ nghỉ mỗi bước (*Load More*); toàn bộ suite 7 kịch bản E2E Playwright hoàn tất ổn định trên cổng cô lập (`4100/3100`).
 3. **`NFR-03` Security & Boundary Validation:** Mọi đầu vào API kiểm tra qua Zod schemas của `@luxestay/contracts`; API Host kiểm tra role `host`; webhook thanh toán xác thực chữ ký HMAC; `.env*` và `.vercel/` tuyệt đối không lọt vào Git.
 4. **`NFR-04` Viewport & Responsive Ergonomics:** Không bị cắt lệch nội dung, không phát sinh cuộn ngang ngoài ý muốn khi zoom hoặc mở trang trên điện thoại màn hình nhỏ (`360px`–`390px`).
-5. **`NFR-05` Idempotent Schema & Data Evolution:** Hệ thống migration `0000`–`0006` + `vercelPrepare.ts` (`db:prepare`, gồm `backfillMissingSeedProperties` & `backfillMissingSeedActivities`) có thể chạy lặp lại nhiều lần trên môi trường Neon production mà không phá vỡ dữ liệu vận hành hiện có.
-6. **`NFR-06` Continuous Quality Verification:** Mọi thay đổi trước khi merge phải vượt qua `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` (`128` tests), `verify-seed-images.mjs` (`179` slots), và `npm run test:e2e` (`E2E-1`–`E2E-7`).
+5. **`NFR-05` Idempotent Schema & Data Evolution:** Hệ thống migration `0000`–`0007` + `vercelPrepare.ts` (`db:prepare`, gồm `backfillMissingSeedProperties`, `backfillMissingSeedActivities` & `enrichSeedActivitiesGalleryAndDetails`) có thể chạy lặp lại nhiều lần trên môi trường Neon production mà không phá vỡ dữ liệu vận hành hiện có.
+6. **`NFR-06` Continuous Quality Verification:** Mọi thay đổi trước khi merge phải vượt qua `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` (`128` tests), `verify-seed-images.mjs` (`309` slots), và `npm run test:e2e` (`E2E-1`–`E2E-7`).
 
 ---
 
-## 5. Roadmap Sync ([`PLAN.md v3.2`](./PLAN.md))
+## 5. Roadmap Sync ([`PLAN.md v3.3`](./PLAN.md))
 
 ### 5.1 Các Phase đã hoàn thành (✅ Completed)
 - **Phase 0 – Phase 1 (`M0`–`M8`):** Khởi tạo Monorepo, Contracts + Domain seams, Overlay stack, Hono API + Postgres/Drizzle + Ports.
@@ -150,10 +153,9 @@
   - `P5.2`: Migration `0005_travel_activities.sql` (24 bảng), backfill idempotent `backfillMissingSeedActivities`, API `modules/activities/*` (6 routes) & partial bundle cancel trong `modules/reservations/*`.
   - `P5.3`: `activitiesPort.ts`, giao diện `/activities`, `/activities/[slug]`, `StayActivitiesCrossSell` trên `/stays/[id]` + Checkout, tra cứu `ACT-`/`LX-` tại `/bookings`, và Playwright **`E2E-7`**.
 - **Phase 5B — Vietnam Things to Do Expansion (`M17`, `P5B.1`–`P5B.4` — ✅ Completed):**
-  - `P5B.1`: Phân tầng 2 lớp (`ActivityHubSectionSchema` 5 mục + `ActivitySubcategorySchema` 11 danh mục con), `AttractionDetailsSchema`, `EssentialDetailsSchema`, đồng bộ URL 2 chiều, smart cross-sell `1+2`, từ điển VI/EN *"Hoạt động & Vui chơi"*.
-  - `P5B.2`: Mở rộng `12 → 38` dịch vụ phủ đủ **14/14 thành phố Việt Nam** kèm 26 ảnh nén xác thực (`179/179` media slots duy nhất) và Migration `0006_activities_things_to_do.sql` + API filter `section`/`subcategory`.
-  - `P5B.3`: Giao diện `/activities` 2 tầng + tab `Khám phá` 4 dải tuyển chọn + phân trang Xem thêm `12/lượt`, khối thông số chuyên biệt Điểm tham quan/eSIM trên `/activities/[slug]`, dải teaser `HomeThingsToDoTeaser` trên Trang chủ `/` và nâng cấp `StayActivitiesCrossSell`.
-  - `P5B.4`: Xác minh toàn bộ `128/128` tests, `179/179` media audit, `7/7` Playwright E2E (`E2E-6/7`), kiểm duyệt ảnh trực quan và đồng bộ tài liệu.
+  - Mở rộng `12 → 38` dịch vụ phủ 14 thành phố, điều hướng 2 tầng + URL sync + Xem thêm 12/lượt, Migration `0006`, khối `attractionDetails`/`essentialDetails`, teaser Trang chủ `/` và `179/179` media audit.
+- **Phase 5C — Rich Activities, 3-Photo Gallery + Lightbox & "Điều bạn cũng nên biết" (`M18`, `P5C.1`–`P5C.4` — ✅ Completed):**
+  - Mở rộng `38 → 56` dịch vụ (`14/14` thành phố đạt `≥ 3` dịch vụ), **3 ảnh thật duy nhất/dịch vụ** (`168` ảnh hoạt động / **`309/309`** toàn hệ thống), Bento Gallery + Lightbox (`OverlayContext`) + lướt ảnh trên `ActivityCard`, trọn bộ 6 phần *"Điều bạn cũng nên biết"* với Sticky Jump Bar & Smart Accordion, và Migration `0007_activities_gallery_and_know_before_you_go.sql` + conditional enrichment Neon.
 
 ---
 
@@ -166,5 +168,5 @@
 | **`FR-07` (Promotions Hub & Deals)** | `deals.ts`, `vouchers.ts`, `deals` & `catalog` API, `features/promotions`, `/deals`, `/deals/[slug]` | `deals.test.ts`, `promotions-hub.test.ts`, `api.test.ts`, `E2E-4` | `M13` |
 | **`FR-08` – `FR-11` (Payment, Auth, Favorites, Reviews)** | `auth`, `payments`, `favorites`, `reviews`, `notifications` API + web features tương ứng | `api.test.ts`, `availability-reviews.test.ts`, `E2E-2`, `E2E-3` | `M9`, `M10`, `M11` |
 | **`FR-12` – `FR-14` (Host Portal, Locale, Overlays)** | `host.ts`, `locale.ts`, `host` API, `/host`, `OverlayContext` (`overlayStack.ts`) | `host-locale.test.ts`, `overlay-stack.test.ts`, `api.test.ts`, `E2E-1`, `E2E-3` | `M4`, `M12` |
-| **`FR-15` – `FR-16` (4-Axis Media & Mobile Viewport)** | `seed/properties/*`, `seed/activities/*`, `retiredImages.ts`, `vercelPrepare.ts`, `globals.css`, home layout grids | [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `verify-seed-images.mjs` (179 slots), `E2E-5`, `E2E-6` (`390×844` & `360×800`) | `M15` + Mobile Hotfix |
-| **`FR-17` (Epic 9 / Phase 5 & 5B — Vietnam Things to Do & Bundle)** | `contracts/activities.ts`, `domain/activities.ts`, `seed/activities/*`, `0005` & `0006_activities_things_to_do.sql`, `modules/activities/*`, `activitiesPort.ts`, `/activities`, `/activities/[slug]`, `HomeThingsToDoTeaser`, `StayActivitiesCrossSell` | `contracts.test.ts`, `activities.test.ts`, `api.test.ts`, `activities-port.test.ts`, `verify-seed-images.mjs` (179 slots), **`E2E-7`** | `M16` (`P5.1`–`P5.3`), `M17` (`P5B.1`–`P5B.4`) |
+| **`FR-15` – `FR-16` (4-Axis Media & Mobile Viewport)** | `seed/properties/*`, `seed/activities/*`, `retiredImages.ts`, `vercelPrepare.ts`, `globals.css`, home layout grids | [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `verify-seed-images.mjs` (**309 slots**), `E2E-5`, `E2E-6` (`390×844` & `360×800`) | `M15` + Mobile Hotfix |
+| **`FR-17` (Epic 9 / Phase 5, 5B & 5C — Rich Vietnam Things to Do, Gallery & Bundle)** | `contracts/activities.ts`, `domain/activities.ts`, `seed/activities/*` (`enrichment.ts`), `0005`–`0007`, `modules/activities/*`, `activitiesPort.ts`, `ActivityGallery`, `ActivityKnowBeforeYouGo`, `HomeThingsToDoTeaser`, `StayActivitiesCrossSell` | `contracts.test.ts`, `activities.test.ts`, `api.test.ts`, `activities-port.test.ts`, `verify-seed-images.mjs` (**309 slots**), **`E2E-7`** | `M16`, `M17`, `M18` (`P5C.1`–`P5C.4`) |

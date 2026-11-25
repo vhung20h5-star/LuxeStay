@@ -89,6 +89,52 @@ export const EssentialDetailsSchema = z.object({
 
 export type EssentialDetails = z.infer<typeof EssentialDetailsSchema>;
 
+export const ActivityItineraryStepSchema = z.object({
+  timeOrStep: z.string().trim().min(1),
+  title: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+});
+
+export type ActivityItineraryStep = z.infer<typeof ActivityItineraryStepSchema>;
+
+export const ActivityGoodToKnowCategorySchema = z.enum([
+  "dress-code",
+  "weather",
+  "health-age",
+  "bring",
+  "policy",
+  "tip",
+]);
+
+export type ActivityGoodToKnowCategory = z.infer<typeof ActivityGoodToKnowCategorySchema>;
+
+export const ActivityGoodToKnowItemSchema = z.object({
+  category: ActivityGoodToKnowCategorySchema,
+  title: z.string().trim().min(1),
+  detail: z.string().trim().min(1),
+});
+
+export type ActivityGoodToKnowItem = z.infer<typeof ActivityGoodToKnowItemSchema>;
+
+export const ActivityHowToUseSchema = z.object({
+  ticketType: z.string().trim().min(1),
+  steps: z.array(z.string().trim().min(1)).min(1),
+  arrivalLeadTime: z.string().trim().min(1),
+  requiredDocuments: z.string().trim().min(1).optional(),
+});
+
+export type ActivityHowToUse = z.infer<typeof ActivityHowToUseSchema>;
+
+export const ActivityCancellationPolicySchema = z.object({
+  headline: z.string().trim().min(1),
+  refundWindowHours: z.number().int().nonnegative().default(24),
+  rules: z.array(z.string().trim().min(1)).min(1),
+  rescheduleNote: z.string().trim().min(1).optional(),
+  weatherNote: z.string().trim().min(1).optional(),
+});
+
+export type ActivityCancellationPolicy = z.infer<typeof ActivityCancellationPolicySchema>;
+
 export const TravelActivitySchema = z.object({
   id: z.string().trim().min(1),
   slug: z.string().trim().min(1),
@@ -107,8 +153,16 @@ export const TravelActivitySchema = z.object({
   rating: z.number().min(0).max(5),
   reviewCount: z.number().int().nonnegative(),
   images: z.array(z.string().trim().min(1)).min(1),
+  imageCaptions: z.array(z.string().trim().min(1)).optional(),
   highlights: z.array(z.string().trim().min(1)).min(1),
   included: z.array(z.string().trim().min(1)).min(1),
+  excluded: z.array(z.string().trim().min(1)).default([]),
+  itinerary: z.array(ActivityItineraryStepSchema).default([]),
+  knowBeforeYouGo: z.array(ActivityGoodToKnowItemSchema).default([]),
+  howToUse: ActivityHowToUseSchema.optional(),
+  cancellationPolicy: ActivityCancellationPolicySchema.optional(),
+  suitableFor: z.array(z.string().trim().min(1)).default([]),
+  languages: z.array(z.string().trim().min(1)).default(["Tiếng Việt", "Tiếng Anh"]),
   freeCancellation: z.boolean().default(true),
   instantConfirmation: z.boolean().default(true),
   slots: z.array(ActivitySlotSchema).min(1),

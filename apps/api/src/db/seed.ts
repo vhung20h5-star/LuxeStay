@@ -383,8 +383,20 @@ function buildTravelActivityInsertRow(activity: TravelActivity, sortOrder: numbe
     rating: activity.rating,
     reviewCount: activity.reviewCount,
     images: [...activity.images],
+    imageCaptions: activity.imageCaptions ? [...activity.imageCaptions] : null,
     highlights: [...activity.highlights],
     included: [...activity.included],
+    excluded: [...(activity.excluded ?? [])],
+    itinerary: (activity.itinerary ?? []).map((step) => ({ ...step })),
+    knowBeforeYouGo: (activity.knowBeforeYouGo ?? []).map((item) => ({ ...item })),
+    howToUse: activity.howToUse
+      ? { ...activity.howToUse, steps: [...activity.howToUse.steps] }
+      : null,
+    cancellationPolicy: activity.cancellationPolicy
+      ? { ...activity.cancellationPolicy, rules: [...activity.cancellationPolicy.rules] }
+      : null,
+    suitableFor: [...(activity.suitableFor ?? [])],
+    languages: [...(activity.languages ?? ["Tiếng Việt", "Tiếng Anh"])],
     freeCancellation: Boolean(activity.freeCancellation),
     instantConfirmation: Boolean(activity.instantConfirmation),
     slots: activity.slots.map((slot) => ({ ...slot })),

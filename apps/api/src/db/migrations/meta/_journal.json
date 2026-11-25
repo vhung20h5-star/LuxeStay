@@ -50,6 +50,13 @@
       "when": 1795620000000,
       "tag": "0006_activities_things_to_do",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795627200000,
+      "tag": "0007_activities_gallery_and_know_before_you_go",
+      "breakpoints": true
     }
   ]
 }

@@ -58,6 +58,7 @@ import {
   backfillMissingSeedActivities,
   backfillMissingSeedProperties,
   backfillPromotionsIfNeeded,
+  enrichSeedActivitiesGalleryAndDetails,
   prepareDatabaseIfConfigured,
   repairRetiredSeedImages,
 } from "../dist/db/vercelPrepare.js";
@@ -2539,13 +2540,13 @@ test("In-lock hasPriorSuccessfulBookings and lightweight hasSuccessfulBookingByU
 test("Phase 5 Activities & Transfers API supports catalog filtering, standalone bookings with slot lock + vouchers, and cancellation", async () => {
   const { app } = createApiApp({ nodeEnv: "test" });
 
-  // 1. Catalog list & 2-tier filters (Phase 5 + 5B)
+  // 1. Catalog list & 2-tier filters (Phase 5 + 5B + 5C)
   const allRes = await app.request(API_ENDPOINTS.activities);
   assert.equal(allRes.status, 200);
   const catalog = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
     await allRes.json()
   ).data;
-  assert.equal(catalog.activities.length, 38);
+  assert.equal(catalog.activities.length, 56);
   assert.equal(catalog.cities.length, 14);
   assert.deepEqual(catalog.sections, ["attractions", "tours", "essentials", "entertainment"]);
   assert.equal(catalog.subcategories?.length, 11);
@@ -2557,15 +2558,16 @@ test("Phase 5 Activities & Transfers API supports catalog filtering, standalone 
   const themeParks = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
     await attractionsRes.json()
   ).data;
-  assert.equal(themeParks.activities.length, 4);
+  assert.equal(themeParks.activities.length, 5);
   assert.ok(themeParks.activities.some((a) => a.id === "act-13" && Boolean(a.attractionDetails)));
+  assert.ok(themeParks.activities.some((a) => a.id === "act-39" && a.images.length === 3));
 
   const esimRes = await app.request(`${API_ENDPOINTS.activities}?section=essentials&sub=sim-wifi`);
   assert.equal(esimRes.status, 200);
   const esims = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
     await esimRes.json()
   ).data;
-  assert.equal(esims.activities.length, 2);
+  assert.equal(esims.activities.length, 3);
   assert.ok(esims.activities.every((a) => Boolean(a.essentialDetails)));
 
   const transferRes = await app.request(`${API_ENDPOINTS.activities}?category=transfer&city=Da%20Lat`);
@@ -2576,7 +2578,7 @@ test("Phase 5 Activities & Transfers API supports catalog filtering, standalone 
   assert.equal(filtered.activities.length, 1);
   assert.equal(filtered.activities[0].id, "act-01");
 
-  // 2. Detail by slug & 404
+  // 2. Detail by slug & 404 (with Phase 5C 3-photo gallery + 6-part Know Before You Go)
   const detailRes = await app.request(
     API_ENDPOINTS.activityBySlug("xe-rieng-san-bay-lien-khuong-da-lat")
   );
@@ -2586,6 +2588,13 @@ test("Phase 5 Activities & Transfers API supports catalog filtering, standalone 
   ).data;
   assert.ok(detail.relatedStays.length >= 1);
   assert.ok(detail.availableVouchers.length >= 1);
+  assert.equal(detail.activity.images.length, 3);
+  assert.equal(detail.activity.imageCaptions?.length, 3);
+  assert.ok(detail.activity.excluded.length >= 2);
+  assert.ok(detail.activity.itinerary.length >= 3);
+  assert.ok(detail.activity.knowBeforeYouGo.length >= 4);
+  assert.ok(detail.activity.howToUse);
+  assert.ok(detail.activity.cancellationPolicy);
 
   const missingRes = await app.request(API_ENDPOINTS.activityBySlug("does-not-exist"));
   assert.equal(missingRes.status, 404);
@@ -2714,6 +2723,21 @@ test("Phase 5 Migration 0005 exists and backfillMissingSeedActivities inserts on
   assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "attraction_details"/);
   assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "essential_details"/);
 
+  const migration0007Path = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/db/migrations/0007_activities_gallery_and_know_before_you_go.sql"
+  );
+  assert.equal(existsSync(migration0007Path), true);
+  const sql0007 = readFileSync(migration0007Path, "utf8");
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "image_captions"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "excluded"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "itinerary"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "know_before_you_go"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "how_to_use"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "cancellation_policy"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "suitable_for"/);
+  assert.match(sql0007, /ADD COLUMN IF NOT EXISTS "languages"/);
+
   const insertedRows: unknown[] = [];
   const fakeDb = {
     select: () => ({
@@ -2736,4 +2760,57 @@ test("Phase 5 Migration 0005 exists and backfillMissingSeedActivities inserts on
   const { insertedCount } = await backfillMissingSeedActivities(fakeDb);
   assert.equal(insertedCount, TRAVEL_ACTIVITIES.length - 2);
   assert.equal(insertedRows.length, TRAVEL_ACTIVITIES.length - 2);
+
+  // Phase 5C conditional enrichment updates legacy 1-image seed row without overwriting custom edits
+  const updatedPatches: Array<{ patch: Record<string, unknown> }> = [];
+  const enrichFakeDb = {
+    select: () => ({
+      from: (table: unknown) => {
+        assert.equal(table, travelActivitiesTable);
+        return Promise.resolve([
+          {
+            id: "act-01",
+            images: ["/images/activities/act-01.jpg"],
+            imageCaptions: null,
+            excluded: [],
+            itinerary: [],
+            knowBeforeYouGo: [],
+            howToUse: null,
+            cancellationPolicy: null,
+            suitableFor: [],
+            languages: [],
+            slots: [],
+          },
+          {
+            id: "act-02",
+            images: ["/images/activities/custom-host-photo.jpg"],
+            imageCaptions: ["Custom caption"],
+            excluded: ["Custom excluded"],
+            itinerary: [{ timeOrStep: "08:00", title: "Custom", description: "Custom" }],
+            knowBeforeYouGo: [{ category: "tip", title: "Custom", detail: "Custom" }],
+            howToUse: { ticketType: "QR", steps: ["Custom"], arrivalLeadTime: "15m" },
+            cancellationPolicy: { headline: "Custom", refundWindowHours: 24, rules: ["Custom"] },
+            suitableFor: ["Custom"],
+            languages: ["Tiếng Việt"],
+            slots: [],
+          },
+        ]);
+      },
+    }),
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+      fn({
+        update: () => ({
+          set: (patch: Record<string, unknown>) => {
+            updatedPatches.push({ patch });
+            return { where: () => Promise.resolve() };
+          },
+        }),
+      }),
+  } as unknown as LuxeStayDb;
+
+  const { enrichedCount } = await enrichSeedActivitiesGalleryAndDetails(enrichFakeDb);
+  assert.equal(enrichedCount, 1);
+  assert.equal(updatedPatches.length, 1);
+  assert.equal((updatedPatches[0].patch.images as string[]).length, 3);
+  assert.ok(Array.isArray(updatedPatches[0].patch.knowBeforeYouGo));
 });

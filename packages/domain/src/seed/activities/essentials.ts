@@ -1,6 +1,6 @@
-import type { TravelActivity } from "@luxestay/contracts";
+import type { SeedTravelActivityBase } from "./types.js";
 
-export const ESSENTIAL_ACTIVITIES: readonly TravelActivity[] = Object.freeze([
+export const RAW_ESSENTIAL_ACTIVITIES: readonly SeedTravelActivityBase[] = Object.freeze([
   {
     id: "act-31",
     slug: "esim-du-lich-viet-nam-4g-5g-khong-gioi-han",
@@ -185,6 +185,15 @@ export const ESSENTIAL_ACTIVITIES: readonly TravelActivity[] = Object.freeze([
         priceModifier: 0,
       },
       {
+        id: "slot-ft-lounge-only",
+        startTime: "00:00",
+        endTime: "23:59",
+        period: "flexible",
+        label: "Vé Phòng chờ Thương gia Độc lập (3 giờ • SGN / HAN / DAD)",
+        maxCapacity: 30,
+        priceModifier: -140000,
+      },
+      {
         id: "slot-ft-lounge-combo",
         startTime: "00:00",
         endTime: "23:59",
@@ -200,6 +209,73 @@ export const ESSENTIAL_ACTIVITIES: readonly TravelActivity[] = Object.freeze([
       activationNote: "Vui lòng ghi chú số hiệu chuyến bay & giờ hạ cánh/cất cánh ở ô Ghi chú khi đặt",
     },
     isFeatured: true,
+    isActive: true,
+  },
+  {
+    id: "act-54",
+    slug: "bo-phat-pocket-wifi-4g-du-lich-viet-nam-khong-gioi-han",
+    title: "Bộ Phát WiFi 4G Du lịch (Pocket WiFi) Không Giới Hạn — Nhận tại HAN / SGN / DAD",
+    subtitle: "Chia sẻ mạng 4G tốc độ cao đồng thời cho 5–8 thiết bị (điện thoại, laptop, máy tính bảng) với pin dùng suốt 12 giờ",
+    category: "experience",
+    hubSection: "essentials",
+    subcategory: "sim-wifi",
+    destinationCity: "Hà Nội",
+    province: "Hà Nội",
+    meetingPoint: "Quầy giao nhận thiết bị Sân bay Nội Bài (HAN) / Tân Sơn Nhất (SGN) / Đà Nẵng (DAD)",
+    durationLabel: "Thuê theo gói 3 – 10 ngày",
+    pricePerUnit: 120000,
+    unitLabel: "gói thuê",
+    originalPrice: 160000,
+    rating: 4.91,
+    reviewCount: 312,
+    images: ["/images/activities/act-54.jpg"],
+    highlights: [
+      "Kết nối cùng lúc tối đa 5–8 thiết bị không tốn pin điện thoại như phát Hotspot",
+      "Data 4G tốc độ cao không giới hạn dung lượng, phủ sóng toàn quốc kể cả Sa Pa & Phú Quốc",
+      "Nhận & hoàn trả thiết bị siêu nhanh tại quầy sân bay 24/7 hoặc giao tận khách sạn trung tâm",
+    ],
+    included: [
+      "1 Bộ phát Pocket WiFi 4G đầy pin + cáp sạc USB-C & túi chống sốc",
+      "SIM Data 4G không giới hạn đã lắp sẵn, bật nguồn dùng ngay",
+      "Hỗ trợ kỹ thuật đổi thiết bị miễn phí 24/7 trong suốt hành trình",
+    ],
+    freeCancellation: true,
+    instantConfirmation: true,
+    slots: [
+      {
+        id: "slot-wifi-3d",
+        startTime: "00:00",
+        endTime: "23:59",
+        period: "flexible",
+        label: "Gói thuê 3 ngày • Không giới hạn Data 4G (5 thiết bị)",
+        maxCapacity: 80,
+        priceModifier: 0,
+      },
+      {
+        id: "slot-wifi-7d",
+        startTime: "00:00",
+        endTime: "23:59",
+        period: "flexible",
+        label: "Gói thuê 7 ngày • Không giới hạn Data 4G (8 thiết bị)",
+        maxCapacity: 80,
+        priceModifier: 140000,
+      },
+      {
+        id: "slot-wifi-10d",
+        startTime: "00:00",
+        endTime: "23:59",
+        period: "flexible",
+        label: "Gói thuê 10 ngày • Kèm Pin dự phòng 10.000mAh",
+        maxCapacity: 60,
+        priceModifier: 240000,
+      },
+    ],
+    essentialDetails: {
+      deliveryMethod: "Nhận trực tiếp tại quầy Sân bay (HAN/SGN/DAD) 24/7 hoặc giao khách sạn nội thành",
+      validityWindow: "Tính từ ngày nhận thiết bị; trả lại quầy sân bay trước giờ bay về",
+      activationNote: "Không cần đặt cọc tiền mặt khi xuất trình mã đơn LuxeStay & CCCD/Hộ chiếu",
+    },
+    isFeatured: false,
     isActive: true,
   },
 ]);

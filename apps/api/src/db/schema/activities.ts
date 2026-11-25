@@ -10,8 +10,12 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   ActivityBookingStatus,
+  ActivityCancellationPolicy,
   ActivityCategory,
+  ActivityGoodToKnowItem,
+  ActivityHowToUse,
   ActivityHubSection,
+  ActivityItineraryStep,
   ActivitySlot,
   ActivitySubcategory,
   AttractionDetails,
@@ -42,8 +46,22 @@ export const travelActivitiesTable = pgTable(
     rating: real("rating").notNull().default(5),
     reviewCount: integer("review_count").notNull().default(0),
     images: jsonb("images").$type<string[]>().notNull(),
+    imageCaptions: jsonb("image_captions").$type<string[]>(),
     highlights: jsonb("highlights").$type<string[]>().notNull(),
     included: jsonb("included").$type<string[]>().notNull(),
+    excluded: jsonb("excluded").$type<string[]>().notNull().default([]),
+    itinerary: jsonb("itinerary").$type<ActivityItineraryStep[]>().notNull().default([]),
+    knowBeforeYouGo: jsonb("know_before_you_go")
+      .$type<ActivityGoodToKnowItem[]>()
+      .notNull()
+      .default([]),
+    howToUse: jsonb("how_to_use").$type<ActivityHowToUse>(),
+    cancellationPolicy: jsonb("cancellation_policy").$type<ActivityCancellationPolicy>(),
+    suitableFor: jsonb("suitable_for").$type<string[]>().notNull().default([]),
+    languages: jsonb("languages")
+      .$type<string[]>()
+      .notNull()
+      .default(["Tiếng Việt", "Tiếng Anh"]),
     freeCancellation: boolean("free_cancellation").notNull().default(true),
     instantConfirmation: boolean("instant_confirmation").notNull().default(true),
     slots: jsonb("slots").$type<ActivitySlot[]>().notNull(),

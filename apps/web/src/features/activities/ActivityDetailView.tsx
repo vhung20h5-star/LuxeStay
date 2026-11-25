@@ -14,9 +14,7 @@ import {
   Luggage,
   MapPin,
   QrCode,
-  ShieldCheck,
   Smartphone,
-  Sparkles,
   Star,
   Tag,
   Ticket,
@@ -25,6 +23,12 @@ import {
 } from "lucide-react";
 import type { ActivityBooking, ActivityDetailResponse } from "@luxestay/contracts";
 import { calculateActivityPricing } from "@luxestay/domain";
+import { ActivityGallery } from "@/features/activities/ActivityGallery";
+import {
+  ActivityQuickFactsStrip,
+  ActivityRichDetailsSections,
+  ActivitySectionJumpBar,
+} from "@/features/activities/ActivityKnowBeforeYouGo";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useBookingSession } from "@/features/booking/BookingContext";
 import { useLocale } from "@/features/locale/LocaleContext";
@@ -159,16 +163,11 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Details Column */}
         <div className="lg:col-span-7 space-y-6 min-w-0">
-          <div className="relative aspect-[16/10] w-full rounded-3xl overflow-hidden bg-slate-100 shadow-md">
-            <Image
-              src={activity.images[0]}
-              alt={activity.title}
-              fill
-              priority
-              sizes="(max-width: 1024px) 100vw, 60vw"
-              className="object-cover"
-            />
-          </div>
+          <ActivityGallery
+            title={activity.title}
+            images={activity.images}
+            captions={activity.imageCaptions}
+          />
 
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
@@ -192,7 +191,11 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
             <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
               {activity.subtitle}
             </p>
+
+            <ActivityQuickFactsStrip activity={activity} />
           </div>
+
+          <ActivitySectionJumpBar hasItinerary={activity.itinerary.length > 0} />
 
           {/* Transfer Details Box */}
           {activity.transferDetails && (
@@ -320,41 +323,8 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
             </div>
           )}
 
-          {/* Highlights & Included */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-3">
-              <h2 className="font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                Điểm nổi bật
-              </h2>
-              <ul className="space-y-2 text-sm text-slate-600">
-                {activity.highlights.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-3">
-              <h2 className="font-bold text-slate-900 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                Dịch vụ bao gồm
-              </h2>
-              <ul className="space-y-2 text-sm text-slate-600">
-                {activity.included.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-slate-500 pt-2 border-t border-slate-100">
-                <strong>Điểm tập trung:</strong> {activity.meetingPoint}
-              </p>
-            </div>
-          </div>
+          {/* Highlights, Itinerary, Included/Excluded & "Điều bạn cũng nên biết" Accordion */}
+          <ActivityRichDetailsSections activity={activity} />
 
           {/* Related Stays */}
           {relatedStays.length > 0 && (

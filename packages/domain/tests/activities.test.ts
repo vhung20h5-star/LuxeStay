@@ -39,9 +39,15 @@ function normalizeMediaKey(src: string): string {
   return pexels ? `pexels:${pexels[1]}` : withoutQuery;
 }
 
-test("TRAVEL_ACTIVITIES seed has 38 valid services across 14 cities with 0% global media duplication and local files on disk", () => {
-  assert.equal(TRAVEL_ACTIVITIES.length, 38);
-  assert.equal(getActivityCities(TRAVEL_ACTIVITIES).length, 14);
+test("TRAVEL_ACTIVITIES seed has 56 valid services across 14 cities (>= 3 per city), 3 unique photos each, 6-part Know Before You Go, and 0% global media duplication", () => {
+  assert.equal(TRAVEL_ACTIVITIES.length, 56);
+  const cities = getActivityCities(TRAVEL_ACTIVITIES);
+  assert.equal(cities.length, 14);
+  for (const city of cities) {
+    const cityCount = TRAVEL_ACTIVITIES.filter((a) => a.destinationCity === city).length;
+    assert.ok(cityCount >= 3, `City ${city} should have >= 3 activities, got ${cityCount}`);
+  }
+
   assert.deepEqual(getActivitySections(TRAVEL_ACTIVITIES), [
     "attractions",
     "tours",
@@ -69,6 +75,23 @@ test("TRAVEL_ACTIVITIES seed has 38 valid services across 14 cities with 0% glob
     assert.equal(slugs.has(activity.slug), false, `Duplicate slug ${activity.slug}`);
     slugs.add(activity.slug);
 
+    assert.equal(activity.images.length, 3, `Activity ${activity.id} must have 3 unique photos`);
+    assert.equal(
+      activity.imageCaptions?.length,
+      3,
+      `Activity ${activity.id} must have 3 image captions`
+    );
+    assert.ok(activity.excluded.length >= 2, `Activity ${activity.id} missing excluded items`);
+    assert.ok(activity.itinerary.length >= 3, `Activity ${activity.id} missing itinerary steps`);
+    assert.ok(
+      activity.knowBeforeYouGo.length >= 4,
+      `Activity ${activity.id} missing Know Before You Go items`
+    );
+    assert.ok(activity.howToUse, `Activity ${activity.id} missing howToUse`);
+    assert.ok(activity.cancellationPolicy, `Activity ${activity.id} missing cancellationPolicy`);
+    assert.ok(activity.suitableFor.length >= 2, `Activity ${activity.id} missing suitableFor`);
+    assert.ok(activity.languages.length >= 1, `Activity ${activity.id} missing languages`);
+
     if (activity.category === "transfer") {
       assert.equal(TransferServiceSchema.safeParse(activity).success, true);
     }
@@ -90,24 +113,27 @@ test("TRAVEL_ACTIVITIES seed has 38 valid services across 14 cities with 0% glob
       }
     }
   }
+
+  assert.equal(globalSeen.size, 309);
 });
 
 test("filterActivities, URL query sync, and findRecommendedActivitiesForCity handle 2-tier taxonomy, diacritics, and smart 1+2 bundle mix", () => {
   const transfers = filterActivities(TRAVEL_ACTIVITIES, { category: "transfer" });
-  assert.equal(transfers.length, 7);
+  assert.equal(transfers.length, 11);
 
   const attractions = filterActivities(TRAVEL_ACTIVITIES, { section: "attractions" });
-  assert.equal(attractions.length, 8);
+  assert.equal(attractions.length, 11);
 
   const themeParks = filterActivities(TRAVEL_ACTIVITIES, {
     section: "attractions",
     subcategory: "theme-park",
   });
-  assert.equal(themeParks.length, 4);
+  assert.equal(themeParks.length, 5);
   assert.ok(themeParks.some((a) => a.id === "act-13"));
+  assert.ok(themeParks.some((a) => a.id === "act-39"));
 
   const simWifi = filterActivities(TRAVEL_ACTIVITIES, { subcategory: "sim-wifi" });
-  assert.equal(simWifi.length, 2);
+  assert.equal(simWifi.length, 3);
 
   const daLat = filterActivities(TRAVEL_ACTIVITIES, { city: "da lat" });
   assert.equal(daLat.length, 3);

@@ -1,10 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
+  Camera,
   Car,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Compass,
   Landmark,
@@ -99,10 +102,32 @@ const SUBCATEGORY_BADGE_META: Record<
 };
 
 export function ActivityCard({ activity }: { activity: TravelActivity }) {
-  const { locale, formatPrice } = useLocale();
+  const { locale, formatPrice, t } = useLocale();
+  const [imageIndex, setImageIndex] = useState(0);
   const meta =
     SUBCATEGORY_BADGE_META[activity.subcategory] ?? SUBCATEGORY_BADGE_META["local-workshop"];
   const Icon = meta.Icon;
+  const totalImages = activity.images.length;
+  const safeIndex = Math.min(imageIndex, Math.max(0, totalImages - 1));
+  const activeSrc = activity.images[safeIndex] ?? activity.images[0];
+
+  const handlePrevImage = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setImageIndex((prev) => (prev - 1 + totalImages) % totalImages);
+  };
+
+  const handleNextImage = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setImageIndex((prev) => (prev + 1) % totalImages);
+  };
+
+  const handleSelectImage = (event: React.MouseEvent, idx: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setImageIndex(idx);
+  };
 
   return (
     <Link
@@ -112,13 +137,13 @@ export function ActivityCard({ activity }: { activity: TravelActivity }) {
     >
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100">
         <Image
-          src={activity.images[0]}
-          alt={activity.title}
+          src={activeSrc}
+          alt={activity.imageCaptions?.[safeIndex] ?? activity.title}
           fill
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           className="object-cover group-hover:scale-105 transition-transform duration-500"
         />
-        <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-2">
+        <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-2 pointer-events-none">
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-sm shadow-sm ${meta.badgeClass}`}
           >
@@ -131,6 +156,53 @@ export function ActivityCard({ activity }: { activity: TravelActivity }) {
             </span>
           )}
         </div>
+
+        {/* Quick-Preview Image Controls & Photo Count Badge */}
+        {totalImages > 1 && (
+          <>
+            <button
+              type="button"
+              data-testid={`activity-card-prev-${activity.id}`}
+              onClick={handlePrevImage}
+              aria-label={locale === "en" ? "Previous photo" : "Ảnh trước"}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-slate-950/60 hover:bg-slate-950/85 text-white flex items-center justify-center opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              data-testid={`activity-card-next-${activity.id}`}
+              onClick={handleNextImage}
+              aria-label={locale === "en" ? "Next photo" : "Ảnh tiếp theo"}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-slate-950/60 hover:bg-slate-950/85 text-white flex items-center justify-center opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-xs px-2 py-1 rounded-full">
+                {activity.images.map((imgUrl, idx) => (
+                  <button
+                    key={imgUrl}
+                    type="button"
+                    onClick={(e) => handleSelectImage(e, idx)}
+                    aria-label={`${locale === "en" ? "Photo" : "Ảnh"} ${idx + 1}`}
+                    className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                      idx === safeIndex ? "w-4 bg-white" : "w-1.5 bg-white/55 hover:bg-white/85"
+                    }`}
+                  />
+                ))}
+              </div>
+              <span
+                data-testid={`activity-card-photo-badge-${activity.id}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950/65 text-white text-[11px] font-semibold backdrop-blur-xs"
+              >
+                <Camera className="w-3 h-3 text-emerald-300" />
+                {t("activities.photosCount", { count: totalImages })}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="p-4 sm:p-5 flex-1 flex flex-col gap-2.5 min-w-0">

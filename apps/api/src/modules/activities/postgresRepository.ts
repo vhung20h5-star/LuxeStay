@@ -30,8 +30,40 @@ export function mapActivityRowToDomain(row: TravelActivityRow): TravelActivity {
     rating: row.rating,
     reviewCount: row.reviewCount,
     images: Object.freeze([...row.images]) as string[],
+    ...(row.imageCaptions && row.imageCaptions.length > 0
+      ? { imageCaptions: Object.freeze([...row.imageCaptions]) as string[] }
+      : {}),
     highlights: Object.freeze([...row.highlights]) as string[],
     included: Object.freeze([...row.included]) as string[],
+    excluded: Object.freeze([...(row.excluded ?? [])]) as string[],
+    itinerary: Object.freeze(
+      (row.itinerary ?? []).map((step) => Object.freeze({ ...step }))
+    ) as TravelActivity["itinerary"],
+    knowBeforeYouGo: Object.freeze(
+      (row.knowBeforeYouGo ?? []).map((item) => Object.freeze({ ...item }))
+    ) as TravelActivity["knowBeforeYouGo"],
+    ...(row.howToUse
+      ? {
+          howToUse: Object.freeze({
+            ...row.howToUse,
+            steps: Object.freeze([...row.howToUse.steps]) as string[],
+          }),
+        }
+      : {}),
+    ...(row.cancellationPolicy
+      ? {
+          cancellationPolicy: Object.freeze({
+            ...row.cancellationPolicy,
+            rules: Object.freeze([...row.cancellationPolicy.rules]) as string[],
+          }),
+        }
+      : {}),
+    suitableFor: Object.freeze([...(row.suitableFor ?? [])]) as string[],
+    languages: Object.freeze(
+      row.languages && row.languages.length > 0
+        ? [...row.languages]
+        : ["Tiếng Việt", "Tiếng Anh"]
+    ) as string[],
     freeCancellation: row.freeCancellation,
     instantConfirmation: row.instantConfirmation,
     slots: Object.freeze(row.slots.map((s) => Object.freeze({ ...s }))) as TravelActivity["slots"],

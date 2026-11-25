@@ -12,7 +12,7 @@ import { createHttpReservationManagerAdapter } from "../src/shared/ports/persist
 test("createMockActivitiesPort filters, books, looks up, and cancels standalone activity", async () => {
   const port = createMockActivitiesPort();
   const fullCatalog = await port.listActivities();
-  assert.equal(fullCatalog.activities.length, 38);
+  assert.equal(fullCatalog.activities.length, 56);
   assert.equal(fullCatalog.cities.length, 14);
   assert.deepEqual(fullCatalog.sections, ["attractions", "tours", "essentials", "entertainment"]);
   assert.equal(fullCatalog.subcategories?.length, 11);
@@ -21,8 +21,9 @@ test("createMockActivitiesPort filters, books, looks up, and cancels standalone 
     section: "attractions",
     subcategory: "theme-park",
   });
-  assert.equal(themeParks.activities.length, 4);
+  assert.equal(themeParks.activities.length, 5);
   assert.ok(themeParks.activities.some((a) => a.id === "act-13"));
+  assert.ok(themeParks.activities.some((a) => a.id === "act-39"));
 
   const catalog = await port.listActivities({ category: "transfer", city: "Đà Lạt" });
   assert.equal(catalog.activities.length, 1);
@@ -31,6 +32,11 @@ test("createMockActivitiesPort filters, books, looks up, and cancels standalone 
   const detail = await port.getActivityBySlug(catalog.activities[0].slug);
   assert.ok(detail);
   assert.ok(detail.relatedStays.length > 0);
+  assert.equal(detail.activity.images.length, 3);
+  assert.equal(detail.activity.imageCaptions?.length, 3);
+  assert.ok(detail.activity.knowBeforeYouGo.length >= 4);
+  assert.ok(detail.activity.howToUse);
+  assert.ok(detail.activity.cancellationPolicy);
 
   const booked = await port.createBooking({
     activityId: "act-01",

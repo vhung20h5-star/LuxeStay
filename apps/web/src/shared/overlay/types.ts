@@ -6,7 +6,8 @@ export type OverlayKind =
   | "property-modal"
   | "property-amenities-modal"
   | "checkout-modal"
-  | "booking-success-modal";
+  | "booking-success-modal"
+  | "activity-lightbox";
 
 export interface OverlayEntry {
   id: string;

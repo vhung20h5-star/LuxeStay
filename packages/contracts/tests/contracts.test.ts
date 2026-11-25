@@ -614,4 +614,67 @@ test("Phase 5 Activities, Transfers, ServiceBookingIntent, bundle reservations, 
     },
   });
   assert.equal(essentialParsed.success, true);
+
+  // Phase 5C backward compatibility defaults & full rich gallery + Know Before You Go schemas
+  assert.deepEqual(parsedLegacy.excluded, []);
+  assert.deepEqual(parsedLegacy.itinerary, []);
+  assert.deepEqual(parsedLegacy.knowBeforeYouGo, []);
+  assert.deepEqual(parsedLegacy.suitableFor, []);
+  assert.deepEqual(parsedLegacy.languages, ["Tiếng Việt", "Tiếng Anh"]);
+  assert.equal(parsedLegacy.howToUse, undefined);
+  assert.equal(parsedLegacy.cancellationPolicy, undefined);
+
+  const richPhase5c = TravelActivitySchema.safeParse({
+    ...transferPayload,
+    id: "act-39",
+    slug: "ve-sun-world-ha-long-dragon-park",
+    category: "experience",
+    hubSection: "attractions",
+    subcategory: "theme-park",
+    transferDetails: undefined,
+    images: [
+      "/images/activities/act-39.jpg",
+      "/images/activities/act-39-2.jpg",
+      "/images/activities/act-39-3.jpg",
+    ],
+    imageCaptions: [
+      "Cáp treo Nữ Hoàng vượt vịnh Hạ Long",
+      "Vòng quay Mặt Trời trên đồi Ba Đèo",
+      "Khu vui chơi Dragon Park sôi động",
+    ],
+    excluded: ["Chi phí ăn uống ngoài combo", "Chi phí gửi đồ cá nhân tại tủ khóa"],
+    itinerary: [
+      {
+        timeOrStep: "Bước 1",
+        title: "Nhận mã QR điện tử qua Email",
+        description: "Hệ thống xuất mã QR ngay sau khi xác nhận đơn đặt vé.",
+      },
+    ],
+    knowBeforeYouGo: [
+      {
+        category: "dress-code",
+        title: "Trang phục thoải mái",
+        detail: "Mang giày thể thao nhẹ và mũ chống nắng khi tham quan khu ngoài trời.",
+      },
+    ],
+    howToUse: {
+      ticketType: "Vé QR điện tử (không cần in giấy)",
+      steps: ["Mở mã QR trong email xác nhận", "Quét thẳng tại cổng kiểm soát ga Đại Dương"],
+      arrivalLeadTime: "Có mặt trước giờ đóng cửa ít nhất 90 phút",
+      requiredDocuments: "CCCD/Hộ chiếu đối chiếu với nhóm ưu đãi chiều cao trẻ em",
+    },
+    cancellationPolicy: {
+      headline: "Hủy miễn phí hoàn tiền 100% trước 24 giờ",
+      refundWindowHours: 24,
+      rules: [
+        "Hủy trước 24 giờ so với ngày sử dụng: hoàn 100% giá trị đơn.",
+        "Hủy trong vòng 24 giờ: không hoàn tiền do mã vé đã xuất với nhà cung cấp.",
+      ],
+      rescheduleNote: "Hỗ trợ đổi ngày sử dụng miễn phí 1 lần nếu báo trước 24 giờ.",
+      weatherNote: "Trường hợp bão/dông cáp treo tạm ngừng vận hành, hoàn 100% hoặc bảo lưu vé.",
+    },
+    suitableFor: ["Gia đình có trẻ nhỏ", "Nhóm bạn trẻ", "Cặp đôi"],
+    languages: ["Tiếng Việt", "Tiếng Anh"],
+  });
+  assert.equal(richPhase5c.success, true);
 });

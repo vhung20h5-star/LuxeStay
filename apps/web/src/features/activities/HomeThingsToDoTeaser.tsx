@@ -141,7 +141,7 @@ export function HomeThingsToDoTeaser({
           >
             <span>
               {t("activities.homeTeaserCta", {
-                count: initialCatalog?.activities.length ?? 38,
+                count: initialCatalog?.activities.length ?? 56,
               })}
             </span>
             <ArrowRight className="w-4 h-4" />
