@@ -18,6 +18,8 @@ import {
   filterActivityEligibleVouchers,
   getActivityCategories,
   getActivityCities,
+  getActivitySections,
+  getActivitySubcategories,
   matchesActivityBookingContact,
   normalizeActivitySlug,
   normalizeVietnamese,
@@ -48,6 +50,8 @@ function buildActivitiesQueryString(query?: ActivitiesQueryParams): string {
   if (query.city?.trim()) params.set("city", query.city.trim());
   if (query.search?.trim()) params.set("search", query.search.trim());
   if (query.category && query.category !== "all") params.set("category", query.category);
+  if (query.section && query.section !== "explore") params.set("section", query.section);
+  if (query.subcategory && query.subcategory !== "all") params.set("sub", query.subcategory);
   if (query.period && query.period !== "all") params.set("period", query.period);
   if (query.maxPrice !== undefined && Number.isFinite(query.maxPrice)) {
     params.set("maxPrice", String(query.maxPrice));
@@ -263,6 +267,8 @@ export function createMockActivitiesPort(options?: {
         activities: filterActivities(catalog, query),
         cities: getActivityCities(catalog),
         categories: getActivityCategories(catalog),
+        sections: getActivitySections(catalog),
+        subcategories: getActivitySubcategories(catalog, query?.section),
       });
     },
 

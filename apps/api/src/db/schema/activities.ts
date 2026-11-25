@@ -11,7 +11,11 @@ import {
 import type {
   ActivityBookingStatus,
   ActivityCategory,
+  ActivityHubSection,
   ActivitySlot,
+  ActivitySubcategory,
+  AttractionDetails,
+  EssentialDetails,
   PaymentMethod,
   TransferDetails,
 } from "@luxestay/contracts";
@@ -26,6 +30,8 @@ export const travelActivitiesTable = pgTable(
     title: text("title").notNull(),
     subtitle: text("subtitle").notNull(),
     category: text("category").$type<ActivityCategory>().notNull(),
+    hubSection: text("hub_section").$type<ActivityHubSection>().notNull().default("tours"),
+    subcategory: text("subcategory").$type<ActivitySubcategory>().notNull().default("local-workshop"),
     destinationCity: text("destination_city").notNull(),
     province: text("province").notNull(),
     meetingPoint: text("meeting_point").notNull(),
@@ -42,6 +48,8 @@ export const travelActivitiesTable = pgTable(
     instantConfirmation: boolean("instant_confirmation").notNull().default(true),
     slots: jsonb("slots").$type<ActivitySlot[]>().notNull(),
     transferDetails: jsonb("transfer_details").$type<TransferDetails>(),
+    attractionDetails: jsonb("attraction_details").$type<AttractionDetails>(),
+    essentialDetails: jsonb("essential_details").$type<EssentialDetails>(),
     isFeatured: boolean("is_featured").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -49,6 +57,8 @@ export const travelActivitiesTable = pgTable(
   (table) => [
     index("travel_activities_city_idx").on(table.destinationCity),
     index("travel_activities_category_idx").on(table.category),
+    index("travel_activities_hub_section_idx").on(table.hubSection),
+    index("travel_activities_subcategory_idx").on(table.subcategory),
   ]
 );
 

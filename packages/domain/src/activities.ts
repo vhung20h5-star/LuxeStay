@@ -1,9 +1,15 @@
 import {
+  ActivityHubSectionSchema,
+  ActivitySortOptionSchema,
+  ActivitySubcategorySchema,
+  ActivityTimeSlotPeriodSchema,
   ServiceBookingIntentSchema,
   type ActivitiesQueryParams,
   type ActivityBooking,
   type ActivityCategory,
+  type ActivityHubSection,
   type ActivitySlot,
+  type ActivitySubcategory,
   type AuthUser,
   type BookedBundleActivity,
   type BookingDetails,
@@ -15,6 +21,109 @@ import {
 } from "@luxestay/contracts";
 import { normalizeVietnamese } from "./utils.js";
 import { evaluatePromotionVoucher, normalizeVoucherCode } from "./vouchers.js";
+
+export interface ActivitySubcategoryDefinition {
+  readonly id: ActivitySubcategory;
+  readonly section: ActivityHubSection;
+  readonly labelVi: string;
+  readonly labelEn: string;
+}
+
+export const ACTIVITY_HUB_SECTION_ORDER: readonly ActivityHubSection[] = Object.freeze([
+  "attractions",
+  "tours",
+  "essentials",
+  "entertainment",
+]);
+
+export const ACTIVITY_SUBCATEGORY_DEFINITIONS: readonly ActivitySubcategoryDefinition[] =
+  Object.freeze([
+    {
+      id: "theme-park",
+      section: "attractions",
+      labelVi: "Công viên giải trí & Cáp treo",
+      labelEn: "Theme Parks & Cable Cars",
+    },
+    {
+      id: "heritage-culture",
+      section: "attractions",
+      labelVi: "Di sản & Văn hóa",
+      labelEn: "Heritage & Culture",
+    },
+    {
+      id: "island-sea",
+      section: "tours",
+      labelVi: "Tour đảo & Biển",
+      labelEn: "Island & Sea Tours",
+    },
+    {
+      id: "mountain-nature",
+      section: "tours",
+      labelVi: "Săn mây & Thiên nhiên",
+      labelEn: "Mountains & Nature",
+    },
+    {
+      id: "local-workshop",
+      section: "tours",
+      labelVi: "Trải nghiệm bản địa",
+      labelEn: "Local Experiences",
+    },
+    {
+      id: "airport-transfer",
+      section: "essentials",
+      labelVi: "Đưa đón sân bay & Limousine",
+      labelEn: "Airport Transfers & Limo",
+    },
+    {
+      id: "sim-wifi",
+      section: "essentials",
+      labelVi: "SIM, eSIM 4G & WiFi",
+      labelEn: "eSIM, 4G SIM & WiFi",
+    },
+    {
+      id: "fast-track",
+      section: "essentials",
+      labelVi: "Fast-Track & Phòng chờ",
+      labelEn: "Fast-Track & Lounges",
+    },
+    {
+      id: "live-show",
+      section: "entertainment",
+      labelVi: "Show diễn & Nghệ thuật",
+      labelEn: "Live Shows & Performances",
+    },
+    {
+      id: "spa-wellness",
+      section: "entertainment",
+      labelVi: "Spa, Tắm bùn & Thảo mộc",
+      labelEn: "Spa, Mud Bath & Wellness",
+    },
+    {
+      id: "dining-cruise",
+      section: "entertainment",
+      labelVi: "Ẩm thực & Du thuyền tối",
+      labelEn: "Dining & Night Cruises",
+    },
+  ]);
+
+const SUBCATEGORY_TO_SECTION_MAP = new Map<ActivitySubcategory, ActivityHubSection>(
+  ACTIVITY_SUBCATEGORY_DEFINITIONS.map((def) => [def.id, def.section])
+);
+
+export function resolveHubSectionForSubcategory(
+  subcategory: ActivitySubcategory
+): ActivityHubSection {
+  return SUBCATEGORY_TO_SECTION_MAP.get(subcategory) ?? "tours";
+}
+
+export function getSubcategoriesForSection(
+  section: ActivityHubSection | "explore"
+): readonly ActivitySubcategoryDefinition[] {
+  if (section === "explore") {
+    return ACTIVITY_SUBCATEGORY_DEFINITIONS;
+  }
+  return Object.freeze(ACTIVITY_SUBCATEGORY_DEFINITIONS.filter((def) => def.section === section));
+}
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -82,6 +191,26 @@ export function getActivityCategories(
   return Object.freeze(order.filter((cat) => present.has(cat)));
 }
 
+export function getActivitySections(
+  activities: readonly TravelActivity[]
+): readonly ActivityHubSection[] {
+  const present = new Set(activities.filter((a) => a.isActive).map((a) => a.hubSection));
+  return Object.freeze(ACTIVITY_HUB_SECTION_ORDER.filter((sec) => present.has(sec)));
+}
+
+export function getActivitySubcategories(
+  activities: readonly TravelActivity[],
+  section?: ActivityHubSection | "explore"
+): readonly ActivitySubcategory[] {
+  const allowedDefs = section && section !== "explore" ? getSubcategoriesForSection(section) : ACTIVITY_SUBCATEGORY_DEFINITIONS;
+  const present = new Set(
+    activities
+      .filter((a) => a.isActive && (!section || section === "explore" || a.hubSection === section))
+      .map((a) => a.subcategory)
+  );
+  return Object.freeze(allowedDefs.map((d) => d.id).filter((sub) => present.has(sub)));
+}
+
 export function getActivityCities(activities: readonly TravelActivity[]): readonly string[] {
   const seen = new Map<string, string>();
   for (const item of activities) {
@@ -94,6 +223,95 @@ export function getActivityCities(activities: readonly TravelActivity[]): readon
   return Object.freeze([...seen.values()]);
 }
 
+export function parseActivitiesQueryFromSearchParams(
+  params: URLSearchParams | Record<string, string | string[] | undefined>
+): ActivitiesQueryParams {
+  const read = (key: string): string | undefined => {
+    if (params instanceof URLSearchParams) {
+      const val = params.get(key)?.trim();
+      return val || undefined;
+    }
+    const raw = params[key];
+    const single = Array.isArray(raw) ? raw[0] : raw;
+    const trimmed = single?.trim();
+    return trimmed || undefined;
+  };
+
+  const rawSection = read("section");
+  const sectionParsed =
+    rawSection === "explore"
+      ? "explore"
+      : ActivityHubSectionSchema.safeParse(rawSection).success
+        ? (rawSection as ActivityHubSection)
+        : undefined;
+
+  const rawSub = read("sub") ?? read("subcategory");
+  const subParsed =
+    rawSub === "all"
+      ? "all"
+      : ActivitySubcategorySchema.safeParse(rawSub).success
+        ? (rawSub as ActivitySubcategory)
+        : undefined;
+
+  // Keep section coherent when subcategory is explicitly supplied without a matching section
+  const resolvedSection: ActivityHubSection | "explore" | undefined =
+    subParsed && subParsed !== "all"
+      ? sectionParsed && sectionParsed !== "explore"
+        ? sectionParsed
+        : resolveHubSectionForSubcategory(subParsed)
+      : sectionParsed;
+
+  const rawPeriod = read("period");
+  const periodParsed =
+    rawPeriod === "all"
+      ? "all"
+      : ActivityTimeSlotPeriodSchema.safeParse(rawPeriod).success
+        ? (rawPeriod as ActivitiesQueryParams["period"])
+        : undefined;
+
+  const rawSort = read("sort") ?? read("sortBy");
+  const sortParsed = ActivitySortOptionSchema.safeParse(rawSort).success
+    ? (rawSort as ActivitiesQueryParams["sortBy"])
+    : undefined;
+
+  const city = read("city");
+  const search = read("q") ?? read("search");
+
+  return {
+    ...(resolvedSection ? { section: resolvedSection } : {}),
+    ...(subParsed ? { subcategory: subParsed } : {}),
+    ...(city ? { city } : {}),
+    ...(search ? { search } : {}),
+    ...(periodParsed ? { period: periodParsed } : {}),
+    ...(sortParsed ? { sortBy: sortParsed } : {}),
+  };
+}
+
+export function serializeActivitiesQueryToSearchParams(
+  query: ActivitiesQueryParams
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.section && query.section !== "explore") {
+    params.set("section", query.section);
+  }
+  if (query.subcategory && query.subcategory !== "all") {
+    params.set("sub", query.subcategory);
+  }
+  if (query.city?.trim()) {
+    params.set("city", query.city.trim());
+  }
+  if (query.period && query.period !== "all") {
+    params.set("period", query.period);
+  }
+  if (query.search?.trim()) {
+    params.set("q", query.search.trim());
+  }
+  if (query.sortBy && query.sortBy !== "popular") {
+    params.set("sort", query.sortBy);
+  }
+  return params;
+}
+
 export function filterActivities(
   activities: readonly TravelActivity[],
   query: ActivitiesQueryParams = {}
@@ -101,6 +319,9 @@ export function filterActivities(
   const cityNorm = query.city?.trim() ? normalizeVietnamese(query.city.trim()) : "";
   const searchNorm = query.search?.trim() ? normalizeVietnamese(query.search.trim()) : "";
   const category = query.category && query.category !== "all" ? query.category : undefined;
+  const section = query.section && query.section !== "explore" ? query.section : undefined;
+  const subcategory =
+    query.subcategory && query.subcategory !== "all" ? query.subcategory : undefined;
   const period = query.period && query.period !== "all" ? query.period : undefined;
   const maxPrice =
     query.maxPrice !== undefined && Number.isFinite(query.maxPrice) ? query.maxPrice : undefined;
@@ -108,6 +329,8 @@ export function filterActivities(
   const filtered = activities.filter((item) => {
     if (!item.isActive) return false;
     if (category && item.category !== category) return false;
+    if (section && item.hubSection !== section) return false;
+    if (subcategory && item.subcategory !== subcategory) return false;
     if (maxPrice !== undefined && item.pricePerUnit > maxPrice) return false;
     if (period && !item.slots.some((slot) => slot.period === period)) return false;
 
@@ -133,6 +356,8 @@ export function filterActivities(
           item.meetingPoint,
           item.transferDetails?.routeFrom ?? "",
           item.transferDetails?.routeTo ?? "",
+          item.attractionDetails?.venueAddress ?? "",
+          item.essentialDetails?.deliveryMethod ?? "",
           ...item.highlights,
         ].join(" ")
       );
@@ -164,10 +389,11 @@ export function filterActivities(
 export function findRecommendedActivitiesForCity(
   activities: readonly TravelActivity[],
   city: string,
-  limit = 4
+  limit = 3
 ): readonly TravelActivity[] {
   const cityNorm = normalizeVietnamese(city.trim());
   if (!cityNorm) return Object.freeze([]);
+  const safeLimit = Math.max(1, limit);
 
   const matched = activities.filter((item) => {
     if (!item.isActive) return false;
@@ -181,14 +407,34 @@ export function findRecommendedActivitiesForCity(
     return exactCity || transferRouteMatch;
   });
 
-  const prioritized = [...matched].sort((a, b) => {
-    const aTransfer = a.category === "transfer" ? 1 : 0;
-    const bTransfer = b.category === "transfer" ? 1 : 0;
-    if (aTransfer !== bTransfer) return bTransfer - aTransfer;
-    return b.rating - a.rating || b.reviewCount - a.reviewCount;
+  const byScore = (a: TravelActivity, b: TravelActivity) =>
+    Number(b.isFeatured) - Number(a.isFeatured) ||
+    b.rating - a.rating ||
+    b.reviewCount - a.reviewCount;
+
+  const transfers = matched.filter((a) => a.category === "transfer").sort(byScore);
+  const experiences = matched.filter((a) => a.category !== "transfer").sort((a, b) => {
+    const aPriority = a.hubSection === "attractions" || a.hubSection === "tours" ? 1 : 0;
+    const bPriority = b.hubSection === "attractions" || b.hubSection === "tours" ? 1 : 0;
+    if (aPriority !== bPriority) return bPriority - aPriority;
+    return byScore(a, b);
   });
 
-  return Object.freeze(prioritized.slice(0, Math.max(1, limit)));
+  // Smart bundle mix: 1 Airport Transfer + up to (limit - 1) top Attractions/Tours in the same city
+  const picked: TravelActivity[] = [];
+  if (transfers.length > 0) {
+    picked.push(transfers[0]);
+  }
+  for (const exp of experiences) {
+    if (picked.length >= safeLimit) break;
+    picked.push(exp);
+  }
+  // Backfill from remaining transfers if the city had fewer non-transfer options
+  for (let i = 1; i < transfers.length && picked.length < safeLimit; i += 1) {
+    picked.push(transfers[i]);
+  }
+
+  return Object.freeze(picked);
 }
 
 export interface ActivitySlotAvailabilityResult {

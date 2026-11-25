@@ -3,49 +3,105 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Car, Clock, Compass, MapPin, Sparkles, Star, Utensils, Waves } from "lucide-react";
-import type { ActivityCategory, TravelActivity } from "@luxestay/contracts";
+import {
+  Car,
+  Clock,
+  Compass,
+  Landmark,
+  MapPin,
+  Mountain,
+  Plane,
+  Smartphone,
+  Sparkles,
+  Star,
+  Ticket,
+  Utensils,
+  Waves,
+} from "lucide-react";
+import type { ActivitySubcategory, TravelActivity } from "@luxestay/contracts";
 import { useLocale } from "@/features/locale/LocaleContext";
 
-const CATEGORY_META: Record<
-  ActivityCategory,
-  { labelVi: string; labelEn: string; badgeClass: string; Icon: React.ComponentType<{ className?: string }> }
+const SUBCATEGORY_BADGE_META: Record<
+  ActivitySubcategory,
+  {
+    labelVi: string;
+    labelEn: string;
+    badgeClass: string;
+    Icon: React.ComponentType<{ className?: string }>;
+  }
 > = {
-  transfer: {
+  "theme-park": {
+    labelVi: "Công viên & Cáp treo",
+    labelEn: "Theme Park",
+    badgeClass: "bg-rose-600/90 text-white",
+    Icon: Ticket,
+  },
+  "heritage-culture": {
+    labelVi: "Di sản & Văn hóa",
+    labelEn: "Heritage",
+    badgeClass: "bg-amber-700/90 text-white",
+    Icon: Landmark,
+  },
+  "island-sea": {
+    labelVi: "Tour đảo & Biển",
+    labelEn: "Island & Sea",
+    badgeClass: "bg-cyan-600/90 text-white",
+    Icon: Waves,
+  },
+  "mountain-nature": {
+    labelVi: "Săn mây & Núi",
+    labelEn: "Nature & Peaks",
+    badgeClass: "bg-emerald-600/90 text-white",
+    Icon: Mountain,
+  },
+  "local-workshop": {
+    labelVi: "Trải nghiệm bản địa",
+    labelEn: "Local Experience",
+    badgeClass: "bg-violet-600/90 text-white",
+    Icon: Compass,
+  },
+  "airport-transfer": {
     labelVi: "Đưa đón sân bay",
     labelEn: "Airport Transfer",
     badgeClass: "bg-sky-600/90 text-white",
     Icon: Car,
   },
-  tour: {
-    labelVi: "Tour nổi bật",
-    labelEn: "Signature Tour",
-    badgeClass: "bg-emerald-600/90 text-white",
-    Icon: Compass,
+  "sim-wifi": {
+    labelVi: "eSIM / SIM 4G",
+    labelEn: "eSIM & 4G SIM",
+    badgeClass: "bg-indigo-600/90 text-white",
+    Icon: Smartphone,
   },
-  experience: {
-    labelVi: "Trải nghiệm",
-    labelEn: "Experience",
-    badgeClass: "bg-violet-600/90 text-white",
+  "fast-track": {
+    labelVi: "Fast-Track VIP",
+    labelEn: "VIP Fast-Track",
+    badgeClass: "bg-slate-800/90 text-white",
+    Icon: Plane,
+  },
+  "live-show": {
+    labelVi: "Show diễn",
+    labelEn: "Live Show",
+    badgeClass: "bg-fuchsia-600/90 text-white",
     Icon: Sparkles,
   },
-  wellness: {
-    labelVi: "Wellness",
-    labelEn: "Wellness",
+  "spa-wellness": {
+    labelVi: "Spa & Tắm bùn",
+    labelEn: "Spa & Wellness",
     badgeClass: "bg-teal-600/90 text-white",
     Icon: Waves,
   },
-  culinary: {
-    labelVi: "Ẩm thực",
-    labelEn: "Culinary",
-    badgeClass: "bg-amber-600/90 text-white",
+  "dining-cruise": {
+    labelVi: "Ẩm thực & Du thuyền",
+    labelEn: "Dining & Cruise",
+    badgeClass: "bg-orange-600/90 text-white",
     Icon: Utensils,
   },
 };
 
 export function ActivityCard({ activity }: { activity: TravelActivity }) {
   const { locale, formatPrice } = useLocale();
-  const meta = CATEGORY_META[activity.category];
+  const meta =
+    SUBCATEGORY_BADGE_META[activity.subcategory] ?? SUBCATEGORY_BADGE_META["local-workshop"];
   const Icon = meta.Icon;
 
   return (
@@ -66,11 +122,11 @@ export function ActivityCard({ activity }: { activity: TravelActivity }) {
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-sm shadow-sm ${meta.badgeClass}`}
           >
-            <Icon className="w-3.5 h-3.5" />
+            <Icon className="w-3.5 h-3.5 shrink-0" />
             {locale === "en" ? meta.labelEn : meta.labelVi}
           </span>
           {activity.freeCancellation && (
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-emerald-700 backdrop-blur-sm shadow-sm">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 text-emerald-700 backdrop-blur-sm shadow-sm shrink-0">
               {locale === "en" ? "Free cancel" : "Hủy miễn phí"}
             </span>
           )}
@@ -104,6 +160,16 @@ export function ActivityCard({ activity }: { activity: TravelActivity }) {
           {activity.transferDetails && (
             <span className="ml-auto text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full shrink-0">
               {activity.transferDetails.maxPassengers} chỗ
+            </span>
+          )}
+          {!activity.transferDetails && activity.attractionDetails && (
+            <span className="ml-auto text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full shrink-0">
+              {locale === "en" ? "QR Entry" : "Vào cổng QR"}
+            </span>
+          )}
+          {!activity.transferDetails && activity.essentialDetails && (
+            <span className="ml-auto text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full shrink-0">
+              {locale === "en" ? "Instant" : "Tức thì"}
             </span>
           )}
         </div>

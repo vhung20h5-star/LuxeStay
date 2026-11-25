@@ -43,6 +43,13 @@
       "when": 1795612800000,
       "tag": "0005_travel_activities",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795620000000,
+      "tag": "0006_activities_things_to_do",
+      "breakpoints": true
     }
   ]
 }

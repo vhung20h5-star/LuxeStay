@@ -576,4 +576,42 @@ test("Phase 5 Activities, Transfers, ServiceBookingIntent, bundle reservations, 
     API_ENDPOINTS.cancelReservationActivityItem("lx-abc123", "item-1"),
     "/api/v1/reservations/LX-ABC123/activities/item-1/cancel"
   );
+
+  // Phase 5B backward-compatible 2-tier taxonomy & specialized detail schemas
+  const parsedLegacy = TravelActivitySchema.parse(transferPayload);
+  assert.equal(parsedLegacy.hubSection, "tours");
+  assert.equal(parsedLegacy.subcategory, "local-workshop");
+
+  const attractionParsed = TravelActivitySchema.safeParse({
+    ...transferPayload,
+    id: "act-13",
+    slug: "ba-na-hills-golden-bridge",
+    category: "experience",
+    hubSection: "attractions",
+    subcategory: "theme-park",
+    transferDetails: undefined,
+    attractionDetails: {
+      openingHours: "08:00 – 17:00 hàng ngày",
+      entryMethod: "Quét mã QR vào thẳng cổng cáp treo",
+      ageOrHeightNote: "Miễn phí trẻ em dưới 1m",
+      venueAddress: "Thôn An Sơn, Hòa Ninh, Hòa Vang, Đà Nẵng",
+    },
+  });
+  assert.equal(attractionParsed.success, true);
+
+  const essentialParsed = TravelActivitySchema.safeParse({
+    ...transferPayload,
+    id: "act-31",
+    slug: "esim-vietnam-4g-5g",
+    category: "experience",
+    hubSection: "essentials",
+    subcategory: "sim-wifi",
+    transferDetails: undefined,
+    essentialDetails: {
+      deliveryMethod: "Gửi mã QR kích hoạt qua Email tức thì",
+      validityWindow: "Hiệu lực 30 ngày kể từ ngày mua",
+      activationNote: "Hỗ trợ iPhone XS trở lên và các thiết bị Android có eSIM",
+    },
+  });
+  assert.equal(essentialParsed.success, true);
 });

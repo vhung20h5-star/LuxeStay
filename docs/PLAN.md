@@ -1,8 +1,8 @@
 # Engineering, Maintenance & Feature Expansion Plan — LuxeStay (`travel-service`)
 
-- **Phiên bản kế hoạch:** 3.1 (Phase 0–5 Completed ✅)
+- **Phiên bản kế hoạch:** 3.2 (Phase 0–5B Completed ✅)
 - **Ngày cập nhật:** 2026-11-25
-- **Trạng thái:** Phase 0–5 Completed ✅
+- **Trạng thái:** Phase 0–5B Completed ✅
 - **Tài liệu liên quan:** [PRD.md](./PRD.md) | [ARCHITECTURE.md](./ARCHITECTURE.md) | [ADR Index](./adr/README.md) | [GLOSSARY.md](../GLOSSARY.md)
 
 ---
@@ -28,12 +28,13 @@
 | **M13 — Phase 4A: Promotions Hub, Deals Center & Campaign-Scoped Vouchers** | `69763ba` (`feat/promotions-hub-deals`) | Khu vực Ưu đãi 3 tầng kiểu Traveloka trên trang chủ (Mã người dùng mới + Hero Campaign có đếm ngược + Carousel chiến dịch), trang `/deals` & `/deals/[slug]` SSR; Migration `0004_promotions_campaigns.sql` (21 bảng PostgreSQL 16), module API độc lập `apps/api/src/modules/deals/*`, `dealsPort.ts`, quy tắc server-authoritative `NEW_USER_ONLY` & `PROPERTY_NOT_ELIGIBLE` chống lách mã đồng thời; 115/115 unit/API tests + 4/4 Playwright E2E (`E2E-4`) | — |
 | **M14 — Phase 4B: Modular Stay Catalog Expansion (+30 Stays) & Progressive Pagination** | `ae68e49` (`feat/catalog-expansion-30-stays`) | Mở rộng danh mục `12 → 42` chỗ nghỉ phủ đều 5 loại hình (`homestay`, `hotel`, `villa`, `resort`, `glamping`), 8 danh mục và 14 điểm đến (thêm Hạ Long, Huế, Quy Nhơn, Mộc Châu, Vũng Tàu, TP.HCM); tách seed modular theo loại hình (`packages/domain/src/seed/properties/*`); phân trang **Xem thêm / Thu gọn** (`12` chỗ nghỉ/lượt) trong `PropertyList.tsx`; backfill transactional idempotent `backfillMissingSeedProperties` (`ON CONFLICT DO NOTHING`) trong `vercelPrepare.ts`; 116/116 unit/API tests + 5/5 Playwright E2E (`E2E-5`) | — |
 | **M15 — Phase 4C: Authentic Stay, Imagery Overhaul & Mobile Stability** | `b162b74` (`feat/catalog-expansion-30-stays`) | Đại tu 100% bộ ảnh cho toàn bộ 42 chỗ nghỉ (`128` ô) + 8 Điểm đến (`8` ô) + 5 Banner chiến dịch (`5` ô) (`138` ảnh thật + `3` ảnh AI local, `0%` trùng lặp toàn cục `141/141`), `repairRetiredSeedImages`, `verify-seed-images.mjs`, cùng vá triệt để lỗi tràn ngang `1280px` trên mobile (`w-full min-w-0` + `overflow-x: clip`), tối ưu `CampaignHeroBanner` & `SearchBar` popover trên `360–390px`, phủ Playwright `E2E-6` | — |
-| **M16 — Phase 5: Multi-Service Travel Expansion (Activities, Tours & Transfers)** | `Completed` (`feat/phase5-activities-transfers`) | Mở rộng hệ sinh thái đa dịch vụ: **12 dịch vụ Hoạt động/Tour & Đưa đón** (`4` transfers, `4` tours, `4` experiences), hợp đồng Zod (`activities.ts` + mở rộng `booking.ts`/`endpoints.ts`), pure domain `packages/domain/src/activities.ts` + modular seed `seed/activities/*` (**153/153** ảnh duy nhất `0%` trùng lặp), Migration `0005_travel_activities.sql` (**24** bảng PostgreSQL 16) + backfill idempotent `backfillMissingSeedActivities`, API `modules/activities/*` (6 routes) & partial bundle cancel (`PATCH .../activities/:itemId/cancel`), `activitiesPort.ts`, SSR `/activities` & `/activities/[slug]`, cross-sell `StayActivitiesCrossSell` trên `/stays/[id]` & Checkout, tra cứu `ACT-` + `LX-` tại `/bookings`, và Playwright **`E2E-7`** | — |
+| **M16 — Phase 5: Multi-Service Travel Expansion (Activities, Tours & Transfers)** | `dbce8e7` (`feat/phase5-activities-transfers`) | Mở rộng hệ sinh thái đa dịch vụ: **12 dịch vụ Hoạt động/Tour & Đưa đón** (`4` transfers, `4` tours, `4` experiences), hợp đồng Zod (`activities.ts` + mở rộng `booking.ts`/`endpoints.ts`), pure domain `packages/domain/src/activities.ts` + modular seed `seed/activities/*` (**153/153** ảnh duy nhất `0%` trùng lặp), Migration `0005_travel_activities.sql` (**24** bảng PostgreSQL 16) + backfill idempotent `backfillMissingSeedActivities`, API `modules/activities/*` (6 routes) & partial bundle cancel (`PATCH .../activities/:itemId/cancel`), `activitiesPort.ts`, SSR `/activities` & `/activities/[slug]`, cross-sell `StayActivitiesCrossSell` trên `/stays/[id]` & Checkout, tra cứu `ACT-` + `LX-` tại `/bookings`, và Playwright **`E2E-7`** | — |
+| **M17 — Phase 5B: Vietnam Things to Do Expansion (38 Services · 14 Cities · 2-Tier Hub)** | `Completed` (`feat/phase5-activities-transfers`) | Mở rộng kho trải nghiệm từ `12 → 38` dịch vụ nổi tiếng phủ đủ **14/14 thành phố Việt Nam**, điều hướng **2 tầng** (`Khám phá · Điểm tham quan · Tour & Hoạt động · Cần thiết cho du lịch · Giải trí & Thư giãn` + 11 danh mục con chi tiết) có đồng bộ URL & Xem thêm 12/lượt, Migration `0006_activities_things_to_do.sql`, khối thông số chuyên biệt (`attractionDetails`, `essentialDetails`), dải teaser trên Trang chủ `/`, nâng cấp Cross-Sell `1 Đưa đón + 2 Điểm tham quan/Tour` và kiểm chứng **179/179** ảnh duy nhất + Playwright `E2E-6/7` | — |
 
 ### 1.2. Hiện trạng kiểm chứng kỹ thuật
-- **Automated Tests (4 tầng + Media Integrity + Playwright E2E):** `128/128` unit/integration tests đạt (`contracts`: 9, `domain`: 60, `api`: 24, `web`: 35) qua `npm run test`, `153/153` ảnh sạch không trùng lặp qua `node scripts/verify-seed-images.mjs`, và **`7/7` Playwright Chromium E2E** (`E2E-1` đến `E2E-7`, bao gồm Mobile Responsive `390px`/`360px` và luồng Activities/Transfers + Stay Bundle partial cancel) qua `npm run test:e2e`.
+- **Automated Tests (4 tầng + Media Integrity + Playwright E2E):** `128/128` unit/integration tests đạt (`contracts`: 9, `domain`: 60, `api`: 24, `web`: 35) qua `npm run test`, `179/179` ảnh sạch không trùng lặp qua `node scripts/verify-seed-images.mjs`, và **`7/7` Playwright Chromium E2E** (`E2E-1` đến `E2E-7`, bao gồm Mobile Responsive `390px`/`360px` trên 7 route và trọn bộ luồng Phase 5B 2-tier Hub + URL sync + Stay Bundle partial cancel) qua `npm run test:e2e`.
 - **Lint & Typecheck:** `npm run lint` (**ESLint 9 + Import Boundaries trên cả 4 workspaces, 0 errors, 0 warnings**) và `npm run typecheck` (6/6 tasks pass).
-- **Production Build & PostgreSQL 16 Schema:** `npm run build` (4/4 workspaces pass; **11** Next.js App Router routes gồm `/activities` & `/activities/[slug]`); **24** bảng PostgreSQL 16 (migrations `0000`–`0005`), backfill idempotent an toàn cho Neon Postgres & Vercel Services.
+- **Production Build & PostgreSQL 16 Schema:** `npm run build` (4/4 workspaces pass; **11** Next.js App Router routes gồm `/activities` & `/activities/[slug]`); **24** bảng PostgreSQL 16 (migrations `0000`–`0006`), backfill idempotent an toàn cho Neon Postgres & Vercel Services.
 
 ---
 
@@ -140,6 +141,21 @@
   - Migration `0005_travel_activities.sql` (24 bảng PostgreSQL 16 + `backfillMissingSeedActivities`), module API cô lập `apps/api/src/modules/activities/*` (6 routes) hỗ trợ đặt độc lập (`ACT-XXXXXX`) với khóa sức chứa + voucher Promotions Hub, và mở rộng `reservations` hỗ trợ `stay + activity` bundle + hủy riêng từng dịch vụ (`PATCH .../activities/:itemId/cancel`).
 - [x] **P5.3 — Giao diện Khám phá Hoạt động (`/activities`, `/activities/[slug]`) & E2E-7:**
   - Cổng `activitiesPort.ts`, giao diện lọc theo điểm đến/loại trải nghiệm/khung giờ, trang chi tiết SSR + đặt vé nhanh, gợi ý `StayActivitiesCrossSell` trên `/stays/[id]` & Checkout, tra cứu `ACT-`/`LX-` tại `/bookings`, và kịch bản Playwright **`E2E-7`**.
+
+### Phase 5B — Vietnam Things to Do Expansion: 38 Services · 14 Cities · 2-Tier Hub (ĐÃ HOÀN THÀNH ✅ — `feat/phase5-activities-transfers`)
+**Mục tiêu:** Mở rộng trang `/activities` thành trung tâm **"Hoạt động & Vui chơi Việt Nam"** chuẩn OTA với 38 dịch vụ phủ đủ 14 thành phố, điều hướng 2 tầng (*Khám phá · Điểm tham quan · Tour & Hoạt động · Cần thiết cho du lịch · Giải trí & Thư giãn* + 11 danh mục con chi tiết), khối thông số chuyên biệt Điểm tham quan/eSIM và kết nối toàn diện từ Trang chủ đến Cross-Sell chỗ nghỉ.
+
+- [x] **P5B.1 — Phân tầng Danh mục, Contracts & Pure Domain (`@luxestay/contracts`, `@luxestay/domain`):**
+  - Bổ sung `ActivityHubSectionSchema`, `ActivitySubcategorySchema`, `AttractionDetailsSchema`, `EssentialDetailsSchema` (tương thích ngược 100%) trong `packages/contracts/src/activities.ts`.
+  - Bổ sung bảng map 1-1 `ACTIVITY_SUBCATEGORY_DEFINITIONS`, lọc `section`/`subcategory`, đồng bộ URL 2 chiều (`parseActivitiesQueryFromSearchParams`/`serializeActivitiesQueryToSearchParams`), smart cross-sell `1 Đưa đón + 2 Điểm tham quan/Tour` và từ điển VI/EN (`Hoạt động & Vui chơi`).
+- [x] **P5B.2 — Kho 38 Dịch vụ Việt Nam, 26 Ảnh Xác thực & Migration `0006` (`seed/activities/*`, `apps/api`):**
+  - Mở rộng `12 → 38` dịch vụ (`act-01`..`act-38`) phủ kín 14 thành phố (thêm Hà Nội, TP.HCM, Nha Trang, Mộc Châu, Vũng Tàu) kèm 26 ảnh thực tế nén gọn `5–350 KB` đạt **179/179 ảnh duy nhất (0% trùng lặp)**.
+  - Tạo Migration `0006_activities_things_to_do.sql` bổ sung cột `hub_section`, `subcategory`, `attraction_details`, `essential_details` + phân loại 12 hàng cũ, cập nhật backfill idempotent & filter API `section`/`subcategory`.
+- [x] **P5B.3 — Giao diện `/activities` 2 Tầng, Trang Chi tiết Chuyên biệt, Teaser Trang chủ & Cross-Sell (`apps/web`):**
+  - Nâng cấp `ActivitiesHubView` 2 tầng + URL sync + tab `Khám phá` dải tuyển chọn + phân trang Xem thêm `12/lượt`.
+  - Render khối `attractionDetails` & `essentialDetails` trên `/activities/[slug]`, thêm dải teaser trên Trang chủ `/`, cập nhật Navbar **"Hoạt động & Vui chơi"** và nâng cấp `StayActivitiesCrossSell`.
+- [x] **P5B.4 — Kiểm thử Toàn diện (`179/179` Media Audit, Unit/API/Web Tests, Playwright `E2E-6/7`) & Đồng bộ Tài liệu:**
+  - Chạy trọn bộ `build` (`4/4`), `typecheck` (`6/6`), `lint` (`6/6`), `test` (`128/128`), `verify-seed-images.mjs` (`179/179` unique, `0` duplicates), Playwright `E2E-1..7` (`7/7 PASS`), kiểm duyệt ảnh trực quan và đồng bộ `PLAN.md`, `ARCHITECTURE.md`, `PRD.md`, `GLOSSARY.md` + `walkthrough.md`.
 
 ---
 

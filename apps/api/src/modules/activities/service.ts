@@ -15,6 +15,8 @@ import {
   filterActivityEligibleVouchers,
   getActivityCategories,
   getActivityCities,
+  getActivitySections,
+  getActivitySubcategories,
   normalizeActivitySlug,
   normalizeVietnamese,
   processStandaloneActivityBooking,
@@ -59,6 +61,8 @@ export function createActivitiesService(deps: {
         activities: filtered,
         cities: getActivityCities(all),
         categories: getActivityCategories(all),
+        sections: getActivitySections(all),
+        subcategories: getActivitySubcategories(all, query.section),
       });
     },
 

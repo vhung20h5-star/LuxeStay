@@ -18,6 +18,8 @@ export function mapActivityRowToDomain(row: TravelActivityRow): TravelActivity {
     title: row.title,
     subtitle: row.subtitle,
     category: row.category,
+    hubSection: row.hubSection,
+    subcategory: row.subcategory,
     destinationCity: row.destinationCity,
     province: row.province,
     meetingPoint: row.meetingPoint,
@@ -34,6 +36,12 @@ export function mapActivityRowToDomain(row: TravelActivityRow): TravelActivity {
     instantConfirmation: row.instantConfirmation,
     slots: Object.freeze(row.slots.map((s) => Object.freeze({ ...s }))) as TravelActivity["slots"],
     ...(row.transferDetails ? { transferDetails: Object.freeze({ ...row.transferDetails }) } : {}),
+    ...(row.attractionDetails
+      ? { attractionDetails: Object.freeze({ ...row.attractionDetails }) }
+      : {}),
+    ...(row.essentialDetails
+      ? { essentialDetails: Object.freeze({ ...row.essentialDetails }) }
+      : {}),
     isFeatured: row.isFeatured,
     isActive: row.isActive,
   });

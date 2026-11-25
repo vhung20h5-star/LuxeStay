@@ -2539,13 +2539,34 @@ test("In-lock hasPriorSuccessfulBookings and lightweight hasSuccessfulBookingByU
 test("Phase 5 Activities & Transfers API supports catalog filtering, standalone bookings with slot lock + vouchers, and cancellation", async () => {
   const { app } = createApiApp({ nodeEnv: "test" });
 
-  // 1. Catalog list & filters
+  // 1. Catalog list & 2-tier filters (Phase 5 + 5B)
   const allRes = await app.request(API_ENDPOINTS.activities);
   assert.equal(allRes.status, 200);
   const catalog = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
     await allRes.json()
   ).data;
-  assert.equal(catalog.activities.length, 12);
+  assert.equal(catalog.activities.length, 38);
+  assert.equal(catalog.cities.length, 14);
+  assert.deepEqual(catalog.sections, ["attractions", "tours", "essentials", "entertainment"]);
+  assert.equal(catalog.subcategories?.length, 11);
+
+  const attractionsRes = await app.request(
+    `${API_ENDPOINTS.activities}?section=attractions&sub=theme-park`
+  );
+  assert.equal(attractionsRes.status, 200);
+  const themeParks = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
+    await attractionsRes.json()
+  ).data;
+  assert.equal(themeParks.activities.length, 4);
+  assert.ok(themeParks.activities.some((a) => a.id === "act-13" && Boolean(a.attractionDetails)));
+
+  const esimRes = await app.request(`${API_ENDPOINTS.activities}?section=essentials&sub=sim-wifi`);
+  assert.equal(esimRes.status, 200);
+  const esims = createApiSuccessSchema(ActivitiesCatalogResponseSchema).parse(
+    await esimRes.json()
+  ).data;
+  assert.equal(esims.activities.length, 2);
+  assert.ok(esims.activities.every((a) => Boolean(a.essentialDetails)));
 
   const transferRes = await app.request(`${API_ENDPOINTS.activities}?category=transfer&city=Da%20Lat`);
   assert.equal(transferRes.status, 200);
@@ -2681,6 +2702,17 @@ test("Phase 5 Migration 0005 exists and backfillMissingSeedActivities inserts on
   assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "travel_activities"/);
   assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "activity_bookings"/);
   assert.match(sqlText, /CREATE TABLE IF NOT EXISTS "reservation_activities"/);
+
+  const migration0006Path = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/db/migrations/0006_activities_things_to_do.sql"
+  );
+  assert.equal(existsSync(migration0006Path), true);
+  const sql0006 = readFileSync(migration0006Path, "utf8");
+  assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "hub_section"/);
+  assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "subcategory"/);
+  assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "attraction_details"/);
+  assert.match(sql0006, /ADD COLUMN IF NOT EXISTS "essential_details"/);
 
   const insertedRows: unknown[] = [];
   const fakeDb = {

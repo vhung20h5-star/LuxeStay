@@ -21,11 +21,13 @@ export function createActivitiesRoutes(activitiesService: ActivitiesService) {
 
     const parsedQuery = ActivitiesQueryParamsSchema.safeParse({
       city: c.req.query("city") || undefined,
-      search: c.req.query("search") || undefined,
+      search: c.req.query("search") || c.req.query("q") || undefined,
       category: c.req.query("category") || undefined,
+      section: c.req.query("section") || undefined,
+      subcategory: c.req.query("subcategory") || c.req.query("sub") || undefined,
       period: c.req.query("period") || undefined,
       maxPrice: Number.isFinite(parsedMaxPrice) ? parsedMaxPrice : undefined,
-      sortBy: c.req.query("sortBy") || undefined,
+      sortBy: c.req.query("sortBy") || c.req.query("sort") || undefined,
     });
 
     if (!parsedQuery.success) {

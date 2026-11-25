@@ -37,6 +37,12 @@ export function createInMemoryActivitiesRepository(
       included: Object.freeze([...item.included]) as string[],
       slots: Object.freeze(item.slots.map((s) => Object.freeze({ ...s }))) as TravelActivity["slots"],
       ...(item.transferDetails ? { transferDetails: Object.freeze({ ...item.transferDetails }) } : {}),
+      ...(item.attractionDetails
+        ? { attractionDetails: Object.freeze({ ...item.attractionDetails }) }
+        : {}),
+      ...(item.essentialDetails
+        ? { essentialDetails: Object.freeze({ ...item.essentialDetails }) }
+        : {}),
     })
   );
   const bookings = new Map<string, ActivityBooking>();

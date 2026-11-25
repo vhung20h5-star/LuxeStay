@@ -14,8 +14,13 @@ import {
   evaluateReservationActivityItemCancellation,
   filterActivities,
   findRecommendedActivitiesForCity,
+  getActivityCities,
+  getActivitySections,
+  getActivitySubcategories,
+  parseActivitiesQueryFromSearchParams,
   processServerReservationIntent,
   processStandaloneActivityBooking,
+  serializeActivitiesQueryToSearchParams,
 } from "../dist/index.js";
 import {
   DESTINATIONS,
@@ -34,8 +39,16 @@ function normalizeMediaKey(src: string): string {
   return pexels ? `pexels:${pexels[1]}` : withoutQuery;
 }
 
-test("TRAVEL_ACTIVITIES seed has 12 valid services with 0% global media duplication and local files on disk", () => {
-  assert.equal(TRAVEL_ACTIVITIES.length, 12);
+test("TRAVEL_ACTIVITIES seed has 38 valid services across 14 cities with 0% global media duplication and local files on disk", () => {
+  assert.equal(TRAVEL_ACTIVITIES.length, 38);
+  assert.equal(getActivityCities(TRAVEL_ACTIVITIES).length, 14);
+  assert.deepEqual(getActivitySections(TRAVEL_ACTIVITIES), [
+    "attractions",
+    "tours",
+    "essentials",
+    "entertainment",
+  ]);
+  assert.equal(getActivitySubcategories(TRAVEL_ACTIVITIES).length, 11);
 
   const slugs = new Set<string>();
   const globalSeen = new Map<string, string>();
@@ -79,21 +92,62 @@ test("TRAVEL_ACTIVITIES seed has 12 valid services with 0% global media duplicat
   }
 });
 
-test("filterActivities and findRecommendedActivitiesForCity handle diacritics, categories, periods and city routes", () => {
+test("filterActivities, URL query sync, and findRecommendedActivitiesForCity handle 2-tier taxonomy, diacritics, and smart 1+2 bundle mix", () => {
   const transfers = filterActivities(TRAVEL_ACTIVITIES, { category: "transfer" });
-  assert.equal(transfers.length, 4);
+  assert.equal(transfers.length, 7);
+
+  const attractions = filterActivities(TRAVEL_ACTIVITIES, { section: "attractions" });
+  assert.equal(attractions.length, 8);
+
+  const themeParks = filterActivities(TRAVEL_ACTIVITIES, {
+    section: "attractions",
+    subcategory: "theme-park",
+  });
+  assert.equal(themeParks.length, 4);
+  assert.ok(themeParks.some((a) => a.id === "act-13"));
+
+  const simWifi = filterActivities(TRAVEL_ACTIVITIES, { subcategory: "sim-wifi" });
+  assert.equal(simWifi.length, 2);
 
   const daLat = filterActivities(TRAVEL_ACTIVITIES, { city: "da lat" });
-  assert.equal(daLat.length, 2);
-  assert.equal(daLat[0].category, "transfer");
+  assert.equal(daLat.length, 3);
 
-  const hoiAnRecs = findRecommendedActivitiesForCity(TRAVEL_ACTIVITIES, "Hội An");
-  assert.ok(hoiAnRecs.some((a) => a.id === "act-03"));
-  assert.ok(hoiAnRecs.some((a) => a.id === "act-09"));
+  // Smart cross-sell: 1 airport transfer + up to 2 attractions/tours in same city
+  const hoiAnRecs = findRecommendedActivitiesForCity(TRAVEL_ACTIVITIES, "Hội An", 3);
+  assert.equal(hoiAnRecs.length, 3);
   assert.equal(hoiAnRecs[0].category, "transfer");
+  assert.equal(hoiAnRecs[0].id, "act-03");
+  assert.ok(hoiAnRecs.some((a) => a.id === "act-09"));
+
+  const hcmRecs = findRecommendedActivitiesForCity(TRAVEL_ACTIVITIES, "TP. Hồ Chí Minh", 3);
+  assert.equal(hcmRecs.length, 3);
+  assert.equal(hcmRecs[0].category, "transfer");
+
+  // 2-way URL search params serialization & parsing
+  const parsedUrl = parseActivitiesQueryFromSearchParams(
+    new URLSearchParams("section=attractions&sub=theme-park&city=%C4%90%C3%A0%20N%E1%BA%B5ng&sort=rating")
+  );
+  assert.equal(parsedUrl.section, "attractions");
+  assert.equal(parsedUrl.subcategory, "theme-park");
+  assert.equal(parsedUrl.city, "Đà Nẵng");
+  assert.equal(parsedUrl.sortBy, "rating");
+
+  const inferredSection = parseActivitiesQueryFromSearchParams(
+    new URLSearchParams("sub=sim-wifi&section=invalid-value")
+  );
+  assert.equal(inferredSection.section, "essentials");
+  assert.equal(inferredSection.subcategory, "sim-wifi");
+
+  const serialized = serializeActivitiesQueryToSearchParams({
+    section: "explore",
+    subcategory: "all",
+    sortBy: "popular",
+    city: "Hà Nội",
+  });
+  assert.equal(serialized.toString(), "city=H%C3%A0+N%E1%BB%99i");
 
   const eveningOnly = filterActivities(TRAVEL_ACTIVITIES, { period: "evening" });
-  assert.ok(eveningOnly.length >= 2);
+  assert.ok(eveningOnly.length >= 6);
 });
 
 test("standalone activity booking enforces slot capacity, voucher rules, and cancellation ownership", () => {

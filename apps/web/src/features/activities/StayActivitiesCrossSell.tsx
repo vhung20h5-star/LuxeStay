@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Car, Check, Compass, Plus, Sparkles } from "lucide-react";
+import { Car, Check, Compass, Plus, Sparkles, Ticket } from "lucide-react";
 import type { SelectedBundleActivityInput, TravelActivity } from "@luxestay/contracts";
 import { findRecommendedActivitiesForCity } from "@luxestay/domain";
 import { useBookingSession } from "@/features/booking/BookingContext";
@@ -37,15 +37,16 @@ export function StayActivitiesCrossSell({
   compact = false,
 }: StayActivitiesCrossSellProps) {
   const { activitiesCatalog } = useBookingSession();
-  const { formatPrice, t } = useLocale();
+  const { locale, formatPrice, t } = useLocale();
   const items = useMemo(
-    () => findRecommendedActivitiesForCity(activitiesCatalog, city, compact ? 2 : 4),
+    () => findRecommendedActivitiesForCity(activitiesCatalog, city, compact ? 2 : 3),
     [activitiesCatalog, city, compact]
   );
 
   if (items.length === 0) return null;
 
   const normalizedDate = toIsoDate(checkInDate);
+  const cityActivitiesHref = `/activities?city=${encodeURIComponent(city)}`;
 
   return (
     <section
@@ -56,7 +57,9 @@ export function StayActivitiesCrossSell({
         <div className="min-w-0">
           <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-0.5">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Combo tiết kiệm & tiện lợi</span>
+            <span>
+              {locale === "en" ? "Smart Stay Bundle" : "Combo tiết kiệm & tiện lợi"}
+            </span>
           </div>
           <h3 className="text-sm sm:text-base font-black text-slate-900">
             {t("activities.crossSellTitle", { city })}
@@ -66,14 +69,15 @@ export function StayActivitiesCrossSell({
           )}
         </div>
         <Link
-          href="/activities"
+          href={cityActivitiesHref}
+          data-testid="cross-sell-view-all-city"
           className="text-xs font-bold text-emerald-700 hover:underline shrink-0 whitespace-nowrap"
         >
-          Xem tất cả →
+          {locale === "en" ? `All in ${city} →` : `Xem tất cả tại ${city} →`}
         </Link>
       </div>
 
-      <div className={compact ? "space-y-2.5" : "grid grid-cols-1 sm:grid-cols-2 gap-3"}>
+      <div className={compact ? "space-y-2.5" : "grid grid-cols-1 gap-3"}>
         {items.map((activity) => {
           const isSelected = selectedActivities.some((s) => s.activityId === activity.id);
           const defaultSlot = activity.slots[0];
@@ -85,6 +89,9 @@ export function StayActivitiesCrossSell({
             dateIso: normalizedDate,
             quantity: 1,
           };
+
+          const isTransfer = activity.category === "transfer";
+          const isAttraction = activity.hubSection === "attractions";
 
           return (
             <div
@@ -107,9 +114,19 @@ export function StayActivitiesCrossSell({
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1 text-[11px] font-bold text-sky-700">
-                  {activity.category === "transfer" ? (
+                <div
+                  className={`flex items-center gap-1 text-[11px] font-bold ${
+                    isTransfer
+                      ? "text-sky-700"
+                      : isAttraction
+                        ? "text-rose-700"
+                        : "text-emerald-700"
+                  }`}
+                >
+                  {isTransfer ? (
                     <Car className="w-3 h-3 shrink-0" />
+                  ) : isAttraction ? (
+                    <Ticket className="w-3 h-3 shrink-0" />
                   ) : (
                     <Compass className="w-3 h-3 shrink-0" />
                   )}

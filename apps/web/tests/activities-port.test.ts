@@ -11,6 +11,19 @@ import { createHttpReservationManagerAdapter } from "../src/shared/ports/persist
 
 test("createMockActivitiesPort filters, books, looks up, and cancels standalone activity", async () => {
   const port = createMockActivitiesPort();
+  const fullCatalog = await port.listActivities();
+  assert.equal(fullCatalog.activities.length, 38);
+  assert.equal(fullCatalog.cities.length, 14);
+  assert.deepEqual(fullCatalog.sections, ["attractions", "tours", "essentials", "entertainment"]);
+  assert.equal(fullCatalog.subcategories?.length, 11);
+
+  const themeParks = await port.listActivities({
+    section: "attractions",
+    subcategory: "theme-park",
+  });
+  assert.equal(themeParks.activities.length, 4);
+  assert.ok(themeParks.activities.some((a) => a.id === "act-13"));
+
   const catalog = await port.listActivities({ category: "transfer", city: "Đà Lạt" });
   assert.equal(catalog.activities.length, 1);
   assert.equal(catalog.activities[0].id, "act-01");

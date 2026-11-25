@@ -251,7 +251,15 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
       { width: 390, height: 844 },
       { width: 360, height: 800 },
     ];
-    const routes = ["/", "/deals", "/deals/black-friday-2026", "/stays/stay-08", "/bookings", "/host"];
+    const routes = [
+      "/",
+      "/deals",
+      "/deals/black-friday-2026",
+      "/stays/stay-08",
+      "/activities",
+      "/bookings",
+      "/host",
+    ];
 
     for (const vp of viewports) {
       await page.setViewportSize(vp);
@@ -297,19 +305,51 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
     }
   });
 
-  test("E2E-7: Phase 5 Activities & Transfers discovery, standalone booking + cancel, stay+transfer bundle partial cancel, and mobile check", async ({
+  test("E2E-7: Phase 5 & 5B Things to Do 2-tier hub, URL sync, detail specs, standalone booking + cancel, stay+transfer bundle partial cancel, and mobile check", async ({
     page,
   }) => {
-    // 1. Navigate to /activities from Navbar & filter transfers
+    // 1. Homepage teaser renders 38 Vietnam services & shortcut navigates to /activities?section=attractions
     await page.goto("/");
-    await page.getByTestId("nav-activities").click();
-    await expect(page).toHaveURL(/\/activities$/);
-    await expect(page.getByTestId("activities-count")).toContainText("12");
+    const teaser = page.getByTestId("home-things-to-do-teaser");
+    await expect(teaser).toBeVisible();
+    await expect(page.getByTestId("home-things-to-do-cta")).toContainText("38");
+    await page.getByTestId("home-activity-shortcut-attractions").click();
 
-    await page.getByTestId("activity-category-transfer").click();
-    await expect(page.getByTestId("activities-count")).toContainText("4");
+    await expect(page).toHaveURL(/\/activities\?section=attractions/);
+    await expect(page.getByTestId("activities-count")).toContainText("8 / 8");
 
-    // 2. Open Da Lat Airport Transfer SSR detail page -> book 3 units with WELCOME150 (-150k) -> verify & cancel
+    // 2. Narrow to Theme Parks subcategory -> URL syncs (?section=attractions&sub=theme-park) & persists across reload
+    await page.getByTestId("activity-sub-theme-park").click();
+    await expect(page).toHaveURL(/section=attractions&sub=theme-park/);
+    await expect(page.getByTestId("activities-count")).toContainText("4 / 4");
+
+    await page.reload();
+    await expect(page.getByTestId("activities-count")).toContainText("4 / 4");
+    await page.getByTestId("activity-card-act-13").click();
+    await expect(page).toHaveURL(/\/activities\/ve-cap-treo-sun-world-ba-na-hills-cau-vang-da-nang$/);
+    await expect(page.getByTestId("activity-attraction-details")).toBeVisible();
+
+    // 3. Default Explore tab on /activities shows 4 curated thematic bands + progressive Load More (12 -> 24 -> 12)
+    await page.goto("/activities");
+    await expect(page.getByTestId("activities-explore-showcase")).toBeVisible();
+    await expect(page.getByTestId("activities-count")).toContainText("12 / 38");
+
+    await page.getByTestId("activities-load-more").click();
+    await expect(page.getByTestId("activities-count")).toContainText("24 / 38");
+    await page.getByTestId("activities-collapse").click();
+    await expect(page.getByTestId("activities-count")).toContainText("12 / 38");
+
+    // 4. Travel Essentials -> eSIM detail specs check
+    await page.getByTestId("activity-section-essentials").click();
+    await expect(page.getByTestId("activities-count")).toContainText("10 / 10");
+    await page.getByTestId("activity-sub-sim-wifi").click();
+    await expect(page.getByTestId("activities-count")).toContainText("2 / 2");
+    await page.getByTestId("activity-card-act-31").click();
+    await expect(page.getByTestId("activity-essential-details")).toBeVisible();
+
+    // 5. Airport Transfer filter -> Da Lat Transfer booking (3 units + WELCOME150) & standalone cancel
+    await page.goto("/activities?section=essentials&sub=airport-transfer");
+    await expect(page.getByTestId("activities-count")).toContainText("7 / 7");
     await page.getByTestId("activity-card-act-01").click();
     await expect(page).toHaveURL(/\/activities\/xe-rieng-san-bay-lien-khuong-da-lat$/);
     await expect(page.getByText("Thông số tuyến xe riêng")).toBeVisible();
@@ -334,9 +374,14 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
     await page.getByTestId("cancel-standalone-activity-btn").click();
     await expect(page.getByText("Đơn dịch vụ đã được hủy")).toBeVisible();
 
-    // 3. Stay + Airport Transfer cross-sell bundle on /stays/stay-04 (Đà Lạt) -> checkout -> MoMo sandbox -> partial cancel transfer
+    // 6. Smart Stay + Airport Transfer cross-sell (1 Transfer + 2 Attractions/Tours) on /stays/stay-04 (Đà Lạt) -> checkout MoMo -> partial cancel transfer
     await page.goto("/stays/stay-04");
     await expect(page.getByTestId("stay-activities-cross-sell")).toBeVisible();
+    await expect(page.getByTestId("cross-sell-view-all-city")).toHaveAttribute(
+      "href",
+      /\/activities\?city=/
+    );
+    await expect(page.locator('[data-testid^="cross-sell-activity-"]')).toHaveCount(3);
     await page.getByTestId("toggle-bundle-activity-act-01").click();
     await expect(page.getByTestId("toggle-bundle-activity-act-01")).toContainText("Đã thêm");
 
@@ -367,9 +412,13 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
     const totalAfter = (await page.getByTestId("booking-detail-total").textContent()) ?? "";
     expect(totalAfter).not.toBe(totalBefore);
 
-    // 4. Mobile 390x844 horizontal overflow check on /activities and /activities/[slug]
+    // 7. Mobile 390x844 horizontal overflow check on /activities and /activities/[slug]
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const route of ["/activities", "/activities/xe-rieng-san-bay-lien-khuong-da-lat"]) {
+    for (const route of [
+      "/activities",
+      "/activities/ve-cap-treo-sun-world-ba-na-hills-cau-vang-da-nang",
+      "/activities/esim-du-lich-viet-nam-4g-5g-khong-gioi-han",
+    ]) {
       await page.goto(route);
       const metrics = await page.evaluate(() => ({
         innerWidth: window.innerWidth,

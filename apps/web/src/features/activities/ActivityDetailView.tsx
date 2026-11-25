@@ -10,12 +10,16 @@ import {
   Car,
   CheckCircle2,
   Clock,
+  Landmark,
   Luggage,
   MapPin,
+  QrCode,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Star,
   Tag,
+  Ticket,
   Users,
   XCircle,
 } from "lucide-react";
@@ -147,7 +151,9 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
         className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-emerald-700 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        <span>{locale === "en" ? "Back to all activities" : "Tất cả trải nghiệm & đưa đón"}</span>
+        <span>
+          {locale === "en" ? "Back to all Things to Do" : "Tất cả Hoạt động & Vui chơi"}
+        </span>
       </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -216,6 +222,99 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
                   <span>
                     Hành lý tối đa <strong>{activity.transferDetails.maxLuggage} kiện</strong>
                   </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Attraction / Show Details Box */}
+          {activity.attractionDetails && (
+            <div
+              data-testid="activity-attraction-details"
+              className="bg-rose-50/60 border border-rose-200/80 rounded-3xl p-5 space-y-3"
+            >
+              <div className="flex items-center gap-2 text-rose-950 font-bold">
+                <Landmark className="w-5 h-5 text-rose-600" />
+                <span>
+                  {locale === "en"
+                    ? "Attraction & Entry Information"
+                    : "Thông tin Điểm tham quan & Vào cổng"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-700">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-rose-500" />
+                    {locale === "en" ? "Opening hours" : "Giờ mở cửa / Suất diễn"}
+                  </span>
+                  <span className="font-semibold block mt-0.5">
+                    {activity.attractionDetails.openingHours}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <QrCode className="w-3.5 h-3.5 text-rose-500" />
+                    {locale === "en" ? "Entry method" : "Hình thức vào cổng"}
+                  </span>
+                  <span className="font-semibold block mt-0.5">
+                    {activity.attractionDetails.entryMethod}
+                  </span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                    {locale === "en" ? "Venue address" : "Địa điểm tổ chức"}
+                  </span>
+                  <span className="font-semibold block mt-0.5">
+                    {activity.attractionDetails.venueAddress}
+                  </span>
+                </div>
+                {activity.attractionDetails.ageOrHeightNote && (
+                  <div className="sm:col-span-2 flex items-start gap-2 pt-2 border-t border-rose-200/60 text-xs text-rose-900">
+                    <Ticket className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span>{activity.attractionDetails.ageOrHeightNote}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Travel Essential (eSIM / SIM / Fast-Track) Details Box */}
+          {activity.essentialDetails && (
+            <div
+              data-testid="activity-essential-details"
+              className="bg-indigo-50/60 border border-indigo-200/80 rounded-3xl p-5 space-y-3"
+            >
+              <div className="flex items-center gap-2 text-indigo-950 font-bold">
+                <Smartphone className="w-5 h-5 text-indigo-600" />
+                <span>
+                  {locale === "en"
+                    ? "Delivery & Activation Specifications"
+                    : "Thông số Giao nhận & Kích hoạt Dịch vụ"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-700">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <QrCode className="w-3.5 h-3.5 text-indigo-500" />
+                    {locale === "en" ? "Delivery method" : "Hình thức giao / nhận"}
+                  </span>
+                  <span className="font-semibold block mt-0.5">
+                    {activity.essentialDetails.deliveryMethod}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                    {locale === "en" ? "Validity" : "Hiệu lực sử dụng"}
+                  </span>
+                  <span className="font-semibold block mt-0.5">
+                    {activity.essentialDetails.validityWindow}
+                  </span>
+                </div>
+                <div className="sm:col-span-2 pt-2 border-t border-indigo-200/60 text-xs text-indigo-950">
+                  <strong>{locale === "en" ? "Activation note:" : "Lưu ý kích hoạt:"}</strong>{" "}
+                  {activity.essentialDetails.activationNote}
                 </div>
               </div>
             </div>
@@ -443,9 +542,25 @@ export function ActivityDetailView({ detail }: { detail: ActivityDetailResponse 
                 </label>
               </div>
 
-              {/* Time Slot Selector */}
+              {/* Time Slot / Package Selector */}
               <div className="space-y-2">
-                <div className="text-xs font-semibold text-slate-700">Chọn khung giờ</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  {activity.transferDetails
+                    ? locale === "en"
+                      ? "Choose pickup window / vehicle"
+                      : "Chọn khung giờ đón / loại xe"
+                    : activity.essentialDetails
+                      ? locale === "en"
+                        ? "Choose data plan / service tier"
+                        : "Chọn gói dung lượng / hạng dịch vụ"
+                      : activity.attractionDetails
+                        ? locale === "en"
+                          ? "Choose ticket tier / session"
+                          : "Chọn hạng vé / khung giờ tham quan"
+                        : locale === "en"
+                          ? "Choose time slot"
+                          : "Chọn khung giờ"}
+                </div>
                 <div className="space-y-2">
                   {activity.slots.map((slot) => {
                     const selected = slot.id === selectedSlot?.id;

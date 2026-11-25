@@ -15,6 +15,31 @@ export const ActivityCategorySchema = z.enum([
 
 export type ActivityCategory = z.infer<typeof ActivityCategorySchema>;
 
+export const ActivityHubSectionSchema = z.enum([
+  "attractions",
+  "tours",
+  "essentials",
+  "entertainment",
+]);
+
+export type ActivityHubSection = z.infer<typeof ActivityHubSectionSchema>;
+
+export const ActivitySubcategorySchema = z.enum([
+  "theme-park",
+  "heritage-culture",
+  "island-sea",
+  "mountain-nature",
+  "local-workshop",
+  "airport-transfer",
+  "sim-wifi",
+  "fast-track",
+  "live-show",
+  "spa-wellness",
+  "dining-cruise",
+]);
+
+export type ActivitySubcategory = z.infer<typeof ActivitySubcategorySchema>;
+
 export const ActivityTimeSlotPeriodSchema = z.enum([
   "morning",
   "afternoon",
@@ -47,12 +72,31 @@ export const TransferDetailsSchema = z.object({
 
 export type TransferDetails = z.infer<typeof TransferDetailsSchema>;
 
+export const AttractionDetailsSchema = z.object({
+  openingHours: z.string().trim().min(1),
+  entryMethod: z.string().trim().min(1),
+  ageOrHeightNote: z.string().trim().min(1).optional(),
+  venueAddress: z.string().trim().min(1),
+});
+
+export type AttractionDetails = z.infer<typeof AttractionDetailsSchema>;
+
+export const EssentialDetailsSchema = z.object({
+  deliveryMethod: z.string().trim().min(1),
+  validityWindow: z.string().trim().min(1),
+  activationNote: z.string().trim().min(1),
+});
+
+export type EssentialDetails = z.infer<typeof EssentialDetailsSchema>;
+
 export const TravelActivitySchema = z.object({
   id: z.string().trim().min(1),
   slug: z.string().trim().min(1),
   title: z.string().trim().min(1),
   subtitle: z.string().trim().min(1),
   category: ActivityCategorySchema,
+  hubSection: ActivityHubSectionSchema.default("tours"),
+  subcategory: ActivitySubcategorySchema.default("local-workshop"),
   destinationCity: z.string().trim().min(1),
   province: z.string().trim().min(1),
   meetingPoint: z.string().trim().min(1),
@@ -69,6 +113,8 @@ export const TravelActivitySchema = z.object({
   instantConfirmation: z.boolean().default(true),
   slots: z.array(ActivitySlotSchema).min(1),
   transferDetails: TransferDetailsSchema.optional(),
+  attractionDetails: AttractionDetailsSchema.optional(),
+  essentialDetails: EssentialDetailsSchema.optional(),
   isFeatured: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
@@ -216,6 +262,8 @@ export const ActivitiesQueryParamsSchema = z.object({
   city: z.string().trim().optional(),
   search: z.string().trim().optional(),
   category: z.union([ActivityCategorySchema, z.literal("all")]).optional(),
+  section: z.union([ActivityHubSectionSchema, z.literal("explore")]).optional(),
+  subcategory: z.union([ActivitySubcategorySchema, z.literal("all")]).optional(),
   period: z.union([ActivityTimeSlotPeriodSchema, z.literal("all")]).optional(),
   maxPrice: z.number().nonnegative().optional(),
   sortBy: ActivitySortOptionSchema.optional(),
@@ -227,6 +275,8 @@ export const ActivitiesCatalogResponseSchema = z.object({
   activities: z.array(TravelActivitySchema).readonly(),
   cities: z.array(z.string().min(1)).readonly(),
   categories: z.array(ActivityCategorySchema).readonly(),
+  sections: z.array(ActivityHubSectionSchema).readonly().optional(),
+  subcategories: z.array(ActivitySubcategorySchema).readonly().optional(),
 });
 
 export type ActivitiesCatalogResponse = z.infer<typeof ActivitiesCatalogResponseSchema>;
