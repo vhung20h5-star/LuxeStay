@@ -3,12 +3,57 @@ import assert from "node:assert/strict";
 import { PROPERTIES } from "../dist/seed/index.js";
 import { AMENITY_CATALOG, AMENITY_FILTER_OPTIONS } from "../dist/seed/index.js";
 import {
+  createDefaultCatalogQuery,
+  executeCatalogQuery,
   projectPropertyAmenities,
   propertyHasAmenityFilters,
 } from "../dist/index.js";
 
-test("all 12 properties have valid, duplicate-free resortAmenities, no legacy amenities array, and >= 4 featured items", () => {
-  assert.equal(PROPERTIES.length, 12);
+test("all 42 properties have valid, duplicate-free resortAmenities, no legacy amenities array, and >= 4 featured items", () => {
+  assert.equal(PROPERTIES.length, 42);
+  assert.equal(new Set(PROPERTIES.map((p) => p.id)).size, 42);
+
+  const reviewIds = PROPERTIES.flatMap((p) => p.reviews.map((r) => r.id));
+  assert.equal(new Set(reviewIds).size, reviewIds.length, "Duplicate review ID detected in seed");
+
+  const typeCounts = new Map<string, number>();
+  const categoryCounts = new Map<string, number>();
+  for (const prop of PROPERTIES) {
+    typeCounts.set(prop.propertyType, (typeCounts.get(prop.propertyType) ?? 0) + 1);
+    categoryCounts.set(prop.category, (categoryCounts.get(prop.category) ?? 0) + 1);
+    assert.ok(prop.images.length >= 3, `${prop.id} should have at least 3 images`);
+    for (const img of prop.images) {
+      assert.ok(
+        img.startsWith("https://images.unsplash.com/photo-"),
+        `${prop.id} has non-Unsplash image URL: ${img}`
+      );
+    }
+  }
+
+  for (const requiredType of ["homestay", "hotel", "villa", "resort", "glamping"]) {
+    assert.ok(
+      (typeCounts.get(requiredType) ?? 0) >= 6,
+      `Expected >= 6 properties of type ${requiredType}, got ${typeCounts.get(requiredType) ?? 0}`
+    );
+  }
+  for (const requiredCategory of [
+    "mountain-view",
+    "beachfront",
+    "vintage-homestay",
+    "infinity-pool",
+    "ecolodge",
+    "pine-forest",
+    "city-center",
+    "luxury-resort",
+  ]) {
+    assert.ok(
+      (categoryCounts.get(requiredCategory) ?? 0) >= 3,
+      `Expected >= 3 properties in category ${requiredCategory}, got ${categoryCounts.get(requiredCategory) ?? 0}`
+    );
+  }
+
+  const defaultQuery = executeCatalogQuery(PROPERTIES, createDefaultCatalogQuery());
+  assert.equal(defaultQuery.items[0]?.id, "stay-08");
 
   for (const prop of PROPERTIES) {
     assert.equal("amenities" in prop, false, `${prop.id} must not carry legacy amenities array`);

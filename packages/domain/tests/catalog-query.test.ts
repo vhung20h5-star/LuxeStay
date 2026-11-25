@@ -41,12 +41,12 @@ test("destination filtering supports Vietnamese diacritic-insensitive matching a
   assert.ok(daLat.items.every((p) => p.location.city === "Đà Lạt"));
 
   const phuQuoc = executeCatalogQuery(PROPERTIES, setQueryDestination(base, "PHU QUOC"));
-  assert.equal(phuQuoc.items.length, 2);
+  assert.equal(phuQuoc.items.length, 5);
   assert.ok(phuQuoc.items.every((p) => p.location.city === "Phú Quốc"));
 
   const daNang = executeCatalogQuery(PROPERTIES, setQueryDestination(base, "da nang"));
-  assert.equal(daNang.items.length, 1);
-  assert.equal(daNang.items[0].location.city, "Đà Nẵng");
+  assert.equal(daNang.items.length, 4);
+  assert.ok(daNang.items.every((p) => p.location.city === "Đà Nẵng"));
 });
 
 test("every QUICK_SEARCH_TRENDS entry matches >= 1 property and switching trends clears conflicting filters", () => {
@@ -170,10 +170,17 @@ test("adjustQueryGuests and setQueryDates enforce safe bounds and filter capacit
   q = adjustQueryGuests(q, "rooms", -2);
   assert.equal(q.search.guests.rooms, 1);
 
-  q = adjustQueryGuests(q, "adults", 4); // 5 adults -> only properties with maxGuests >= 5 (stay-02: 6)
+  q = adjustQueryGuests(q, "adults", 4); // 5 adults -> only properties with maxGuests >= 5 (stay-02 & multi-room villas/resorts)
   const bigGroup = executeCatalogQuery(PROPERTIES, q);
-  assert.equal(bigGroup.items.length, 1);
-  assert.equal(bigGroup.items[0].id, "stay-02");
+  assert.ok(bigGroup.items.length >= 1);
+  assert.equal(
+    bigGroup.items.every((item) => item.maxGuests >= 5),
+    true
+  );
+  assert.equal(
+    bigGroup.items.some((item) => item.id === "stay-02"),
+    true
+  );
 
   const withDates = setQueryDates(q, { checkIn: "25/12", checkOut: "28/12" });
   assert.equal(withDates.search.checkIn, "25/12");

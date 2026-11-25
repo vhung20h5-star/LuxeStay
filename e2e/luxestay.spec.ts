@@ -215,4 +215,32 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
     await expect(page.getByTestId("voucher-card-VIPRESORT1M")).toBeVisible();
     await expect(page.getByTestId("voucher-card-WELCOME150")).toBeHidden();
   });
+
+  test("E2E-5: Expanded 42-stay catalog loads 12 cards initially, loads more progressively, and resets on filter", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const propertiesSection = page.locator("#properties-section");
+    await expect(propertiesSection).toContainText("42 kết quả");
+    await expect(page.getByTestId("property-card-price")).toHaveCount(12);
+    await expect(page.getByTestId("property-list-count-summary")).toContainText(
+      "Đang hiển thị 12 / 42 chỗ nghỉ"
+    );
+
+    await page.getByTestId("property-list-load-more").click();
+    await expect(page.getByTestId("property-card-price")).toHaveCount(24);
+    await expect(page.getByTestId("property-list-count-summary")).toContainText(
+      "Đang hiển thị 24 / 42 chỗ nghỉ"
+    );
+
+    await page.getByTestId("property-list-collapse").click();
+    await expect(page.getByTestId("property-card-price")).toHaveCount(12);
+
+    // Filter by a newly added destination (Hạ Long -> stay-36 & stay-41) and confirm results
+    await page.getByPlaceholder("Bạn muốn đi đâu? (VD: da lat)").fill("Hạ Long");
+    await expect(propertiesSection).toContainText("2 kết quả");
+    await expect(page.getByTestId("property-card-price")).toHaveCount(2);
+    await expect(page.getByTestId("property-list-load-more")).toBeHidden();
+  });
 });

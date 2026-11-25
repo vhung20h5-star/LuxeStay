@@ -36,10 +36,13 @@ import {
   promotionCampaignsTable,
   promotionsTable,
   propertiesTable,
+  propertyAmenitiesTable,
   propertyAvailabilityTable,
   reservationsTable,
+  reviewsTable,
 } from "../dist/db/schema/index.js";
 import {
+  backfillMissingSeedProperties,
   backfillPromotionsIfNeeded,
   prepareDatabaseIfConfigured,
 } from "../dist/db/vercelPrepare.js";
@@ -99,7 +102,7 @@ test("GET /api/v1/catalog returns complete CatalogSnapshot validated against con
   const parsed = createApiSuccessSchema(CatalogSnapshotSchema).safeParse(body);
   assert.equal(parsed.success, true);
   if (parsed.success) {
-    assert.equal(parsed.data.data.properties.length, 12);
+    assert.equal(parsed.data.data.properties.length, 42);
     assert.equal(parsed.data.data.categories.length, 9);
     assert.equal(parsed.data.data.destinations.length, 8);
     assert.equal(Object.keys(parsed.data.data.amenityCatalog).length, 51);
@@ -1285,7 +1288,7 @@ test("Phase 3B RBAC & Host/Admin Portal: guards, property CRUD, availability ove
   const adminProps = createApiSuccessSchema(HostPropertiesListDataSchema).parse(
     await adminPropsRes.json()
   ).data.properties;
-  assert.equal(adminProps.length, 12);
+  assert.equal(adminProps.length, 42);
 
   const adminPatchStay07 = await app.request(API_ENDPOINTS.hostPropertyById("stay-07"), {
     method: "PATCH",
@@ -1650,6 +1653,123 @@ test("Migration 0004, promotion voucher row mapper, and idempotent backfill pres
   assert.equal(transientFailStub.insertedRowsByTable.get(propertiesTable), undefined);
 });
 
+test("backfillMissingSeedProperties inserts only missing seed stays transactionally without overwriting existing rows", async () => {
+  const createPropertyBackfillStubDb = (existingPropertyIds: readonly string[]) => {
+    const insertedRowsByTable = new Map<unknown, unknown[]>();
+    const otherWriteTables: unknown[] = [];
+    let transactionCalls = 0;
+    let nonTransactionalInserts = 0;
+    let onConflictUpdateCalls = 0;
+
+    const createInsertHandler = (
+      targetMap: Map<unknown, unknown[]>,
+      isTransactional: boolean
+    ) => {
+      return (table: unknown) => ({
+        values(payload: unknown) {
+          const items = Array.isArray(payload) ? payload : [payload];
+          const record = async () => {
+            if (!isTransactional) nonTransactionalInserts += 1;
+            const rows = targetMap.get(table) ?? [];
+            rows.push(...items);
+            targetMap.set(table, rows);
+          };
+          return {
+            async onConflictDoNothing() {
+              await record();
+            },
+            async onConflictDoUpdate() {
+              onConflictUpdateCalls += 1;
+              await record();
+            },
+          };
+        },
+      });
+    };
+
+    const db = {
+      select() {
+        return {
+          async from(table: unknown) {
+            if (table !== propertiesTable) return [];
+            const insertedIds = (
+              (insertedRowsByTable.get(propertiesTable) ?? []) as Array<{ id: string }>
+            ).map((row) => row.id);
+            return [...new Set([...existingPropertyIds, ...insertedIds])].map((id) => ({ id }));
+          },
+        };
+      },
+      insert: createInsertHandler(insertedRowsByTable, false),
+      update(table: unknown) {
+        otherWriteTables.push(table);
+        return { set: () => ({ async where() { return []; } }) };
+      },
+      delete(table: unknown) {
+        otherWriteTables.push(table);
+        return { async where() { return []; } };
+      },
+      async transaction<T>(fn: (tx: typeof db) => Promise<T>): Promise<T> {
+        transactionCalls += 1;
+        const txRows = new Map<unknown, unknown[]>(
+          [...insertedRowsByTable.entries()].map(([tbl, rows]) => [tbl, [...rows]])
+        );
+        const tx = {
+          ...db,
+          insert: createInsertHandler(txRows, true),
+        };
+        const result = await fn(tx);
+        insertedRowsByTable.clear();
+        for (const [tbl, rows] of txRows.entries()) {
+          insertedRowsByTable.set(tbl, rows);
+        }
+        return result;
+      },
+    };
+
+    return {
+      db: db as unknown as LuxeStayDb,
+      insertedRowsByTable,
+      otherWriteTables,
+      get transactionCalls() {
+        return transactionCalls;
+      },
+      get nonTransactionalInserts() {
+        return nonTransactionalInserts;
+      },
+      get onConflictUpdateCalls() {
+        return onConflictUpdateCalls;
+      },
+    };
+  };
+
+  // Case 1: Pre-existing 12-property Neon DB receives exactly the 30 missing stays (stay-13..stay-42) via ON CONFLICT DO NOTHING
+  const legacyIds = PROPERTIES.slice(0, 12).map((p) => p.id);
+  const legacyStub = createPropertyBackfillStubDb(legacyIds);
+  const firstRun = await backfillMissingSeedProperties(legacyStub.db);
+  assert.deepEqual(firstRun, { insertedCount: 30 });
+  assert.equal(legacyStub.transactionCalls, 1);
+  assert.equal(legacyStub.nonTransactionalInserts, 0);
+  assert.equal(legacyStub.onConflictUpdateCalls, 0);
+  assert.equal(legacyStub.otherWriteTables.length, 0);
+
+  const insertedProps = (legacyStub.insertedRowsByTable.get(propertiesTable) ?? []) as Array<{
+    id: string;
+  }>;
+  assert.equal(insertedProps.length, 30);
+  assert.equal(
+    insertedProps.some((row) => legacyIds.includes(row.id)),
+    false,
+    "Must never touch existing stay-01..stay-12 rows"
+  );
+  assert.ok((legacyStub.insertedRowsByTable.get(propertyAmenitiesTable)?.length ?? 0) >= 300);
+  assert.ok((legacyStub.insertedRowsByTable.get(reviewsTable)?.length ?? 0) >= 30);
+
+  // Case 2: Re-running after all 42 stays exist is a pure no-op
+  const secondRun = await backfillMissingSeedProperties(legacyStub.db);
+  assert.deepEqual(secondRun, { insertedCount: 0 });
+  assert.equal(legacyStub.transactionCalls, 1);
+});
+
 test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:slug with slug normalization, active/expired handling, and 404", async () => {
   const { app } = createApiApp();
 
@@ -1677,10 +1797,11 @@ test("Independent deals module exposes GET /api/v1/deals and GET /api/v1/deals/:
   const detailParsed = createApiSuccessSchema(DealDetailSchema).safeParse(await detailRes.json());
   assert.equal(detailParsed.success, true);
   if (detailParsed.success) {
-    assert.deepEqual(
-      detailParsed.data.data.properties.map((p) => p.id),
-      ["stay-02", "stay-07", "stay-08", "stay-10"]
-    );
+    const matchedIds = detailParsed.data.data.properties.map((p) => p.id);
+    assert.equal(matchedIds.length, 12);
+    for (const anchorId of ["stay-02", "stay-07", "stay-08", "stay-10", "stay-25", "stay-32"]) {
+      assert.equal(matchedIds.includes(anchorId), true);
+    }
     assert.deepEqual(
       detailParsed.data.data.vouchers.map((v) => v.code),
       ["NEWSTAY250", "LUXESTAY250"]

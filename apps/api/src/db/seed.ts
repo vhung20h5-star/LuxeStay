@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Property } from "@luxestay/contracts";
 import { PROMOTION_CAMPAIGNS, SEED_CATALOG_SNAPSHOT } from "@luxestay/domain/seed";
 import { buildDemoStaffUsers } from "../modules/auth/demoAccounts.js";
 import { createDbClient, type LuxeStayDb } from "./client.js";
@@ -17,6 +18,108 @@ import {
   testimonialsTable,
   usersTable,
 } from "./schema/index.js";
+
+function buildPropertyInsertRow(prop: Property, sortOrder: number) {
+  return {
+    id: prop.id,
+    title: prop.title,
+    subtitle: prop.subtitle,
+    propertyType: prop.propertyType,
+    category: prop.category,
+    city: prop.location.city,
+    province: prop.location.province,
+    address: prop.location.address,
+    distanceToCenter: prop.location.distanceToCenter,
+    images: prop.images,
+    pricePerNight: prop.pricePerNight,
+    originalPrice: prop.originalPrice ?? null,
+    rating: prop.rating,
+    reviewCount: prop.reviewCount,
+    maxGuests: prop.maxGuests,
+    bedrooms: prop.bedrooms,
+    beds: prop.beds,
+    bathrooms: prop.bathrooms,
+    inventoryCount: prop.inventoryCount,
+    ownerUserId: prop.ownerUserId ?? null,
+    isSuperhost: Boolean(prop.isSuperhost),
+    isFeatured: Boolean(prop.isFeatured),
+    isFlashDeal: Boolean(prop.isFlashDeal),
+    freeCancellation: Boolean(prop.freeCancellation),
+    breakfastIncluded: Boolean(prop.breakfastIncluded),
+    description: prop.description,
+    hostName: prop.host.name,
+    hostAvatar: prop.host.avatar,
+    hostJoinedDate: prop.host.joinedDate,
+    hostResponseRate: prop.host.responseRate,
+    hostIsSuperhost: prop.host.isSuperhost,
+    sortOrder,
+  };
+}
+
+function buildPropertyAmenityInsertRows(properties: readonly Property[]) {
+  return properties.flatMap((prop) =>
+    prop.resortAmenities.map((override, idx) => ({
+      propertyId: prop.id,
+      amenityId: override.amenityId,
+      sortOrder: idx,
+      featured: override.featured ?? null,
+      name: override.name ?? null,
+      shortLabel: override.shortLabel ?? null,
+      description: override.description ?? null,
+      image: override.image ?? null,
+      hours: override.hours ?? null,
+      location: override.location ?? null,
+      pricingType: override.pricingType ?? null,
+      price: override.price ?? null,
+      priceUnit: override.priceUnit ?? null,
+      notes: override.notes ?? null,
+    }))
+  );
+}
+
+function buildPropertyReviewInsertRows(properties: readonly Property[]) {
+  return properties.flatMap((prop) =>
+    prop.reviews.map((review, idx) => ({
+      id: review.id,
+      propertyId: prop.id,
+      authorName: review.authorName,
+      authorAvatar: review.authorAvatar,
+      rating: review.rating,
+      date: review.date,
+      comment: review.comment,
+      sortOrder: idx,
+    }))
+  );
+}
+
+/**
+ * Inserts only missing seed properties (plus their amenities and seed reviews)
+ * using ON CONFLICT DO NOTHING so existing/host-edited rows are never overwritten.
+ */
+export async function insertMissingSeedProperties(
+  db: Pick<LuxeStayDb, "insert"> | LuxeStayDb,
+  entries: ReadonlyArray<{ property: Property; sortOrder: number }>
+): Promise<void> {
+  if (entries.length === 0) return;
+
+  for (const { property, sortOrder } of entries) {
+    await db
+      .insert(propertiesTable)
+      .values(buildPropertyInsertRow(property, sortOrder))
+      .onConflictDoNothing();
+  }
+
+  const properties = entries.map((entry) => entry.property);
+  const amenityOverrideRows = buildPropertyAmenityInsertRows(properties);
+  if (amenityOverrideRows.length > 0) {
+    await db.insert(propertyAmenitiesTable).values(amenityOverrideRows).onConflictDoNothing();
+  }
+
+  const reviewRows = buildPropertyReviewInsertRows(properties);
+  if (reviewRows.length > 0) {
+    await db.insert(reviewsTable).values(reviewRows).onConflictDoNothing();
+  }
+}
 
 export async function seedPromotionsAndCampaigns(
   db: Pick<LuxeStayDb, "insert"> | LuxeStayDb
@@ -232,40 +335,7 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
     for (const [idx, prop] of snapshot.properties.entries()) {
       await tx
         .insert(propertiesTable)
-        .values({
-          id: prop.id,
-          title: prop.title,
-          subtitle: prop.subtitle,
-          propertyType: prop.propertyType,
-          category: prop.category,
-          city: prop.location.city,
-          province: prop.location.province,
-          address: prop.location.address,
-          distanceToCenter: prop.location.distanceToCenter,
-          images: prop.images,
-          pricePerNight: prop.pricePerNight,
-          originalPrice: prop.originalPrice ?? null,
-          rating: prop.rating,
-          reviewCount: prop.reviewCount,
-          maxGuests: prop.maxGuests,
-          bedrooms: prop.bedrooms,
-          beds: prop.beds,
-          bathrooms: prop.bathrooms,
-          inventoryCount: prop.inventoryCount,
-          ownerUserId: prop.ownerUserId ?? null,
-          isSuperhost: Boolean(prop.isSuperhost),
-          isFeatured: Boolean(prop.isFeatured),
-          isFlashDeal: Boolean(prop.isFlashDeal),
-          freeCancellation: Boolean(prop.freeCancellation),
-          breakfastIncluded: Boolean(prop.breakfastIncluded),
-          description: prop.description,
-          hostName: prop.host.name,
-          hostAvatar: prop.host.avatar,
-          hostJoinedDate: prop.host.joinedDate,
-          hostResponseRate: prop.host.responseRate,
-          hostIsSuperhost: prop.host.isSuperhost,
-          sortOrder: idx,
-        })
+        .values(buildPropertyInsertRow(prop, idx))
         .onConflictDoUpdate({
           target: propertiesTable.id,
           set: {
@@ -275,42 +345,12 @@ export async function seedDatabase(db: LuxeStayDb): Promise<void> {
         });
     }
 
-    const amenityOverrideRows = snapshot.properties.flatMap((prop) =>
-      prop.resortAmenities.map((override, idx) => ({
-        propertyId: prop.id,
-        amenityId: override.amenityId,
-        sortOrder: idx,
-        featured: override.featured ?? null,
-        name: override.name ?? null,
-        shortLabel: override.shortLabel ?? null,
-        description: override.description ?? null,
-        image: override.image ?? null,
-        hours: override.hours ?? null,
-        location: override.location ?? null,
-        pricingType: override.pricingType ?? null,
-        price: override.price ?? null,
-        priceUnit: override.priceUnit ?? null,
-        notes: override.notes ?? null,
-      }))
-    );
-
+    const amenityOverrideRows = buildPropertyAmenityInsertRows(snapshot.properties);
     if (amenityOverrideRows.length > 0) {
       await tx.insert(propertyAmenitiesTable).values(amenityOverrideRows).onConflictDoNothing();
     }
 
-    const reviewRows = snapshot.properties.flatMap((prop) =>
-      prop.reviews.map((review, idx) => ({
-        id: review.id,
-        propertyId: prop.id,
-        authorName: review.authorName,
-        authorAvatar: review.authorAvatar,
-        rating: review.rating,
-        date: review.date,
-        comment: review.comment,
-        sortOrder: idx,
-      }))
-    );
-
+    const reviewRows = buildPropertyReviewInsertRows(snapshot.properties);
     if (reviewRows.length > 0) {
       await tx.insert(reviewsTable).values(reviewRows).onConflictDoNothing();
     }

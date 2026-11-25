@@ -9,7 +9,11 @@ import {
   promotionCampaignsTable,
   propertiesTable,
 } from "./schema/index.js";
-import { seedDatabase, seedPromotionsAndCampaigns } from "./seed.js";
+import {
+  seedDatabase,
+  seedPromotionsAndCampaigns,
+  insertMissingSeedProperties,
+} from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(__dirname, "migrations");
@@ -53,6 +57,27 @@ export async function backfillPromotionsIfNeeded(
     await seedPromotionsAndCampaigns(tx);
   });
   return { backfilled: true };
+}
+
+export async function backfillMissingSeedProperties(
+  db: LuxeStayDb
+): Promise<{ insertedCount: number }> {
+  const existingRows = await db.select({ id: propertiesTable.id }).from(propertiesTable);
+  const existingIds = new Set(existingRows.map((row) => row.id));
+
+  const missingEntries = SEED_CATALOG_SNAPSHOT.properties
+    .map((property, sortOrder) => ({ property, sortOrder }))
+    .filter(({ property }) => !existingIds.has(property.id));
+
+  if (missingEntries.length === 0) {
+    return { insertedCount: 0 };
+  }
+
+  await db.transaction(async (tx) => {
+    await insertMissingSeedProperties(tx, missingEntries);
+  });
+
+  return { insertedCount: missingEntries.length };
 }
 
 export async function prepareDatabaseIfConfigured(
@@ -111,7 +136,14 @@ export async function prepareDatabaseIfConfigured(
       console.log("[luxestay-api] Backfilled promotions and promotion campaigns.");
     }
 
-    console.log("[luxestay-api] Migrations up to date; properties already seeded (skipping overwrite).");
+    const { insertedCount } = await backfillMissingSeedProperties(client.db);
+    if (insertedCount > 0) {
+      console.log(
+        `[luxestay-api] Backfilled ${insertedCount} missing seed properties without overwriting existing rows.`
+      );
+    }
+
+    console.log("[luxestay-api] Migrations up to date; existing properties preserved.");
     return { status: "migrated" };
   } finally {
     await client.close();

@@ -478,7 +478,7 @@ test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and
     apiBaseUrl: "http://localhost:4000",
   });
   const mockSnapshot = await mockRepo.getSnapshot();
-  assert.equal(mockSnapshot.properties.length, 12);
+  assert.equal(mockSnapshot.properties.length, 42);
 
   // API mode validates CatalogSnapshotSchema
   const apiRepo = createHttpCatalogRepository({
@@ -497,7 +497,7 @@ test("CatalogRepository validates API contracts, surfaces CONTRACT_MISMATCH, and
     },
   });
   const apiSnapshot = await apiRepo.getSnapshot();
-  assert.equal(apiSnapshot.properties.length, 12);
+  assert.equal(apiSnapshot.properties.length, 42);
   assert.equal(apiSnapshot.promotions.vouchers.length, 6);
 
   // Malformed response triggers CONTRACT_MISMATCH
@@ -1232,10 +1232,12 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
   const worldsBest = await mockRepo.getDealBySlug("worlds-best-resorts");
   assert.ok(worldsBest);
   assert.equal(worldsBest.campaign.slug, "worlds-best-resorts");
-  assert.deepEqual(
-    worldsBest.properties.map((p) => p.id),
-    ["stay-02", "stay-05", "stay-08", "stay-10"]
-  );
+  const worldsBestIds = worldsBest.properties.map((p) => p.id);
+  const expectedWorldsBestCount = 17;
+  assert.equal(worldsBestIds.length, expectedWorldsBestCount);
+  for (const anchorId of ["stay-02", "stay-05", "stay-08", "stay-10", "stay-32", "stay-36"]) {
+    assert.equal(worldsBestIds.includes(anchorId), true);
+  }
   assert.deepEqual(
     worldsBest.vouchers.map((v) => v.code),
     ["VIPRESORT1M", "SUMMERVIBE"]
@@ -1244,7 +1246,7 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
   const normalizedLookup = await mockRepo.getDealBySlug("  WORLDS-BEST-RESORTS ");
   assert.ok(normalizedLookup);
   assert.equal(normalizedLookup.campaign.slug, "worlds-best-resorts");
-  assert.equal(normalizedLookup.properties.length, 4);
+  assert.equal(normalizedLookup.properties.length, expectedWorldsBestCount);
 
   assert.equal(await mockRepo.getDealBySlug("missing"), null);
   assert.equal(await mockRepo.getDealBySlug("   "), null);
@@ -1267,7 +1269,7 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
   const expiredActive = await customMockRepo.getDealBySlug("expired-campaign");
   assert.ok(expiredActive);
   assert.equal(expiredActive.campaign.slug, "expired-campaign");
-  assert.equal(expiredActive.properties.length, 4);
+  assert.equal(expiredActive.properties.length, expectedWorldsBestCount);
 
   // 2. Same-origin HTTP DealsRepository validates envelopes & 404 -> null
   const requestedUrls: string[] = [];
@@ -1319,7 +1321,7 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
 
   const httpDetail = await httpRepo.getDealBySlug("worlds-best-resorts");
   assert.ok(httpDetail);
-  assert.equal(httpDetail.properties.length, 4);
+  assert.equal(httpDetail.properties.length, expectedWorldsBestCount);
 
   const httpNormalizedDetail = await httpRepo.getDealBySlug("  WORLDS-BEST-RESORTS ");
   assert.ok(httpNormalizedDetail);
@@ -1413,7 +1415,7 @@ test("DealsRepository supports mock lookup, active/expired/inactive slugs, same-
     const loadedHub = await loadDealsHub();
     assert.equal(loadedHub.campaigns.length, 5);
     const loadedDetail = await loadDealBySlug("worlds-best-resorts");
-    assert.equal(loadedDetail?.properties.length, 4);
+    assert.equal(loadedDetail?.properties.length, expectedWorldsBestCount);
   } finally {
     if (prevMode === undefined) delete process.env.NEXT_PUBLIC_DATA_MODE;
     else process.env.NEXT_PUBLIC_DATA_MODE = prevMode;

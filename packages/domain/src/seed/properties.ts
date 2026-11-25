@@ -1,6 +1,12 @@
 import type { Property } from "@luxestay/contracts";
+import { EXTRA_GLAMPING } from "./properties/glamping.js";
+import { EXTRA_HOMESTAYS } from "./properties/homestays.js";
+import { EXTRA_HOTELS } from "./properties/hotels.js";
+import { EXTRA_RESORTS } from "./properties/resorts.js";
+import type { SeedPropertyDraft } from "./properties/types.js";
+import { EXTRA_VILLAS } from "./properties/villas.js";
 
-const RAW_PROPERTIES: Omit<Property, "inventoryCount">[] = [
+const RAW_PROPERTIES: SeedPropertyDraft[] = [
   {
     id: "stay-01",
     title: "Mây Lang Thang Wooden Villa & Cloud View",
@@ -1094,7 +1100,25 @@ const RAW_PROPERTIES: Omit<Property, "inventoryCount">[] = [
   },
 ];
 
-export const PROPERTIES: Property[] = RAW_PROPERTIES.map((property) => ({
+const ALL_RAW_PROPERTIES: SeedPropertyDraft[] = [
+  ...RAW_PROPERTIES,
+  ...EXTRA_HOMESTAYS,
+  ...EXTRA_HOTELS,
+  ...EXTRA_VILLAS,
+  ...EXTRA_RESORTS,
+  ...EXTRA_GLAMPING,
+];
+
+const DEMO_HOST_OWNED_IDS = new Set([
+  "stay-01",
+  "stay-02",
+  "stay-03",
+  "stay-04",
+  "stay-05",
+  "stay-06",
+]);
+
+export const PROPERTIES: Property[] = ALL_RAW_PROPERTIES.map((property) => ({
   ...property,
   inventoryCount:
     property.propertyType === "resort"
@@ -1102,10 +1126,6 @@ export const PROPERTIES: Property[] = RAW_PROPERTIES.map((property) => ({
       : property.propertyType === "hotel"
         ? 5
         : 1,
-  ...(new Set(["stay-01", "stay-02", "stay-03", "stay-04", "stay-05", "stay-06"]).has(
-    property.id
-  )
-    ? { ownerUserId: "USR-HOST-01" }
-    : {}),
+  ...(DEMO_HOST_OWNED_IDS.has(property.id) ? { ownerUserId: "USR-HOST-01" } : {}),
 }));
 

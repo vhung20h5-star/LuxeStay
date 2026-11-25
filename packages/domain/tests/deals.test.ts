@@ -109,12 +109,54 @@ test("PROMOTION_CAMPAIGNS has 5 frozen campaigns and partitionCampaigns never pr
   assert.equal(isCampaignActive({ ...blackFriday, isActive: false }, NOV_24), false);
 });
 
-test("matchPropertiesForCampaign matches exact stay IDs for all 5 seeded campaigns and handles diacritics", () => {
-  const expectedBySlug: Record<string, string[]> = {
-    "black-friday-2026": ["stay-01", "stay-06", "stay-10"],
-    "bien-he-phu-quoc-nha-trang": ["stay-02", "stay-07", "stay-08", "stay-10"],
-    "san-may-da-lat-sapa": ["stay-01", "stay-03", "stay-04", "stay-11", "stay-12"],
-    "worlds-best-resorts": ["stay-02", "stay-05", "stay-08", "stay-10"],
+test("matchPropertiesForCampaign matches all eligible stays (anchor + expanded catalog) and handles diacritics", () => {
+  const expectedAnchorsBySlug: Record<string, string[]> = {
+    "black-friday-2026": ["stay-01", "stay-06", "stay-10", "stay-13", "stay-18", "stay-20", "stay-25", "stay-33", "stay-39"],
+    "bien-he-phu-quoc-nha-trang": [
+      "stay-02",
+      "stay-07",
+      "stay-08",
+      "stay-10",
+      "stay-19",
+      "stay-20",
+      "stay-24",
+      "stay-25",
+      "stay-29",
+      "stay-31",
+      "stay-32",
+      "stay-33",
+    ],
+    "san-may-da-lat-sapa": [
+      "stay-01",
+      "stay-03",
+      "stay-04",
+      "stay-11",
+      "stay-12",
+      "stay-13",
+      "stay-14",
+      "stay-26",
+      "stay-37",
+      "stay-39",
+    ],
+    "worlds-best-resorts": [
+      "stay-02",
+      "stay-05",
+      "stay-08",
+      "stay-10",
+      "stay-20",
+      "stay-23",
+      "stay-24",
+      "stay-25",
+      "stay-27",
+      "stay-29",
+      "stay-30",
+      "stay-31",
+      "stay-32",
+      "stay-33",
+      "stay-34",
+      "stay-35",
+      "stay-36",
+    ],
     "tron-pho-glamping-homestay": [
       "stay-01",
       "stay-04",
@@ -122,10 +164,22 @@ test("matchPropertiesForCampaign matches exact stay IDs for all 5 seeded campaig
       "stay-09",
       "stay-11",
       "stay-12",
+      "stay-13",
+      "stay-14",
+      "stay-15",
+      "stay-16",
+      "stay-17",
+      "stay-18",
+      "stay-37",
+      "stay-38",
+      "stay-39",
+      "stay-40",
+      "stay-41",
+      "stay-42",
     ],
   };
 
-  for (const [slug, expectedIds] of Object.entries(expectedBySlug)) {
+  for (const [slug, expectedIds] of Object.entries(expectedAnchorsBySlug)) {
     const campaign = PROMOTION_CAMPAIGNS.find((c) => c.slug === slug)!;
     const matched = matchPropertiesForCampaign(PROPERTIES, campaign);
     assert.deepEqual(
@@ -152,7 +206,7 @@ test("matchPropertiesForCampaign matches exact stay IDs for all 5 seeded campaig
   };
   assert.deepEqual(
     matchPropertiesForCampaign(PROPERTIES, diacriticCampaign).map((p) => p.id),
-    ["stay-01", "stay-04", "stay-11"]
+    ["stay-01", "stay-04", "stay-11", "stay-13", "stay-14"]
   );
 });
 

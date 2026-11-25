@@ -1,12 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUpDown, SlidersHorizontal, SearchX, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, SlidersHorizontal, SearchX, X } from "lucide-react";
 import { useCatalog } from "@/features/booking/BookingContext";
+import { useLocale } from "@/features/locale/LocaleContext";
 import { PropertyCard } from "./PropertyCard";
 import { Button } from "@/shared/ui/Button";
 import type { SortOption } from "@luxestay/contracts";
+
+const INITIAL_VISIBLE_STAYS = 12;
+const LOAD_MORE_STEP = 12;
 
 export function PropertyList() {
   const {
@@ -18,8 +22,61 @@ export function PropertyList() {
     resetFilters,
     setFilterModalOpen,
   } = useCatalog();
+  const { t } = useLocale();
 
   const { items: filteredProperties, activeChips, activeFilterCount } = catalogResult;
+
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        destination: searchCriteria.destination.trim(),
+        adults: searchCriteria.guests.adults,
+        children: searchCriteria.guests.children,
+        category: filterState.category,
+        minPrice: filterState.minPrice,
+        maxPrice: filterState.maxPrice,
+        propertyTypes: filterState.propertyTypes,
+        minRating: filterState.minRating,
+        amenities: filterState.amenities,
+        freeCancellationOnly: filterState.freeCancellationOnly,
+        sortBy: filterState.sortBy,
+        total: filteredProperties.length,
+      }),
+    [searchCriteria, filterState, filteredProperties.length]
+  );
+
+  const [pagination, setPagination] = useState<{ signature: string; visibleCount: number }>({
+    signature: filterSignature,
+    visibleCount: INITIAL_VISIBLE_STAYS,
+  });
+
+  const effectiveVisibleCount =
+    pagination.signature === filterSignature ? pagination.visibleCount : INITIAL_VISIBLE_STAYS;
+  const visibleProperties = filteredProperties.slice(0, effectiveVisibleCount);
+  const remainingCount = Math.max(0, filteredProperties.length - visibleProperties.length);
+  const nextLoadCount = Math.min(LOAD_MORE_STEP, remainingCount);
+  const isExpanded = visibleProperties.length > INITIAL_VISIBLE_STAYS;
+
+  const handleLoadMore = () => {
+    setPagination({
+      signature: filterSignature,
+      visibleCount: Math.min(
+        filteredProperties.length,
+        effectiveVisibleCount + LOAD_MORE_STEP
+      ),
+    });
+  };
+
+  const handleCollapse = () => {
+    setPagination({
+      signature: filterSignature,
+      visibleCount: INITIAL_VISIBLE_STAYS,
+    });
+    const section = document.getElementById("properties-section");
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   return (
     <section id="properties-section" className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -102,16 +159,58 @@ export function PropertyList() {
 
       {/* Grid of Property Cards */}
       {filteredProperties.length > 0 ? (
-        <motion.div
-          layout
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-        >
-          <AnimatePresence>
-            {filteredProperties.map((prop) => (
-              <PropertyCard key={prop.id} property={prop} />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <>
+          <motion.div
+            layout
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          >
+            <AnimatePresence>
+              {visibleProperties.map((prop) => (
+                <PropertyCard key={prop.id} property={prop} />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+
+          {filteredProperties.length > INITIAL_VISIBLE_STAYS && (
+            <div className="mt-10 flex flex-col items-center gap-3">
+              <p
+                data-testid="property-list-count-summary"
+                className="text-xs sm:text-sm font-medium text-slate-500"
+              >
+                {t("catalog.showingCount", {
+                  shown: visibleProperties.length,
+                  total: filteredProperties.length,
+                })}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {remainingCount > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    data-testid="property-list-load-more"
+                    onClick={handleLoadMore}
+                    className="rounded-full px-6 py-2.5 border-slate-300 bg-white hover:border-emerald-500 hover:text-emerald-700 shadow-xs"
+                  >
+                    <span>{t("catalog.loadMore", { count: nextLoadCount })}</span>
+                    <ChevronDown className="w-4 h-4 ml-1.5" />
+                  </Button>
+                )}
+                {isExpanded && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    data-testid="property-list-collapse"
+                    onClick={handleCollapse}
+                    className="rounded-full px-5 py-2.5 text-slate-600 hover:text-slate-900"
+                  >
+                    <span>{t("catalog.collapse")}</span>
+                    <ChevronUp className="w-4 h-4 ml-1.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         /* Empty State */
         <div className="text-center py-16 px-4 bg-white rounded-3xl border border-dashed border-slate-300 max-w-lg mx-auto">
