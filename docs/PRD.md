@@ -1,202 +1,172 @@
-# Product Requirements Document (PRD) — LuxeStay (`travel-service`)
+# Product Requirements Document (PRD) — LuxeStay
 
-- **Phiên bản tài liệu:** 1.5 (Phase 3 Completed — Baseline v0.6.0)
-- **Ngày cập nhật:** 2026-11-24
-- **Trạng thái:** Living Document (Active)
-- **Tài liệu liên quan:**
-  - Kiến trúc hệ thống: [ARCHITECTURE.md](./ARCHITECTURE.md)
-  - Kế hoạch bảo trì & mở rộng: [PLAN.md](./PLAN.md)
-  - Nhật ký quyết định kiến trúc: [docs/adr/README.md](./adr/README.md)
-  - Từ vựng miền chuẩn: [GLOSSARY.md](../GLOSSARY.md)
+> **Version:** `2.3`  
+> **Last Updated:** `2026-11-25`  
+> **Trạng thái Scope:** `Phase 0 – Phase 5C (Completed)`  
+> **Tài liệu liên quan:** [ARCHITECTURE.md](./ARCHITECTURE.md) (`v3.3`) · [PLAN.md](./PLAN.md) (`v3.3`) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [GLOSSARY.md](../GLOSSARY.md)
 
 ---
 
-## 1. Tổng quan sản phẩm & Tầm nhìn
+## 1. Tầm nhìn & Phạm vi Sản phẩm
 
-### 1.1. Bối cảnh & Mục tiêu
-**LuxeStay** là nền tảng web khám phá và đặt phòng khách sạn, resort ven biển, villa biệt thự, homestay và glamping nghỉ dưỡng tại Việt Nam. Sản phẩm hướng tới trải nghiệm hiện đại, minh bạch chi phí ngay từ bước xem phòng và làm nổi bật hệ thống **tiện ích & dịch vụ khu nghỉ dưỡng (Resort Amenities)** — thứ thường bị ẩn hoặc mô tả sơ sài ở các nền tảng OTA thông thường.
+### 1.1 Tổng quan
+**LuxeStay** là nền tảng đặt phòng khách sạn, villa, resort, homestay, glamping kết hợp hệ sinh thái **"Hoạt động & Vui chơi Việt Nam"** (điểm tham quan, công viên giải trí, tour bản địa, tiện ích du lịch thiết yếu, show diễn & đưa đón sân bay) với triết lý minh bạch chi phí, kiểm soát tồn kho/suất nguyên tử theo ngày, bộ sưu tập nhiều hình ảnh thực tế, thông tin "Điều bạn cũng nên biết" chuẩn OTA và khả năng vận hành ổn định trên cả desktop lẫn thiết bị di động (`360px+`).
 
-### 1.2. Đề xuất giá trị cốt lõi (Core Value Proposition)
-1. **Tìm kiếm thông minh cho người dùng Việt:** Hỗ trợ tìm điểm đến không dấu tiếng Việt, chọn nhanh xu hướng du lịch, gợi ý ngày cuối tuần/lễ, đồng bộ URL chia sẻ và lọc kết hợp nhiều tiêu chí mà không làm mất ngữ cảnh.
-2. **Minh bạch tiện ích & dịch vụ đi kèm:** Chuẩn hóa 51 tiện ích theo 7 nhóm khoa học, phân rõ 3 nhóm chi phí (`Miễn phí bao gồm sẵn`, `Miễn phí cần đặt trước`, `Có phụ phí`) và đồng bộ 1-click trực tiếp vào báo giá đặt phòng.
-3. **Trải nghiệm thương mại khép kín từ tài khoản tới thanh toán & vé điện tử:** Đăng nhập tài khoản (Email/Mật khẩu hoặc OTP) đồng bộ Wishlist và lịch sử đơn đặt phòng, áp mã giảm giá động kiểm tra chuẩn trên server, thanh toán qua cổng Sandbox có xác thực webhook HMAC-SHA256 và nhận email vé điện tử.
-4. **Trải nghiệm mượt mà trên mọi thiết bị:** Giao diện Glassmorphism, điều phối ngăn xếp hộp thoại nhất quán (phím `Escape`, khóa cuộn nền, hỗ trợ màn hình di động).
+### 1.2 Giá trị cốt lõi (Value Proposition)
+- **Kho chỗ nghỉ & Trải nghiệm tuyển chọn, xác thực hình ảnh:** **42 chỗ nghỉ** (`stay-01`..`stay-42`) phủ **14 thành phố** du lịch trọng điểm kết hợp **56 dịch vụ Hoạt động & Vui chơi** (`act-01`..`act-56` phủ **14/14 thành phố** với tối thiểu **3 dịch vụ/thành phố** và **3 ảnh thật/dịch vụ**), phân tách **309 media slots** duy nhất (0% trùng lặp toàn cục) căn chỉnh theo 4 trục chất lượng.
+- **Minh bạch tài chính 100% (Server-Authoritative):** Tách bạch giá cơ bản, phụ phí cuối tuần/mùa cao điểm theo từng đêm (`nightlyBreakdown`), phí dọn phòng (`150.000đ`), tiện ích trả phí đính kèm, phí trải nghiệm/đưa đón (`activitiesFee`), và giảm giá voucher hợp lệ được kiểm chứng trực tiếp trên server.
+- **Promotions Hub & Deep-Link Campaign:** Trải nghiệm ưu đãi 3 tầng ngay trang chủ kèm trung tâm `/deals` và landing page `/deals/[slug]` truyền thẳng mã ưu đãi qua `BookingContext` vào modal chi tiết/giỏ đặt phòng, áp dụng xuyên suốt cả lưu trú lẫn đặt dịch vụ hoạt động.
+- **Khép kín giao dịch đa dịch vụ & Quản trị Chủ nhà:** Hỗ trợ đặt phòng độc lập, đặt vé tham quan/eSIM/Pocket WiFi/tour/xe riêng độc lập (`ACT-XXXXXX`), hoặc ghép gói Stay + Activity Bundle thanh toán 1 lần qua cổng sandbox (`pending_payment` -> webhook HMAC) và hủy riêng từng dịch vụ đính kèm mà vẫn giữ nguyên phòng, cùng Cổng Chủ nhà/Quản trị `/host` (RBAC).
 
-### 1.3. Ma trận phạm vi hiện trạng (Baseline v0.4.0)
+### 1.3 Phạm vi Hệ thống (Implemented — Khớp `PLAN.md v3.3`)
 
-| Nhóm tính năng | Trạng thái hiện tại | Ghi chú kiểm soát |
+| Hạng mục / Phân hệ | Trạng thái | Chi tiết thực tế |
 | :--- | :--- | :--- |
-| Tìm kiếm, lọc đa tiêu chí, sắp xếp, thẻ lọc nhanh & URL Query Sync | **Đã triển khai đầy đủ** | 12 chỗ nghỉ, 8 thành phố, 5 loại hình, giá 790k–6.5tr VNĐ/đêm; đồng bộ 2 chiều query string trên `/` |
-| Trang chi tiết chỗ nghỉ riêng (`/stays/[id]`) & SEO/OpenGraph | **Đã triển khai đầy đủ** | SSR gọi `GET /api/v1/properties/:id`, `generateMetadata`, liên kết từ `PropertyCard` & `PropertyModal`, `404` khi không tồn tại |
-| Đăng nhập / Đăng ký / OTP & Đồng bộ Wishlist (`AuthModal`, `AuthContext`) | **Đã triển khai đầy đủ** | Mật khẩu `scrypt`, OTP 6 số (dev sandbox có mã thử), phiên `HttpOnly` Cookie lưu PostgreSQL, merge Wishlist `localStorage ↔ user_favorites`, seam Google OAuth |
-| Hệ thống Mã giảm giá động (Voucher Engine) | **Đã triển khai đầy đủ** | `evaluatePromotionVoucher` + `POST /api/v1/vouchers/validate` + kiểm tra đơn tối thiểu/trần giảm/hạn dùng trên cả FE & BE (`LUXESTAY250`, `SUMMERVIBE`) |
-| Cổng thanh toán Sandbox, Webhook HMAC-SHA256 & Email vé điện tử | **Đã triển khai đầy đủ (Sandbox)** | `hotel` xác nhận ngay; `vnpay`/`momo`/`card` đi qua `pending_payment` → `/payments/[transactionId]` → webhook ký `HMAC-SHA256` + chống trùng idempotency + lưu & xem trước email trong `notification_logs` |
-| Hệ thống Tiện ích khu nghỉ dưỡng (51 mục / 7 nhóm) | **Đã triển khai đầy đủ** | Master–Detail Explorer + đồng bộ dịch vụ chọn thêm vào báo giá |
-| Quản lý, Lịch sử & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`) | **Đã triển khai đầy đủ** | Hiển thị **"Đơn đặt phòng của tôi"** khi đăng nhập, tra cứu khách vãng lai bằng `bookingId` + email/SĐT VN, hủy theo chính sách `freeCancellation`, xem email vé điện tử & in PDF |
-| Điều phối lớp phủ (7 Modal/Drawer) & ARIA Dialog | **Đã triển khai đầy đủ** | Quản lý `z-index`, `Escape`, scroll lock tập trung |
-| Lịch trống phòng, Chống đặt trùng & Giá theo mùa | **Đã triển khai đầy đủ** | `GET /api/v1/properties/:id/availability`, khóa `SELECT ... FOR UPDATE` chống đặt trùng (`409 CONFLICT`), phụ thu cuối tuần T6–T7 (+20%) & lễ VN (+30%), `AvailabilityCalendar` & `SeasonalPricingSummary` |
-| Đánh giá xác thực lưu trú (Verified Reviews) | **Đã triển khai đầy đủ** | Chỉ khách đã hoàn tất lưu trú (`completed` hoặc qua 12:00 `checkOut`) được gửi review qua `POST /api/v1/properties/:id/reviews` (chặn gửi trùng `booking_id UNIQUE`), tự tính lại `rating`/`reviewCount` atomic & hiện badge **"Đã xác thực lưu trú"** |
-| Cổng Chủ nhà & Quản trị (Host/Admin Portal `/host`) | **Đã triển khai đầy đủ** | RBAC `guest \| host \| admin`, `properties.owner_user_id`, CRUD chỗ nghỉ, khóa ngày & ghi đè giá `property_availability`, quản lý đơn khách & báo cáo doanh thu (`GET /api/v1/host/analytics`) |
-| Đa ngôn ngữ (`VI`/`EN`), Đa tiền tệ (`VNĐ`/`USD`) & Playwright E2E | **Đã triển khai đầy đủ** | `LocaleContext` lưu `localStorage` qua `useSyncExternalStore` không đổi URL, nút chuyển đổi trên `Navbar`, và bộ Playwright Chromium E2E (`e2e/`, `npm run test:e2e`) chạy trong CI |
+| **Discovery Catalog & Filter** | ✅ **Implemented (Phase 0–4B)** | **42 stays**, **14 cities**, **8 Trending Destinations**, **9 Categories**, `SearchBar`, `FilterModal`, `CatalogUrlSync`, Load More **12/lần** |
+| **Detail, 51 Amenities & Availability** | ✅ **Implemented (Phase 0–3A)** | `PropertyModal` + `/stays/[id]`, **51 tiện ích** (`AMENITY_CATALOG`), `AvailabilityCalendar`, phụ phí mùa/cuối tuần, Reviews xác thực |
+| **Booking, Vouchers & Sandbox Payment** | ✅ **Implemented (Phase 0–2)** | Atomic lock (`SELECT ... FOR UPDATE`), `deriveBookingQuote`, `/bookings`, `/bookings/[bookingId]`, `/payments/[transactionId]` + HMAC webhook |
+| **Auth, OTP, Favorites & Locale** | ✅ **Implemented (Phase 2 & 3B)** | Email/password + OTP challenges, cookie session (`guest`/`host`/`admin`), `user_favorites`, `vi`/`en` & `VND`/`USD` currency |
+| **Host Portal (RBAC `/host`)** | ✅ **Implemented (Phase 3B)** | Tạo/sửa/xóa chỗ nghỉ (`host`/`admin`), ghi đè tồn kho/giá theo ngày, theo dõi booking & thống kê doanh thu |
+| **Promotions Hub, `/deals`, Media & Mobile** | ✅ **Implemented (Phase 4A–4C)** | 3-tier `PromotionsHub`, `/deals`, `/deals/[slug]`, **141/141 ảnh lưu trú/ưu đãi duy nhất**, `retiredImages.ts`, Mobile `360px+` `overflow-x: clip` & `E2E-6` |
+| **Activities & Things to Do Vietnam** | ✅ **Implemented (Phase 5, 5B & 5C / Epic 9)** | **56 dịch vụ** phủ **14/14 thành phố (`≥ 3`/TP)** (`11` điểm tham quan, `17` tour & hoạt động, `15` cần thiết cho du lịch, `13` giải trí & thư giãn), **3 ảnh thật/dịch vụ** với Bento Gallery + Lightbox (`OverlayContext`) + lướt ảnh trên `ActivityCard`, trọn bộ **6 phần "Điều bạn cũng nên biết"** (Bao gồm/Không bao gồm, Lịch trình, Lưu ý, Hướng dẫn vé, Chính sách hủy, Nhãn nhanh + Sticky Jump Bar & Accordion), `0005`–`0007` (24 bảng), đặt độc lập `ACT-XXXXXX` + smart Cross-Sell `1+2` & partial cancel, **309/309** ảnh duy nhất & `E2E-7` |
 
 ---
 
-## 2. Đối tượng người dùng (Target Personas)
+## 2. Personas & Hành trình Người dùng
 
-| Persona | Nhu cầu chính | Luồng sử dụng trọng tâm |
-| :--- | :--- | :--- |
-| **Du khách nghỉ dưỡng cuối tuần** (Cặp đôi / Nhóm bạn) | Tìm nhanh homestay săn mây, resort sát biển theo ngân sách và tiện ích nổi bật | Quick Trend / CategoryBar → Filter → PropertyModal → Checkout nhanh |
-| **Gia đình đi nghỉ dưỡng dài ngày** | Kiểm tra kỹ sức chứa (`maxGuests`), tiện nghi gia đình/hồ bơi, đăng ký dịch vụ đưa đón/spa kèm theo | SearchBar (ngày + người lớn + trẻ em) → PropertyAmenitiesModal → So sánh tổng phí → Đặt phòng |
-| **Người dùng săn ưu đãi / so sánh nhiều chỗ nghỉ** | Lưu nhiều chỗ nghỉ yêu thích để so sánh qua lại giữa các tab trình duyệt trước khi chốt | PropertyCard Wishlist → FavoritesDrawer → Mở lại chỗ nghỉ giữ nguyên cấu hình |
-| **Chủ nhà / Quản trị viên (Tương lai — Phase 3)** | Quản lý danh sách phòng, lịch trống, giá theo mùa, cấu hình tiện ích và duyệt đơn | Host Portal / Admin CMS (chưa triển khai trong v0.1) |
-
----
-
-## 3. Yêu cầu chức năng (Functional Requirements — Baseline v0.1)
-
-### FR-01: Tìm kiếm & Khám phá Chỗ nghỉ
-- **Mục đích:** Giúp người dùng thu hẹp nhanh chỗ nghỉ theo điểm đến, lịch trình, số lượng khách và loại hình.
-- **Hành vi chuẩn:**
-  - Nhập điểm đến tự do hoặc chọn từ 8 điểm đến nổi bật (`Đà Lạt`, `Phú Quốc`, `Sa Pa`, `Đà Nẵng`, `Hội An`, `Ninh Bình`, `Nha Trang`, `Hà Nội`); so khớp **không phân biệt dấu tiếng Việt và hoa/thường** trên thành phố, tỉnh, địa chỉ, tiêu đề và mô tả ngắn.
-  - Chọn lịch nhận/trả phòng bằng date picker ISO (`YYYY-MM-DD`) hoặc 4 preset ngày động tính theo ngày hiện tại (`Cuối tuần này`, `3 ngày 2 đêm`, `Giữa tuần thư giãn`, `Kỳ nghỉ cuối năm`). Tự động xóa ngày trả phòng nếu ngày nhận mới lớn hơn hoặc bằng ngày trả cũ.
-  - Tùy chỉnh số `người lớn` (tối thiểu 1), `trẻ em` (tối thiểu 0), `phòng` (tối thiểu 1); lọc ra các chỗ nghỉ có `maxGuests >= adults + children`.
-  - 6 tab loại hình trên `SearchBar` (`Tất cả`, `Homestay`, `Khách sạn`, `Villa biệt thự`, `Resort`, `Glamping`) đồng bộ 2 chiều với bộ lọc nâng cao.
-  - 5 nút **Xu hướng tìm kiếm nhanh** (`QuickSearchTrend`) áp đúng cặp điểm đến + danh mục/loại hình và xóa bộ lọc xung đột từ lượt tìm trước.
-  - Thanh danh mục sticky (`CategoryBar`) gồm 9 danh mục trải nghiệm (`all`, `mountain-view`, `beachfront`, `vintage-homestay`, `infinity-pool`, `ecolodge`, `pine-forest`, `city-center`, `luxury-resort`).
-
-### FR-02: Lọc đa tiêu chí, Sắp xếp & Thẻ bộ lọc đang bật
-- **Hành vi chuẩn:**
-  - `FilterModal` hỗ trợ lọc theo:
-    - Khoảng giá `minPrice..maxPrice` trong biên `0đ` đến `10.000.000đ` (bước trượt `250.000đ`) kèm 5 mức giá chọn nhanh (`Mọi mức giá`, `Dưới 1 triệu`, `1 – 2.5 triệu`, `2.5 – 5 triệu`, `Trên 5 triệu`).
-    - Loại hình chỗ nghỉ (chọn nhiều).
-    - Đánh giá tối thiểu (`minRating` từ `0` đến `5`).
-    - 9 nhóm tiện nghi (`pool`, `beach`, `sports-gym`, `dining`, `spa-wellness`, `transport-shuttle`, `bbq-campfire`, `bath-fireplace`, `family-pet`) theo ngữ nghĩa **AND** (chỗ nghỉ phải đáp ứng đủ mọi tiện nghi được chọn).
-    - Chính sách hủy miễn phí (`freeCancellationOnly`).
-  - 4 chế độ sắp xếp tất định: `Phổ biến nhất` (ưu tiên `isFeatured` → `rating` → `reviewCount`), `Giá thấp đến cao`, `Giá cao đến thấp`, `Đánh giá cao nhất`.
-  - Hiển thị danh sách **Active Filter Chips** trên `PropertyList` để gỡ từng điều kiện riêng lẻ; nút **"Xóa tất cả bộ lọc"** đặt lại trọn vẹn cả điểm đến, bộ lọc, tab loại hình và `sortBy`.
-
-### FR-03: Danh sách Yêu thích (Wishlist)
-- **Hành vi chuẩn:**
-  - Người dùng bấm biểu tượng trái tim trên `PropertyCard` hoặc `PropertyModal` để thêm/gỡ chỗ nghỉ yêu thích.
-  - Mở `FavoritesDrawer` từ thanh `Navbar` (có badge số lượng); bấm vào từng mục để mở trực tiếp `PropertyModal`.
-  - Khi chưa từng có dữ liệu trong `localStorage`, khởi tạo mặc định `["stay-01", "stay-02"]`. Khi người dùng chủ động bỏ hết yêu thích, giữ trạng thái rỗng `[]` (không tự phục hồi mặc định).
-  - Loại bỏ mã chỗ nghỉ không hợp lệ/trùng lặp, tự đồng bộ giữa các tab trình duyệt cùng origin, và không làm crash ứng dụng khi `localStorage` bị chặn hoặc hỏng JSON.
-
-### FR-04: Hệ thống Tiện ích & Dịch vụ Khu nghỉ dưỡng (Resort Amenities)
-- **Hành vi chuẩn:**
-  - Mỗi chỗ nghỉ khai báo danh sách `resortAmenities` tham chiếu tới danh mục chuẩn 51 tiện ích (`AMENITY_CATALOG`) chia theo 7 nhóm ưu tiên (`Hồ bơi & Bãi biển`, `Thể thao & Giải trí`, `Ẩm thực & Đồ uống`, `Dịch vụ khách sạn & Spa`, `Đưa đón & Di chuyển`, `Tiện nghi phòng & Gia đình`, `An ninh & Tiện ích chung`) và có thể ghi đè chi tiết riêng (tên, giờ mở cửa, vị trí, mức phí, ảnh, ghi chú).
-  - 3 loại phí chuẩn hóa nhất quán trên toàn ứng dụng:
-    - `included`: Đã bao gồm trong giá phòng, chỉ xem thông tin, không chọn thêm.
-    - `free-reservation`: Miễn phí (`0đ`), cho phép bật/tắt để đăng ký giữ chỗ trước.
-    - `paid`: Dịch vụ có phụ phí cố định theo kỳ nghỉ, cho phép bật/tắt và cộng trực tiếp vào báo giá.
-  - `PropertyCard` hiển thị tối đa 3 nhóm tiện ích nổi bật; `PropertyModal` hiển thị tối đa 6 tiện ích nổi bật kèm nút mở cửa sổ **Tất cả tiện ích & dịch vụ** (`PropertyAmenitiesModal`).
-  - `PropertyAmenitiesModal` hoạt động theo mô hình Master–Detail: tìm kiếm tiếng Việt không dấu, lọc theo nhóm, lọc theo mức phí (`Tất cả`, `Miễn phí`, `Có phụ phí`, `Đã chọn (N)`), xem chi tiết kèm ảnh/giờ/vị trí/lưu ý, bật/tắt 1-click và hỗ trợ chuyển qua lại danh sách ↔ chi tiết trên màn hình di động.
-
-### FR-05: Chi tiết Chỗ nghỉ, Phiên đặt phòng & Báo giá (`BookingSession` & `BookingQuote`)
-- **Hành vi chuẩn:**
-  - `PropertyModal` hiển thị thư viện ảnh, thông số phòng (`maxGuests`, `bedrooms`, `beds`, `bathrooms`), thông tin chủ nhà (`Superhost`, tỷ lệ phản hồi), mô tả, tiện ích, đánh giá khách hàng và bảng đặt phòng.
-  - **Khởi tạo một chiều (One-way Seeding):** Khi mở một chỗ nghỉ, phiên tự suy ra số đêm từ `SearchBar` (nếu ngày hợp lệ; hỗ trợ vắt qua năm với định dạng `dd/MM`; mặc định `2` đêm nếu trống hoặc không hợp lệ), kế thừa `adults`, `children`, `rooms` và tự động kẹp `adults` trong biên `[1..property.maxGuests]`, số đêm trong `[1..30]`.
-  - **Bảo toàn & Làm sạch phiên:** Đóng rồi mở lại cùng một chỗ nghỉ (khi `SearchBar` không đổi) sẽ giữ nguyên số đêm, số khách và tiện ích đã chọn; đổi chỗ nghỉ hoặc đổi lịch tìm kiếm sẽ tạo phiên mới sạch; hoàn tất đặt phòng sẽ tự xóa bản nháp.
-  - **Công thức tính giá chuẩn (`BookingQuote`):**
-    - `nightsTotal = pricePerNight * nights`
-    - `cleaningFee = 150.000đ`
-    - `amenitiesFee = tổng price của các tiện ích paid đã chọn`
-    - `discount = 100.000đ` (ưu đãi cố định hiện hành)
-    - `total = max(0, nightsTotal + cleaningFee + amenitiesFee - discount)`
-
-### FR-06: Quy trình Thanh toán, Xác nhận Server & Vé điện tử
-- **Hành vi chuẩn:**
-  - `BookingCheckoutModal` hiển thị tóm tắt kỳ nghỉ, danh sách tiện ích đã chọn (cho phép gỡ nhanh từng mục và cập nhật tổng tiền ngay lập tức), form thông tin khách (`fullName`, `phone`, `email`, `note` tùy chọn), nút **"Điền nhanh thông tin mẫu"** phục vụ trải nghiệm thử, và 4 lựa chọn phương thức thanh toán (`momo`, `vnpay`, `card`, `hotel`).
-  - Kiểm tra hợp lệ bắt buộc: không được để trống họ tên/SĐT/email; SĐT hợp lệ chuẩn Việt Nam (`0...` hoặc `+84...`, 9–11 chữ số sau tiền tố); email đúng định dạng.
-- **FR-06 (cập nhật v0.2.0):** Khi xác nhận ở chế độ `api`, client gửi `ServerReservationIntent` tới `POST /api/v1/reservations` tại `@luxestay/api` (Hono); server validate bằng `ServerReservationIntentSchema` và tính lại toàn bộ báo giá chuẩn (`201 Created` trả mã `LX-XXXXXX`, lỗi `4xx`/`5xx`/mạng hiển thị trung thực qua `HttpApiError`, không fallback ngầm). Ở chế độ `mock` độc lập (`NEXT_PUBLIC_DATA_MODE=mock`), ứng dụng dùng seed adapter nội bộ.
-  - Nếu người dùng đóng modal trong lúc đang gửi yêu cầu, request bị hủy sạch thông qua `AbortSignal` để tránh chuyển trạng thái ngoài ý muốn.
-  - `BookingSuccessModal` hiển thị mã đặt phòng, pháo hoa chúc mừng, chi tiết check-in (`14:00`) / check-out (`12:00`), danh sách tiện ích đã đăng ký, hướng dẫn liên hệ chủ nhà và nút **"Lưu vé xác nhận PDF"** (`window.print()`).
-
-### FR-07: Khuyến mãi & Bằng chứng xã hội
-- `PromotionBanner`: Hiển thị đồng hồ đếm ngược, hạn sử dụng (`30/11/2026`), danh sách mã voucher (`LUXESTAY250`, `SUMMERVIBE`) với nút sao chép 1 chạm và nút cuộn tới danh sách phòng.
-- `TrendingDestinations`: 8 thẻ điểm đến phổ biến; bấm vào sẽ đặt `destination` trong bộ lọc và cuộn mượt xuống danh sách chỗ nghỉ.
-- `TestimonialsSection`: Hiển thị đánh giá thực tế từ khách hàng trải nghiệm.
-
-### FR-08: Điều phối Lớp phủ & Trợ năng
-- Toàn bộ 7 lớp phủ (`FilterModal`, `FavoritesDrawer`, `AuthModal`, `PropertyModal`, `PropertyAmenitiesModal`, `BookingCheckoutModal`, `BookingSuccessModal`) đều đăng ký qua hệ thống ngăn xếp tập trung:
-  - Phân tầng `z-index` không chồng chéo (hỗ trợ modal lồng nhau như `PropertyAmenitiesModal` mở trên `PropertyModal`).
-  - Phím `Escape` chỉ đóng duy nhất lớp phủ trên cùng.
-  - Khóa cuộn nền (`body overflow: hidden`) khi có ít nhất 1 lớp phủ mở và khôi phục chính xác khi lớp cuối cùng đóng.
-  - Đầy đủ thuộc tính trợ năng `role="dialog"`, `aria-modal="true"`, `aria-label`.
-
-### FR-09: Tra cứu & Hủy Đơn đặt phòng (`/bookings`, `/bookings/[bookingId]`)
-- **Mục đích:** Cho phép khách đã đặt phòng chủ động tra cứu vé điện tử, in/lưu PDF và hủy phòng theo đúng chính sách hủy của chỗ nghỉ mà chưa cần đăng nhập tài khoản.
-- **Hành vi chuẩn:**
-  - Người dùng mở **"Tra cứu đơn"** trên `Navbar` (`/bookings`) hoặc bấm **"Quản lý / Tra cứu đơn đặt phòng"** ngay sau khi đặt thành công trong `BookingSuccessModal`.
-  - Bắt buộc cung cấp đồng thời **Mã đặt phòng** (`LX-XXXXXX`, không phân biệt hoa/thường) và **Email hoặc SĐT đặt phòng** (email không phân biệt hoa/thường; SĐT VN tự chuẩn hóa `0...` / `84...` / `+84...`). Sai thông tin liên hệ trả lỗi `403 FORBIDDEN`; không tồn tại mã trả `404 NOT_FOUND`.
-  - Màn hình `/bookings/[bookingId]` hiển thị trạng thái đơn (`confirmed` / `cancelled`), chi tiết chỗ nghỉ, lịch nhận/trả phòng, tiện ích đã đăng ký, cấu thành giá và hỗ trợ in vé PDF.
-  - Khi đơn ở trạng thái `confirmed` và chỗ nghỉ hỗ trợ `freeCancellation`, khách có thể hủy đơn (kèm lý do tùy chọn) qua `PATCH /api/v1/reservations/:bookingId/cancel`; hệ thống cập nhật bền vững `status = "cancelled"`, `cancelledAt`, `cancellationReason`. Nếu chỗ nghỉ không hỗ trợ hủy miễn phí hoặc đơn đã hủy trước đó, API trả `409 CONFLICT`.
-
-### FR-10: Trang Chi tiết Chỗ nghỉ độc lập (`/stays/[id]`) & Đồng bộ URL Tìm kiếm
-- **Mục đích:** Mở khóa SEO, chia sẻ liên kết trực tiếp cho từng chỗ nghỉ và từng trạng thái lọc/tìm kiếm trên trang chủ.
-- **Hành vi chuẩn:**
-  - Route `/stays/[id]` render SSR từ `GET /api/v1/properties/:id` (hoặc seed ở `mock` mode), tạo metadata SEO/OpenGraph động (`title`, `description`, `og:image`), trả trang `404` khi mã chỗ nghỉ không tồn tại.
-  - Giao diện `/stays/[id]` hiển thị đầy đủ thư viện ảnh, thông số, chủ nhà, đánh giá, danh mục tiện ích tích hợp chọn thêm add-on, bảng tính giá trực tiếp và nút đặt phòng chuyển thẳng sang `BookingCheckoutModal`.
-  - `PropertyCard` có liên kết trực tiếp trên tiêu đề dẫn tới `/stays/[id]`; `PropertyModal` có nút **"Trang chi tiết"** và nút **"Chia sẻ"** sao chép URL `/stays/[id]`.
-  - Trang chủ `/` đồng bộ 2 chiều trạng thái `StayCatalogQueryState` với URL query string (`dest`, `in`, `out`, `adults`, `children`, `rooms`, `cat`, `min`, `max`, `types`, `rating`, `amenities`, `freeCancel`, `sort`), bỏ qua giá trị mặc định để URL gọn và tự sanitize mọi tham số không hợp lệ.
-
-### FR-11: Lịch phòng trống, Chống đặt trùng & Giá theo mùa
-- **Mục đích:** Đảm bảo tồn kho phòng chính xác theo từng đêm, ngăn tuyệt đối 2 khách đặt trùng cùng một căn/phòng và minh bạch phụ thu cuối tuần/ngày lễ ngay từ bước chọn ngày.
-- **Hành vi chuẩn:**
-  - `GET /api/v1/properties/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` trả về lịch 45 ngày gồm tồn kho còn lại (`remainingUnits`), trạng thái khóa ngày (`isBlocked`), và giá hiệu lực theo đêm (`effectivePrice`, `priceReason`: `base | weekend | holiday | override`).
-  - Quy tắc giá theo mùa: ưu tiên `overridePrice` > ngày lễ cố định VN (`+30%`: `01-01`, `04-30`, `05-01`, `09-02`, `12-24`, `12-25`, `12-31`) > đêm cuối tuần Thứ 6 & Thứ 7 (`+20%`) > giá gốc, nhân theo `guests.rooms` và hiển thị rõ dòng **"Phụ thu cuối tuần / ngày lễ"** kèm bảng chi tiết từng đêm (`SeasonalPricingSummary`).
-  - Khi gửi `POST /api/v1/reservations`, server khóa giao dịch hàng `SELECT ... FOR UPDATE` (PostgreSQL) hoặc mutex theo `propertyId` (`memory`), tính tổng phòng đang giữ bởi đơn `confirmed` và `pending_payment` chưa hết hạn; nếu thiếu phòng hoặc trùng ngày khóa trả `409 CONFLICT`. Hủy đơn, thanh toán thất bại, hết hạn hoặc hoàn tất lưu trú sẽ giải phóng phòng ngay lập tức.
-  - Component `AvailabilityCalendar` trên `/stays/[id]` và `PropertyModal` cho phép xem giá từng đêm, cảnh báo xung đột phòng trống và bấm chọn ngày nhận phòng trực tiếp.
-
-### FR-12: Hoàn tất Lưu trú & Đánh giá Xác thực (Verified Reviews)
-- **Mục đích:** Chỉ cho phép khách hàng thực sự đã lưu trú gửi đánh giá, ngăn chặn đánh giá ảo và giữ điểm số trung bình trung thực.
-- **Hành vi chuẩn:**
-  - Bổ sung trạng thái đơn `completed` và endpoint `POST /api/v1/reservations/:bookingId/complete` (khả dụng ở chế độ Sandbox để kiểm thử tức thì và dành cho Host/Admin ở Phase 3B); đơn đã `completed` không thể hủy (`409 CONFLICT`).
-  - Endpoint `POST /api/v1/properties/:id/reviews` chỉ chấp nhận khi người gửi là chủ đơn hợp lệ (`403 FORBIDDEN` nếu sai), đơn đã `completed` hoặc `confirmed` quá `12:00` ngày `checkOut` (`409 CONFLICT` nếu chưa lưu trú xong), và đơn chưa từng gửi đánh giá (`reviews.booking_id UNIQUE`, `409 CONFLICT` nếu gửi trùng).
-  - Server chèn review với `isVerified = true` và tính lại `properties.rating` + `properties.review_count` trong cùng transaction DB; UI hiển thị badge **"Đã xác thực lưu trú"** trên `/stays/[id]` & `PropertyModal`, cùng biểu mẫu đánh giá 1–5 sao ngay trên `/bookings/[bookingId]`.
-
-### FR-13: Phân quyền RBAC & Cổng Chủ nhà / Quản trị (`/host`)
-- **Mục đích:** Cung cấp công cụ tự vận hành cho Chủ nhà (`host`) và Quản trị viên (`admin`) ngay trên cùng nền tảng mà vẫn cách ly chặt chẽ quyền truy cập theo chủ sở hữu.
-- **Hành vi chuẩn:**
-  - Người dùng mang 1 trong 3 vai trò `guest | host | admin`; mỗi chỗ nghỉ gắn `ownerUserId`. API `/api/v1/host/*` trả `401 UNAUTHORIZED` nếu chưa đăng nhập và `403 FORBIDDEN` nếu là `guest` hoặc `host` cố thao tác trên chỗ nghỉ không thuộc sở hữu.
-  - Giao diện `/host` cung cấp 4 phân hệ: **Tổng quan & Doanh thu** (KPI + biểu đồ doanh thu theo tháng + hiệu suất từng chỗ nghỉ), **Chỗ nghỉ** (tạo/sửa/xóa — chặn xóa `409` nếu còn đơn hoạt động), **Lịch phòng & Giá đặc biệt** (khóa ngày / ghi đè giá cập nhật tức thì vào `property_availability`), và **Đơn đặt phòng khách** (hỗ trợ đánh dấu hoàn tất lưu trú kể cả ngoài chế độ Sandbox).
-
-### FR-14: Đa ngôn ngữ (`VI`/`EN`) & Đa tiền tệ (`VNĐ`/`USD`)
-- **Mục đích:** Hỗ trợ du khách quốc tế và nội địa chuyển đổi ngôn ngữ/đơn vị tiền tệ tức thì mà không làm gián đoạn đường dẫn chia sẻ.
-- **Hành vi chuẩn:**
-  - `Navbar` cung cấp nút chuyển trực tiếp `VNĐ ↔ USD` và `VI ↔ EN`, lưu bền vững trong `localStorage` qua `LocaleContext` (`useSyncExternalStore`) không gây lệch SSR Hydration.
-  - Giá hiển thị tự động quy đổi từ đơn vị chuẩn `VND` sang `USD` theo tỷ giá tham khảo `25.000 VNĐ/USD` (ví dụ `6.500.000 ₫` → `$260` ở `en-US`).
+1. **Khách du lịch / Guest Finder:**
+   - Truy cập `/`, khám phá 8 điểm đến nổi bật và dải teaser **Hoạt động & Vui chơi Việt Nam**, lọc theo 9 danh mục hoặc từ khóa/ngày/khách, xem chi tiết tại modal hoặc `/stays/[id]`, ghép thêm xe đón sân bay/vé tham quan/tour địa phương hoặc khám phá 2 tầng tại `/activities`, tạo booking nhanh (họ tên, SĐT Việt Nam `VN_PHONE_REGEX`, email) và tra cứu cả `LX-` lẫn `ACT-` qua `/bookings`.
+2. **Thành viên đăng nhập / Loyalty Member:**
+   - Đăng ký/đăng nhập (mật khẩu hoặc OTP), lưu danh sách yêu thích vào `user_favorites` (`FavoritesDrawer`), đủ điều kiện sử dụng voucher giới hạn như `NEW_USER_ONLY`, và quản lý lịch sử đơn phòng lẫn đơn trải nghiệm trong `/bookings`.
+3. **Chủ nhà / Partner Host (`role = "host"`):**
+   - Truy cập `/host` (bảo vệ bằng RBAC), thêm mới hoặc cập nhật thông tin chỗ nghỉ, thiết lập block ngày / phụ phí mùa tại `property_availability`, xem đơn đặt phòng đến và tổng quan doanh thu.
+4. **Admin / Release & QA Operations:**
+   - Vận hành `db:prepare` (`vercelPrepare.ts`) không ghi đè dữ liệu host/user, kiểm định 0% trùng lặp ảnh qua `scripts/verify-seed-images.mjs` (309 slots), và giữ bộ kiểm thử `128` tests + `7` E2E flows xanh trước mỗi lần release.
 
 ---
 
-## 4. Yêu cầu phi chức năng (Non-Functional Requirements)
+## 3. Functional Requirements (`FR-01` – `FR-17`)
 
-| Hạng mục | Yêu cầu cụ thể |
-| :--- | :--- |
-| **Hiệu năng UI** | Chia tách domain context (`Favorites`, `Catalog`, `BookingSession`) để giảm re-render chéo; cache bản chiếu tiện ích theo tham chiếu (`WeakMap`); dùng `next/image` với `remotePatterns` kiểm soát domain ảnh (`images.unsplash.com`, `plus.unsplash.com`). |
-| **Toàn vẹn giá & Dữ liệu** | Server không bao giờ tin tưởng `pricing` gửi từ trình duyệt; toàn bộ dữ liệu đọc từ `localStorage` phải được sanitize (lọc kiểu, trùng lặp, ID không tồn tại). |
-| **An toàn SSR / Hydration** | Không đọc trực tiếp `window.localStorage` trong render/useState initializer; sử dụng `useSyncExternalStore` với `getServerSnapshot` nhất quán. |
-| **Khả năng kiểm thử** | Toàn bộ logic miền cốt lõi nằm trong `@luxestay/domain` thuần, có thể kiểm thử tự động 4 tầng (`contracts`, `domain`, `api`, `web`) bằng Node test runner không cần trình duyệt hay Docker. |
-| **Responsive & UX** | Hoạt động trơn tru trên mobile (`< 640px`), tablet và desktop; ngôn ngữ giao diện `vi-VN`, đơn vị tiền tệ `VNĐ`. |
-| **Chất lượng mã nguồn** | TypeScript `strict: true`, tuân thủ ESLint 9 + quy tắc import boundaries toàn repo (`eslint.boundaries.mjs`), giữ kiến trúc Deep Module và thuật ngữ nhất quán với [GLOSSARY.md](../GLOSSARY.md). |
+### `FR-01`: Catalog Discovery & Progressive Listing
+- Hiển thị **42 chỗ nghỉ** trên **14 thành phố** cùng **8 Trending Destinations**, **9 Categories**, và **3 Testimonials**.
+- Component [`PropertyList.tsx`](../apps/web/src/features/catalog/PropertyList.tsx) mặc định hiển thị 12 kết quả đầu và nạp thêm **12 chỗ nghỉ mỗi lần** (*Load More*) để tối ưu tốc độ render trên mobile và desktop.
+- Địa chỉ đường phố của từng chỗ nghỉ tách biệt với tên các điểm đến khác để tránh lọc nhầm kết quả theo substring.
+
+### `FR-02`: Multi-Faceted Search & Filter
+- [`SearchBar.tsx`](../apps/web/src/features/catalog/SearchBar.tsx) và [`FilterModal.tsx`](../apps/web/src/features/catalog/FilterModal.tsx) hỗ trợ tìm theo điểm đến/từ khóa, ngày nhận/trả phòng, số người lớn/trẻ em/phòng, khoảng giá, danh mục (`CategoryId`), và đa tiện ích (`AmenityFilterKey`).
+- Toàn bộ trạng thái tìm kiếm đồng bộ với URL query thông qua [`CatalogUrlSync.tsx`](../apps/web/src/features/catalog/CatalogUrlSync.tsx) và xử lý thống nhất tại [`catalogQuery.ts`](../packages/domain/src/catalogQuery.ts).
+
+### `FR-03`: Property Detail, Deep-Link `/stays/[id]` & 51 Amenities
+- Cho phép xem nhanh qua [`PropertyModal.tsx`](../apps/web/src/features/property/PropertyModal.tsx) hoặc mở trực tiếp tuyến SEO/chia sẻ `/stays/[id]` ([`StayDetailView.tsx`](../apps/web/src/features/property/StayDetailView.tsx)).
+- Hiển thị **51 tiện ích chuẩn hóa** (`AMENITY_CATALOG`), phân tách rõ 3 nhóm `AmenityPricingTypeSchema` (`included`, `free-reservation`, và dịch vụ bổ sung trả phí `paid`) với chi tiết từng hạng mục trong [`AmenityDetailPanel.tsx`](../apps/web/src/features/property/AmenityDetailPanel.tsx).
+
+### `FR-04`: Availability Calendar & Seasonal Pricing
+- [`AvailabilityCalendar.tsx`](../apps/web/src/features/property/AvailabilityCalendar.tsx) và API `/api/v1/properties/:id/availability` đọc bảng `property_availability` kết hợp booking còn hiệu lực (`confirmed` và `pending_payment` chưa quá `paymentExpiresAt`).
+- Hiển thị rõ từng đêm bị chặn (`isBlocked`), số phòng còn trống (`remainingUnitsByDate`), và giá hiệu lực theo đêm (`nightlyBreakdown`).
+
+### `FR-05`: Server-Authoritative Quote & Pricing Engine
+- Mọi tính toán chi phí tại [`availability.ts`](../packages/domain/src/availability.ts) và [`bookingSession.ts`](../packages/domain/src/bookingSession.ts) tuân theo đúng công thức sau trên cả preview lẫn server checkout:
+  - `baseNightsTotal = pricePerNight * nights * rooms`
+  - `nightsTotal = sum(nightlyBreakdown.effectivePrice) * rooms`
+  - `seasonalSurcharge = nightsTotal - baseNightsTotal`
+  - `subtotal = nightsTotal + CLEANING_FEE (150.000đ) + amenitiesFee`
+  - `serviceFee = 0`
+  - `discount = evaluatePromotionVoucher(...)` (`0` nếu mã không hợp lệ hoặc không đủ điều kiện)
+  - `total = Math.max(0, subtotal - discount)`
+
+### `FR-06`: Booking Checkout, Atomic Lock & Order Lookup
+- [`POST /api/v1/reservations`](../apps/api/src/modules/reservations/routes.ts) thực hiện kiểm tra tồn kho và chèn dữ liệu nguyên tử bằng transaction (`SELECT ... FOR UPDATE` trên PostgreSQL) đồng thời tính lại toàn bộ báo giá phía server.
+- Trạng thái khởi tạo phân nhánh theo phương thức thanh toán: thanh toán trực tuyến tạo trạng thái `pending_payment` (giữ chỗ đến `paymentExpiresAt`), phương thức không trực tuyến tạo trạng thái `confirmed`.
+- Trang `/bookings` và `/bookings/[bookingId]` cho phép tra cứu đơn, hủy đơn (`pending_payment` luôn được phép hủy; `confirmed` kiểm tra chính sách `freeCancellation`), và xem nhật ký thông báo.
+
+### `FR-07`: Promotions Hub, `/deals`, `/deals/[slug]` & Voucher Engine
+- [`PromotionsHub.tsx`](../apps/web/src/features/promotions/PromotionsHub.tsx) trên trang chủ tổ chức thành 3 tầng rõ rệt:
+  1. **Tier 1 (`VoucherCarousel`):** Danh sách ưu đãi trang chủ gồm **5 voucher** active không giới hạn thành viên (`buildHomepageTier1Vouchers` lọc bỏ `memberOnly`/`audience === "member"` như `VIPRESORT1M`; toàn bộ **6 voucher** hiển thị tại `/deals`), hỗ trợ sao chép nhanh và mở `VoucherTermsModal`.
+  2. **Tier 2 (`CampaignHeroBanner`):** **1 chiến dịch nổi bật** (`placement: "hero"`) kèm đồng hồ đếm ngược (`CampaignCountdown`), pill sao chép mã và CTA dẫn vào trang chiến dịch.
+  3. **Tier 3 (`CampaignCarousel`):** Thẻ trượt ngang **4 chiến dịch** (`placement: "carousel"`, tổng cộng **5 chiến dịch** toàn cục) dẫn tới `/deals/[slug]`.
+- Tuyến `/deals` hiển thị toàn bộ ưu đãi và voucher kèm bộ lọc đối tượng; tuyến `/deals/[slug]` ([`DealDetailView.tsx`](../apps/web/src/features/promotions/DealDetailView.tsx)) hiển thị chi tiết chiến dịch và các chỗ nghỉ hợp lệ ngay trên trang, bấm xem/đặt sẽ gọi `BookingContext.openPropertyWithPromo` / `startCheckoutWithPromo` (lưu `BookingSession.promoCode` trong bộ nhớ).
+- Server xác thực mã qua `POST /api/v1/vouchers/validate` với **8 `VoucherErrorReason`** (bao gồm kiểm tra `NEW_USER_ONLY` theo tài khoản chưa từng hoàn tất đơn và `PROPERTY_NOT_ELIGIBLE` theo loại hình/danh mục chỗ nghỉ).
+
+### `FR-08`: Sandbox Payment Gateway & Idempotent Webhooks
+- Khi đơn hàng mang trạng thái `pending_payment`, người dùng được chuyển đến tuyến `/payments/[transactionId]` ([`PaymentGatewayView.tsx`](../apps/web/src/features/payment/PaymentGatewayView.tsx)) để giả lập kết quả thanh toán (MoMo / VNPay / Card).
+- Webhook `POST /api/v1/payments/webhook/:provider` kiểm tra chữ ký HMAC ([`signature.ts`](../apps/api/src/modules/payments/signature.ts)) và chống xử lý trùng lặp qua bảng `payment_webhook_events`, sau đó cập nhật đơn hàng và ghi log vào `notification_logs`.
+
+### `FR-09`: Authentication, Sessions & OTP
+- [`auth`](../apps/api/src/modules/auth/routes.ts) hỗ trợ đăng ký, đăng nhập mật khẩu, phát hành/xác thực mã OTP (`otp_challenges`), phiên làm việc cookie (`user_sessions`), phân quyền theo `UserRoleSchema` (`guest`, `host`, `admin`; trong đó `"member"` chỉ là nhãn `VoucherAudience` cho voucher ưu đãi thành viên đã đăng nhập), và tài khoản demo phục vụ kiểm thử nhanh.
+
+### `FR-10`: Favorites Persistence
+- Thành viên đã xác thực có thể lưu/bỏ lưu hoặc đồng bộ danh sách yêu thích qua `GET/PUT /api/v1/favorites` và `POST /api/v1/favorites/:propertyId/toggle` (`user_favorites`), xem lại danh sách tại [`FavoritesDrawer.tsx`](../apps/web/src/features/favorites/FavoritesDrawer.tsx).
+
+### `FR-11`: Verified Reviews & Ratings
+- Mỗi chỗ nghỉ hiển thị điểm trung bình và chi tiết đánh giá lưu tại bảng `reviews` (được trả về trong `Property.reviews` qua `GET /api/v1/catalog` và `GET /api/v1/properties/:id`), cho phép gửi đánh giá đã xác thực đơn đặt phòng qua `POST /api/v1/properties/:id/reviews` ([`reviews.ts`](../packages/domain/src/reviews.ts)).
+
+### `FR-12`: Host Portal & RBAC (`/host`)
+- Giới hạn truy cập theo role `host` hoặc `admin`; hỗ trợ xem thống kê doanh thu/công suất (`GET /api/v1/host/analytics`), tạo mới (`POST`), chỉnh sửa (`PATCH`) hoặc xóa (`DELETE`) chỗ nghỉ, cập nhật giá/tồn kho/chặn ngày theo lịch (`PUT /api/v1/host/properties/:id/availability`), và theo dõi danh sách reservation của chủ nhà (`GET /api/v1/host/reservations`).
+
+### `FR-13`: Localization & Multi-Currency (`VND` / `USD`)
+- [`LocaleContext.tsx`](../apps/web/src/features/locale/LocaleContext.tsx) và [`locale.ts`](../packages/domain/src/locale.ts) hỗ trợ chuyển đổi ngôn ngữ `vi`/`en` cùng công cụ quy đổi tiền tệ `VND`/`USD` (`CurrencyCodeSchema`, mặc định `DEFAULT_USD_EXCHANGE_RATE = 25_000`) nhất quán giữa SSR và CSR.
+
+### `FR-14`: Overlay Stack & Keyboard Ergonomics
+- [`OverlayContext.tsx`](../apps/web/src/shared/overlay/OverlayContext.tsx) điều phối ngăn xếp các modal/drawer (chi tiết chỗ nghỉ, tiện ích, checkout, auth, voucher terms, filter) theo nguyên tắc LIFO bằng phím `Escape` hoặc bấm nền mờ.
+
+### `FR-15`: Seed Media Integrity & Authentic Visual Standards
+- Toàn bộ **141 media slots** (ảnh chính + gallery của 42 chỗ nghỉ, 8 điểm đến, 5 campaigns) không được trùng lặp trên phạm vi toàn hệ thống (0% duplicate).
+- Mọi ảnh chỗ nghỉ phải đúng theo **4 trục kiểm định**: (1) đúng loại hình lưu trú, (2) đúng đặc trưng địa lý/vùng miền, (3) đúng phân khúc giá, và (4) phản ánh trung thực `resortAmenities` hiện có (không minh họa hồ bơi/biển khi chỗ nghỉ không sở hữu).
+- Ảnh thay thế cũ được ghi sổ tại [`retiredImages.ts`](../packages/domain/src/seed/retiredImages.ts) để `repairRetiredSeedImages(db)` sửa dữ liệu trên Neon có điều kiện an toàn; quy trình kiểm chứng tự động qua [`verify-seed-images.mjs`](../scripts/verify-seed-images.mjs).
+
+### `FR-16`: Mobile Responsive Stability (`360×800` & `390×844`)
+- Giao diện trang chủ, trang hoạt động/đưa đón và luồng đặt phòng phải duy trì `document.documentElement.scrollWidth <= window.innerWidth` ở các kích thước màn hình hẹp (`360×800`, `390×844`).
+- Áp dụng `overflow-x: clip` trên `html, body` tại [`globals.css`](../apps/web/src/app/globals.css), `w-full min-w-0` cho mọi section/grid/carousel (`PromotionsHub`, `HorizontalCarouselShell`, `PropertyList`, `TestimonialsSection`), giới hạn chiều rộng popover `SearchBar` theo viewport, và khóa chống hồi quy bằng Playwright `E2E-6` & `E2E-7`.
+
+### `FR-17`: Activities, Things to Do Vietnam (56 Services · 14 Cities · 3-Photo Gallery & "Điều bạn cũng nên biết") & Bundle Cross-Sell
+- Danh mục **56 dịch vụ** (`act-01`..`act-56`) phủ kín **14/14 thành phố Việt Nam** với tối thiểu **3 dịch vụ/thành phố**, tổ chức theo **điều hướng 2 tầng** trên `/activities` ([`ActivitiesHubView.tsx`](../apps/web/src/features/activities/ActivitiesHubView.tsx)):
+  - **Tầng 1 (5 mục lớn):** `Khám phá` (4 dải tuyển chọn theo chủ đề + lưới Xem thêm `12/lượt`), `Điểm tham quan` (`11`), `Tour & Hoạt động` (`17`), `Cần thiết cho du lịch` (`15`), `Giải trí & Thư giãn` (`13`).
+  - **Tầng 2 (11 danh mục con chi tiết)** đồng bộ 2 chiều qua URL query (`?section=&sub=&city=&period=&q=&sort=`). Thẻ [`ActivityCard.tsx`](../apps/web/src/features/activities/ActivityCard.tsx) hiển thị badge số ảnh (`"3 ảnh"`) và nút chuyển nhanh 3 góc ảnh ngay trên danh sách.
+- Trang chi tiết SSR `/activities/[slug]` ([`ActivityDetailView.tsx`](../apps/web/src/features/activities/ActivityDetailView.tsx)) trang bị:
+  - **Bento Gallery 3 ảnh + Lightbox toàn màn hình** ([`ActivityGallery.tsx`](../apps/web/src/features/activities/ActivityGallery.tsx)) tích hợp `OverlayContext` (`kind: "activity-lightbox"`, hỗ trợ phím mũi tên/`Escape` và chú thích từng góc ảnh `imageCaptions`).
+  - **Trọn bộ 6 phần "Điều bạn cũng nên biết" chuẩn OTA** ([`ActivityKnowBeforeYouGo.tsx`](../apps/web/src/features/activities/ActivityKnowBeforeYouGo.tsx)): Dải nhãn nhanh (*Phù hợp cho*, *Ngôn ngữ*, *Hủy miễn phí*), **Sticky Section Jump Bar**, **Lịch trình / Quy trình từng bước**, **Bao gồm & Không bao gồm** 2 cột, và **Accordion thông minh** (mở sẵn *Lưu ý quan trọng trước khi đi* & *Hướng dẫn sử dụng vé*, thu gọn/mở *Chính sách hủy & đổi lịch chi tiết* & *Điểm tập trung*).
+  - Khối thông số chuyên biệt (`transferDetails`, `attractionDetails`, `essentialDetails`), chọn hạng vé/gói eSIM/phòng chờ thương gia/khung giờ, áp mã ưu đãi Promotions Hub và đặt độc lập `ACT-XXXXXX`.
+- Dải teaser **"Hoạt động & Vui chơi nổi tiếng Việt Nam"** ([`HomeThingsToDoTeaser.tsx`](../apps/web/src/features/activities/HomeThingsToDoTeaser.tsx)) trên Trang chủ `/` kết nối trực tiếp vào 4 mục lớn; gợi ý cross-sell thông minh ([`StayActivitiesCrossSell.tsx`](../apps/web/src/features/activities/StayActivitiesCrossSell.tsx)) trên `/stays/[id]` chọn **1 Đưa đón + 2 Điểm tham quan/Tour cùng thành phố**, thanh toán 1 lần qua `/payments/[transactionId]` và cho phép **hủy riêng từng dịch vụ đính kèm** (`PATCH /api/v1/reservations/:bookingId/activities/:itemId/cancel`) trên `/bookings/[bookingId]`.
 
 ---
 
-## 5. Danh mục Tính năng Mở rộng (Future Product Epics)
+## 4. Non-Functional Requirements (`NFR-01` – `NFR-06`)
 
-Chi tiết phân kỳ triển khai xem tại [PLAN.md](./PLAN.md). Tóm tắt trạng thái các nhóm tính năng mở rộng:
-
-1. ~~**Epic 1 — Lưu trữ Cơ sở dữ liệu & Quản lý Đơn đặt phòng:**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — PostgreSQL 16 + Drizzle ORM, tra cứu & hủy đơn tại `/bookings` & `/bookings/[bookingId]`.
-2. ~~**Epic 2 — Đường dẫn Chỗ nghỉ riêng & Đồng bộ URL (SEO & Deep-linking):**~~ **Đã hoàn thành ở Phase 1 (`v0.3.0`)** — `/stays/[id]` SSR + OpenGraph & URL query sync trên `/`.
-3. ~~**Epic 3 — Xác thực Người dùng & Đồng bộ Yêu thích Đa thiết bị:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — Custom Session Auth (`scrypt` + OTP + `HttpOnly` Cookie), `AuthContext` + `AuthModal`, merge Wishlist `localStorage ↔ user_favorites` và **"Đơn đặt phòng của bạn"**.
-4. ~~**Epic 4 — Hệ thống Mã giảm giá động (Voucher Engine):**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`)** — `evaluatePromotionVoucher`, `POST /api/v1/vouchers/validate`, áp mã `LUXESTAY250` / `SUMMERVIBE` trên `BookingCheckoutModal` & xác thực chuẩn phía server.
-5. ~~**Epic 5 — Tích hợp Thanh toán & Thông báo:**~~ **Đã hoàn thành ở Phase 2 (`v0.4.0`, Sandbox Production-flow)** — `pending_payment` → `/payments/[transactionId]` → Webhook ký `HMAC-SHA256` + Idempotency + nhật ký email vé điện tử `notification_logs`.
-6. ~~**Epic 6 — Lịch trống phòng, Đánh giá xác thực & Cổng Chủ nhà:**~~ **Đã hoàn thành ở Phase 3A & 3B (`v0.5.0` → `v0.6.0`)** — Availability Engine + khóa chống đặt trùng `SELECT ... FOR UPDATE`, giá cuối tuần/lễ, Verified Reviews, RBAC Host/Admin Portal `/host`, `LocaleContext` (`vi`/`en`, `VND`/`USD`) và Playwright Chromium E2E.
+1. **`NFR-01` Data Consistency & Fail-Fast:** Trong `NEXT_PUBLIC_DATA_MODE=api`, UI không âm thầm fallback sang mock khi API lỗi; mọi thao tác giữ/đặt phòng và đặt suất hoạt động có tranh chấp đồng thời phải được giải quyết bằng row lock DB / mutex.
+2. **`NFR-02` Performance & Progressive Loading:** Trang chủ chia lô hiển thị 12 chỗ nghỉ mỗi bước (*Load More*); toàn bộ suite 7 kịch bản E2E Playwright hoàn tất ổn định trên cổng cô lập (`4100/3100`).
+3. **`NFR-03` Security & Boundary Validation:** Mọi đầu vào API kiểm tra qua Zod schemas của `@luxestay/contracts`; API Host kiểm tra role `host`; webhook thanh toán xác thực chữ ký HMAC; `.env*` và `.vercel/` tuyệt đối không lọt vào Git.
+4. **`NFR-04` Viewport & Responsive Ergonomics:** Không bị cắt lệch nội dung, không phát sinh cuộn ngang ngoài ý muốn khi zoom hoặc mở trang trên điện thoại màn hình nhỏ (`360px`–`390px`).
+5. **`NFR-05` Idempotent Schema & Data Evolution:** Hệ thống migration `0000`–`0007` + `vercelPrepare.ts` (`db:prepare`, gồm `backfillMissingSeedProperties`, `backfillMissingSeedActivities` & `enrichSeedActivitiesGalleryAndDetails`) có thể chạy lặp lại nhiều lần trên môi trường Neon production mà không phá vỡ dữ liệu vận hành hiện có.
+6. **`NFR-06` Continuous Quality Verification:** Mọi thay đổi trước khi merge phải vượt qua `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` (`128` tests), `verify-seed-images.mjs` (`309` slots), và `npm run test:e2e` (`E2E-1`–`E2E-7`).
 
 ---
 
-## 6. Quy tắc quản trị tài liệu PRD
+## 5. Roadmap Sync ([`PLAN.md v3.3`](./PLAN.md))
 
-- Mọi tính năng mới hoặc thay đổi hành vi người dùng **phải cập nhật mục FR tương ứng** trong `docs/PRD.md` trước hoặc cùng lúc với PR triển khai.
-- Khi chuyển một tính năng từ **Prototype UI-only** sang **Đã triển khai đầy đủ**, phải cập nhật bảng ở mục `1.3` và đối chiếu trạng thái với [PLAN.md](./PLAN.md).
-- Các quyết định kỹ thuật phát sinh từ thay đổi yêu cầu phải được ghi nhận trong [docs/adr/](./adr/README.md).
+### 5.1 Các Phase đã hoàn thành (✅ Completed)
+- **Phase 0 – Phase 1 (`M0`–`M8`):** Khởi tạo Monorepo, Contracts + Domain seams, Overlay stack, Hono API + Postgres/Drizzle + Ports.
+- **Phase 2 (`M9`–`M10`):** Custom Session Auth + OTP, Favorites sync, Payment Sandbox + HMAC Webhooks + Notification logs.
+- **Phase 3A – 3B (`M11`–`M12`):** Availability Engine, Seasonal Pricing, Verified Reviews, `/stays/[id]`, Host Portal RBAC `/host`, i18n `vi`/`en` & Playwright E2E nền tảng.
+- **Phase 4A – 4C (`M13`–`M15`) & Mobile Polish:** Promotions Hub 3 tầng + `/deals` + `/deals/[slug]` (`E2E-4`), mở rộng 42 chỗ nghỉ + Load More 12/lần (`E2E-5`), audit 141/141 ảnh duy nhất chuẩn 4 trục + `repairRetiredSeedImages`, và sửa triệt để lỗi tràn ngang mobile (`E2E-6`).
+- **Phase 5 / Epic 9 (`M16`, `P5.1`–`P5.3` — ✅ Completed):**
+  - `P5.1`: Contracts `activities.ts`, pure domain `activities.ts`, modular seed `seed/activities/*` (12 dịch vụ nền tảng, nâng tổng lên `153/153` ảnh duy nhất 0% trùng lặp).
+  - `P5.2`: Migration `0005_travel_activities.sql` (24 bảng), backfill idempotent `backfillMissingSeedActivities`, API `modules/activities/*` (6 routes) & partial bundle cancel trong `modules/reservations/*`.
+  - `P5.3`: `activitiesPort.ts`, giao diện `/activities`, `/activities/[slug]`, `StayActivitiesCrossSell` trên `/stays/[id]` + Checkout, tra cứu `ACT-`/`LX-` tại `/bookings`, và Playwright **`E2E-7`**.
+- **Phase 5B — Vietnam Things to Do Expansion (`M17`, `P5B.1`–`P5B.4` — ✅ Completed):**
+  - Mở rộng `12 → 38` dịch vụ phủ 14 thành phố, điều hướng 2 tầng + URL sync + Xem thêm 12/lượt, Migration `0006`, khối `attractionDetails`/`essentialDetails`, teaser Trang chủ `/` và `179/179` media audit.
+- **Phase 5C — Rich Activities, 3-Photo Gallery + Lightbox & "Điều bạn cũng nên biết" (`M18`, `P5C.1`–`P5C.4` — ✅ Completed):**
+  - Mở rộng `38 → 56` dịch vụ (`14/14` thành phố đạt `≥ 3` dịch vụ), **3 ảnh thật duy nhất/dịch vụ** (`168` ảnh hoạt động / **`309/309`** toàn hệ thống), Bento Gallery + Lightbox (`OverlayContext`) + lướt ảnh trên `ActivityCard`, trọn bộ 6 phần *"Điều bạn cũng nên biết"* với Sticky Jump Bar & Smart Accordion, và Migration `0007_activities_gallery_and_know_before_you_go.sql` + conditional enrichment Neon.
+
+---
+
+## 6. Traceability Matrix & Quality Gates
+
+| Nhóm yêu cầu | Modules / Layer chính | Kiểm chứng tự động (`Test` / `E2E` / `Script`) | Milestones (`PLAN.md`) |
+| :--- | :--- | :--- | :--- |
+| **`FR-01` – `FR-04` (Discovery, Filter, Detail, Availability)** | `@luxestay/domain` (`catalogQuery`, `amenities`, `availability`), `catalog` & `availability` API, `experiencePort.ts`, `features/catalog`, `features/property` | `catalog-query.test.ts`, `amenities*.test.ts`, [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `availability-reviews.test.ts`, `E2E-1`, `E2E-5` | `M0`–`M6`, `M11`, `M14` |
+| **`FR-05` – `FR-06` (Quote & Atomic Booking)** | `bookingSession.ts`, `reservations` API (`SELECT ... FOR UPDATE`), `features/booking` | `booking-session.test.ts`, `api.test.ts`, `persistence-port.test.ts`, `E2E-1`, `E2E-2` | `M2`, `M5`, `M7`, `M8` |
+| **`FR-07` (Promotions Hub & Deals)** | `deals.ts`, `vouchers.ts`, `deals` & `catalog` API, `features/promotions`, `/deals`, `/deals/[slug]` | `deals.test.ts`, `promotions-hub.test.ts`, `api.test.ts`, `E2E-4` | `M13` |
+| **`FR-08` – `FR-11` (Payment, Auth, Favorites, Reviews)** | `auth`, `payments`, `favorites`, `reviews`, `notifications` API + web features tương ứng | `api.test.ts`, `availability-reviews.test.ts`, `E2E-2`, `E2E-3` | `M9`, `M10`, `M11` |
+| **`FR-12` – `FR-14` (Host Portal, Locale, Overlays)** | `host.ts`, `locale.ts`, `host` API, `/host`, `OverlayContext` (`overlayStack.ts`) | `host-locale.test.ts`, `overlay-stack.test.ts`, `api.test.ts`, `E2E-1`, `E2E-3` | `M4`, `M12` |
+| **`FR-15` – `FR-16` (4-Axis Media & Mobile Viewport)** | `seed/properties/*`, `seed/activities/*`, `retiredImages.ts`, `vercelPrepare.ts`, `globals.css`, home layout grids | [`properties-amenities.test.ts`](../packages/domain/tests/properties-amenities.test.ts), `verify-seed-images.mjs` (**309 slots**), `E2E-5`, `E2E-6` (`390×844` & `360×800`) | `M15` + Mobile Hotfix |
+| **`FR-17` (Epic 9 / Phase 5, 5B & 5C — Rich Vietnam Things to Do, Gallery & Bundle)** | `contracts/activities.ts`, `domain/activities.ts`, `seed/activities/*` (`enrichment.ts`), `0005`–`0007`, `modules/activities/*`, `activitiesPort.ts`, `ActivityGallery`, `ActivityKnowBeforeYouGo`, `HomeThingsToDoTeaser`, `StayActivitiesCrossSell` | `contracts.test.ts`, `activities.test.ts`, `api.test.ts`, `activities-port.test.ts`, `verify-seed-images.mjs` (**309 slots**), **`E2E-7`** | `M16`, `M17`, `M18` (`P5C.1`–`P5C.4`) |

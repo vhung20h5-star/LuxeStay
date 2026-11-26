@@ -4,6 +4,12 @@ import { createAuthSessionMiddleware } from "./middleware/auth.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
 import {
+  createInMemoryActivitiesRepository,
+  type ApiActivitiesRepository,
+} from "./modules/activities/repository.js";
+import { createActivitiesRoutes } from "./modules/activities/routes.js";
+import { createActivitiesService } from "./modules/activities/service.js";
+import {
   createInMemoryAuthRepository,
   type ApiAuthRepository,
 } from "./modules/auth/repository.js";
@@ -70,6 +76,7 @@ export interface CreateApiAppOptions {
   notificationWebhookUrl?: string;
   catalogRepository?: ApiCatalogRepository;
   dealsRepository?: ApiDealsRepository;
+  activitiesRepository?: ApiActivitiesRepository;
   availabilityRepository?: ApiAvailabilityRepository;
   reservationRepository?: ApiReservationRepository;
   reviewRepository?: ApiReviewRepository;
@@ -89,6 +96,8 @@ export function createApiApp(options?: CreateApiAppOptions) {
 
   const catalogRepository = options?.catalogRepository ?? createSeedCatalogRepository();
   const dealsRepository = options?.dealsRepository ?? createInMemoryDealsRepository();
+  const activitiesRepository =
+    options?.activitiesRepository ?? createInMemoryActivitiesRepository();
   const availabilityRepository =
     options?.availabilityRepository ?? createInMemoryAvailabilityRepository();
   const reservationRepository =
@@ -107,6 +116,11 @@ export function createApiApp(options?: CreateApiAppOptions) {
   const dealsService = createDealsService({
     dealsRepository,
     catalogRepository,
+  });
+  const activitiesService = createActivitiesService({
+    activitiesRepository,
+    catalogRepository,
+    reservationRepository,
   });
   const availabilityService = createAvailabilityService({
     catalogRepository,
@@ -141,6 +155,7 @@ export function createApiApp(options?: CreateApiAppOptions) {
   const reservationService = createReservationService({
     catalogRepository,
     reservationRepository,
+    activitiesRepository,
     paymentRepository,
     paymentService,
     notificationService,
@@ -196,6 +211,7 @@ export function createApiApp(options?: CreateApiAppOptions) {
   app.route("/", createHealthRoutes());
   app.route("/", createCatalogRoutes(catalogService, { reservationRepository }));
   app.route("/", createDealsRoutes(dealsService));
+  app.route("/", createActivitiesRoutes(activitiesService));
   app.route("/", createAvailabilityRoutes(availabilityService));
   app.route("/", createReviewRoutes(reviewService));
   app.route("/", createHostRoutes(hostService));
@@ -219,6 +235,7 @@ export function createApiApp(options?: CreateApiAppOptions) {
     repositories: {
       catalog: catalogRepository,
       deals: dealsRepository,
+      activities: activitiesRepository,
       availability: availabilityRepository,
       reservations: reservationRepository,
       reviews: reviewRepository,

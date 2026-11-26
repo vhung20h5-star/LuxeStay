@@ -251,7 +251,15 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
       { width: 390, height: 844 },
       { width: 360, height: 800 },
     ];
-    const routes = ["/", "/deals", "/deals/black-friday-2026", "/stays/stay-08", "/bookings", "/host"];
+    const routes = [
+      "/",
+      "/deals",
+      "/deals/black-friday-2026",
+      "/stays/stay-08",
+      "/activities",
+      "/bookings",
+      "/host",
+    ];
 
     for (const vp of viewports) {
       await page.setViewportSize(vp);
@@ -294,6 +302,159 @@ test.describe("LuxeStay End-to-End Platform Flows", () => {
       const drawerScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(drawerScrollWidth).toBeLessThanOrEqual(vp.width);
       await page.getByLabel("Menu").click();
+    }
+  });
+
+  test("E2E-7: Phase 5, 5B & 5C Things to Do 2-tier hub, card photo preview, Bento gallery + Lightbox, Know Before You Go accordion, standalone booking + cancel, stay bundle partial cancel, and mobile check", async ({
+    page,
+  }) => {
+    // 1. Homepage teaser renders 56 Vietnam services & shortcut navigates to /activities?section=attractions
+    await page.goto("/");
+    const teaser = page.getByTestId("home-things-to-do-teaser");
+    await expect(teaser).toBeVisible();
+    await expect(page.getByTestId("home-things-to-do-cta")).toContainText("56");
+    await page.getByTestId("home-activity-shortcut-attractions").click();
+
+    await expect(page).toHaveURL(/\/activities\?section=attractions/);
+    await expect(page.getByTestId("activities-count")).toContainText("11 / 11");
+
+    // 2. Narrow to Theme Parks subcategory -> URL syncs & persists across reload
+    await page.getByTestId("activity-sub-theme-park").click();
+    await expect(page).toHaveURL(/section=attractions&sub=theme-park/);
+    await expect(page.getByTestId("activities-count")).toContainText("5 / 5");
+
+    await page.reload();
+    await expect(page.getByTestId("activities-count")).toContainText("5 / 5");
+
+    // Phase 5C: ActivityCard photo count badge ("3 ảnh") & quick next-photo button works without navigating away
+    await expect(page.getByTestId("activity-card-photo-badge-act-13")).toContainText("3");
+    await page.getByTestId("activity-card-next-act-13").click();
+    await expect(page).toHaveURL(/\/activities\?section=attractions&sub=theme-park/);
+
+    await page.getByTestId("activity-card-act-13").click();
+    await expect(page).toHaveURL(/\/activities\/ve-cap-treo-sun-world-ba-na-hills-cau-vang-da-nang$/);
+    await expect(page.getByTestId("activity-attraction-details")).toBeVisible();
+
+    // Phase 5C: Bento Gallery + OverlayContext Lightbox (1/3 -> 2/3 -> Escape dismiss)
+    await expect(page.getByTestId("activity-gallery")).toBeVisible();
+    await page.getByTestId("activity-gallery-open-btn").click();
+    await expect(page.getByTestId("activity-gallery-lightbox")).toBeVisible();
+    await expect(page.getByTestId("lightbox-counter")).toHaveText("1 / 3");
+    await page.getByTestId("lightbox-next-btn").click();
+    await expect(page.getByTestId("lightbox-counter")).toHaveText("2 / 3");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("activity-gallery-lightbox")).toHaveCount(0);
+
+    // Phase 5C: Quick Facts, Sticky Jump Bar, Itinerary, Excluded & Smart "Điều bạn cũng nên biết" Accordion
+    await expect(page.getByTestId("activity-quick-facts")).toBeVisible();
+    await expect(page.getByTestId("activity-jump-bar")).toBeVisible();
+    await expect(page.getByTestId("activity-itinerary-section")).toBeVisible();
+    await expect(page.getByTestId("activity-excluded-card")).toBeVisible();
+    await expect(page.getByTestId("activity-good-to-know-section")).toBeVisible();
+    await expect(page.getByTestId("accordion-panel-important-notes")).toBeVisible();
+    await expect(page.getByTestId("accordion-panel-how-to-use")).toBeVisible();
+    await expect(page.getByTestId("accordion-panel-cancellation")).toHaveCount(0);
+    await page.getByTestId("accordion-trigger-cancellation").click();
+    await expect(page.getByTestId("accordion-panel-cancellation")).toBeVisible();
+
+    // 3. Default Explore tab on /activities shows 4 curated thematic bands + progressive Load More (12 -> 24 -> 12)
+    await page.goto("/activities");
+    await expect(page.getByTestId("activities-explore-showcase")).toBeVisible();
+    await expect(page.getByTestId("activities-count")).toContainText("12 / 56");
+
+    await page.getByTestId("activities-load-more").click();
+    await expect(page.getByTestId("activities-count")).toContainText("24 / 56");
+    await page.getByTestId("activities-collapse").click();
+    await expect(page.getByTestId("activities-count")).toContainText("12 / 56");
+
+    // 4. Travel Essentials -> eSIM detail specs check
+    await page.getByTestId("activity-section-essentials").click();
+    await expect(page.getByTestId("activities-count")).toContainText("12 / 15");
+    await page.getByTestId("activity-sub-sim-wifi").click();
+    await expect(page.getByTestId("activities-count")).toContainText("3 / 3");
+    await page.getByTestId("activity-card-act-31").click();
+    await expect(page.getByTestId("activity-essential-details")).toBeVisible();
+
+    // 5. Airport Transfer filter -> Da Lat Transfer booking (3 units + WELCOME150) & standalone cancel
+    await page.goto("/activities?section=essentials&sub=airport-transfer");
+    await expect(page.getByTestId("activities-count")).toContainText("11 / 11");
+    await page.getByTestId("activity-card-act-01").click();
+    await expect(page).toHaveURL(/\/activities\/xe-rieng-san-bay-lien-khuong-da-lat$/);
+    await expect(page.getByText("Thông số tuyến xe riêng")).toBeVisible();
+
+    // Increase quantity to 3 (3 * 380,000 = 1,140,000) -> apply WELCOME150 (-150,000 -> 990,000)
+    await page.getByTestId("activity-quantity-inc").click();
+    await page.getByTestId("activity-quantity-inc").click();
+    await expect(page.getByTestId("activity-quantity-value")).toHaveText("3");
+
+    await page.getByTestId("activity-promo-input").fill("WELCOME150");
+    await page.getByTestId("activity-promo-apply").click();
+    await expect(page.getByText(/Đã áp dụng mã WELCOME150/)).toBeVisible();
+
+    await page.getByTestId("activity-fill-demo").click();
+    await page.getByTestId("activity-submit-btn").click();
+
+    await expect(page.getByTestId("activity-booking-receipt")).toBeVisible();
+    const actBookingId = (await page.getByTestId("activity-booking-id").textContent())?.trim() ?? "";
+    expect(actBookingId).toMatch(/^ACT-[A-F0-9]{6}$/);
+
+    // Cancel standalone activity booking cleanly
+    await page.getByTestId("cancel-standalone-activity-btn").click();
+    await expect(page.getByText("Đơn dịch vụ đã được hủy")).toBeVisible();
+
+    // 6. Smart Stay + Airport Transfer cross-sell (1 Transfer + 2 Attractions/Tours) on /stays/stay-04 (Đà Lạt) -> checkout MoMo -> partial cancel transfer
+    await page.goto("/stays/stay-04");
+    await expect(page.getByTestId("stay-activities-cross-sell")).toBeVisible();
+    await expect(page.getByTestId("cross-sell-view-all-city")).toHaveAttribute(
+      "href",
+      /\/activities\?city=/
+    );
+    await expect(page.locator('[data-testid^="cross-sell-activity-"]')).toHaveCount(3);
+    await page.getByTestId("toggle-bundle-activity-act-01").click();
+    await expect(page.getByTestId("toggle-bundle-activity-act-01")).toContainText("Đã thêm");
+
+    await page.getByRole("button", { name: "Đặt phòng ngay" }).click();
+    const dialog = page.getByRole("dialog", { name: "Xác nhận đặt phòng" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Trải nghiệm & Đưa đón đã chọn (1)")).toBeVisible();
+
+    await dialog.getByRole("button", { name: /Điền nhanh thông tin mẫu/i }).click();
+    await dialog.getByRole("button", { name: /Ví Điện Tử MoMo/i }).click();
+    await dialog.getByRole("button", { name: /Tiếp tục thanh toán/i }).click();
+
+    // Redirected to sandbox MoMo payment page -> simulate success
+    await expect(page).toHaveURL(/\/payments\/TXN-/);
+    await page.getByRole("button", { name: /Thanh toán thành công/i }).click();
+    await expect(page).toHaveURL(/\/bookings\/LX-/);
+
+    // BookingDetailView displays confirmed stay + attached transfer item -> partial cancel transfer only
+    await expect(page.getByText("Đã xác nhận").first()).toBeVisible();
+    await expect(page.getByTestId("booking-bundle-activities")).toBeVisible();
+    const totalBefore = (await page.getByTestId("booking-detail-total").textContent()) ?? "";
+
+    const cancelItemBtn = page.locator('[data-testid^="cancel-bundle-activity-"]').first();
+    await cancelItemBtn.click();
+
+    await expect(page.locator('[data-testid^="bundle-activity-status-"]').first()).toHaveText("Đã hủy");
+    await expect(page.getByText("Đã xác nhận").first()).toBeVisible();
+    const totalAfter = (await page.getByTestId("booking-detail-total").textContent()) ?? "";
+    expect(totalAfter).not.toBe(totalBefore);
+
+    // 7. Mobile 390x844 horizontal overflow check on /activities and /activities/[slug]
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const route of [
+      "/activities",
+      "/activities/ve-cap-treo-sun-world-ba-na-hills-cau-vang-da-nang",
+      "/activities/esim-du-lich-viet-nam-4g-5g-khong-gioi-han",
+    ]) {
+      await page.goto(route);
+      const metrics = await page.evaluate(() => ({
+        innerWidth: window.innerWidth,
+        docScrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+      }));
+      expect(metrics.docScrollWidth, `Overflow on ${route}`).toBeLessThanOrEqual(metrics.innerWidth);
+      expect(metrics.bodyScrollWidth, `Body overflow on ${route}`).toBeLessThanOrEqual(metrics.innerWidth);
     }
   });
 });

@@ -9,10 +9,12 @@ import type {
 import {
   canAccessReservation,
   canManageProperty,
+  evaluateReservationActivityItemCancellation,
   evaluateReservationCancellation,
   evaluateReservationCompletion,
   processServerReservationIntent,
 } from "@luxestay/domain";
+import type { ApiActivitiesRepository } from "../activities/repository.js";
 import type { ApiCatalogRepository } from "../catalog/repository.js";
 import type { NotificationService } from "../notifications/service.js";
 import type { ApiPaymentRepository } from "../payments/repository.js";
@@ -42,6 +44,12 @@ export interface ReservationService {
     input: { contact?: string; reason?: string },
     context?: { authUser?: AuthUser | null }
   ): Promise<ReservationOperationResult>;
+  cancelReservationActivityItem(
+    bookingId: string,
+    itemId: string,
+    input: { contact?: string; reason?: string },
+    context?: { authUser?: AuthUser | null }
+  ): Promise<ReservationOperationResult>;
   completeReservation(
     bookingId: string,
     input: { contact?: string },
@@ -63,6 +71,7 @@ function mapStatusToErrorCode(status: 400 | 404 | 409 | 422): ErrorCode {
 export function createReservationService(deps: {
   catalogRepository: ApiCatalogRepository;
   reservationRepository: ApiReservationRepository;
+  activitiesRepository?: ApiActivitiesRepository;
   paymentRepository: ApiPaymentRepository;
   paymentService: PaymentService;
   notificationService: NotificationService;
@@ -83,7 +92,22 @@ export function createReservationService(deps: {
   return {
     async createReservation(intent, context) {
       const authUser = context?.authUser ?? null;
-      const snapshot = await deps.catalogRepository.getSnapshot();
+      const requestedActivities = intent.selectedActivities ?? [];
+      const [snapshot, allActivities, bookedActivityCounts] = await Promise.all([
+        deps.catalogRepository.getSnapshot(),
+        requestedActivities.length > 0 && deps.activitiesRepository
+          ? deps.activitiesRepository.listActivities()
+          : Promise.resolve(undefined),
+        requestedActivities.length > 0 && deps.activitiesRepository
+          ? deps.activitiesRepository.getBookedCountsForSlots(
+              requestedActivities.map((item) => ({
+                activityId: item.activityId,
+                slotId: item.slotId,
+                dateIso: item.dateIso,
+              }))
+            )
+          : Promise.resolve(undefined),
+      ]);
       const propertyId = intent.propertyId?.trim() ?? "";
       const hasPromoCode = Boolean(intent.promoCode?.trim());
       const promoCheckUserId = authUser && hasPromoCode ? authUser.id : undefined;
@@ -101,6 +125,8 @@ export function createReservationService(deps: {
           userId: authUser?.id,
           isAuthenticated: Boolean(authUser),
           hasPriorSuccessfulBookings: fastPathPriorSuccessful,
+          activities: allActivities,
+          bookedActivityCounts,
         });
         if (!result.ok) {
           return {
@@ -127,6 +153,8 @@ export function createReservationService(deps: {
             dailyOverrides,
             existingReservations,
             enforceAvailability: true,
+            activities: allActivities,
+            bookedActivityCounts,
           });
 
           if (!result.ok) {
@@ -226,6 +254,40 @@ export function createReservationService(deps: {
 
       const updated = await deps.reservationRepository.update(evaluated.booking);
       await deps.notificationService.sendBookingNotification(updated, "booking_cancelled");
+      return { ok: true, booking: await attachLatestPayment(updated) };
+    },
+
+    async cancelReservationActivityItem(bookingId, itemId, input, context) {
+      const normalizedId = bookingId.trim().toUpperCase();
+      const [existing, snapshot] = await Promise.all([
+        deps.reservationRepository.findById(normalizedId),
+        deps.catalogRepository.getSnapshot(),
+      ]);
+      if (!existing) {
+        return {
+          ok: false,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+          status: 404,
+        };
+      }
+
+      const evaluated = evaluateReservationActivityItemCancellation(existing, itemId, {
+        authUser: context?.authUser ?? null,
+        contact: input.contact,
+        reason: input.reason,
+        vouchers: snapshot.promotions.vouchers,
+      });
+      if (!evaluated.ok) {
+        return {
+          ok: false,
+          code: evaluated.code,
+          message: evaluated.message,
+          status: evaluated.status,
+        };
+      }
+
+      const updated = await deps.reservationRepository.update(evaluated.booking);
       return { ok: true, booking: await attachLatestPayment(updated) };
     },
 

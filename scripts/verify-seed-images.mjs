@@ -5,6 +5,7 @@ import {
   DESTINATIONS,
   PROMOTION_CAMPAIGNS,
   PROPERTIES,
+  TRAVEL_ACTIVITIES,
 } from "../packages/domain/dist/seed/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +41,13 @@ const entries = [
     group: "campaign",
     src: c.image,
   })),
+  ...TRAVEL_ACTIVITIES.flatMap((a) =>
+    a.images.map((src, idx) => ({
+      owner: `activity:${a.id}[${idx}]`,
+      group: "activity",
+      src,
+    }))
+  ),
 ];
 
 const seen = new Map();

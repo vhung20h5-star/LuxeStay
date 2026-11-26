@@ -34,6 +34,7 @@ Tệp này bổ sung quy tắc cục bộ cho ứng dụng Frontend **Next.js 16
 3. **Chia tách Domain Context:**
    - Component chỉ được subscribe hook đúng miền (`useCatalog`, `useFavorites`, `useBookingSession`) để tránh re-render chéo; chỉ dùng `useBooking()` khi thực sự cần cả 3 miền.
    - Khi thêm miền độc lập mới (như `Auth`), tạo context riêng trong `src/features/<domain>/` thay vì phình to `BookingContext.tsx`.
+4. **React 19 State Hygiene:** Không gọi `setState` đồng bộ trong `useEffect` để reset phân trang/draft khi query thay đổi; gắn state với chữ ký hiện tại (vd. `{ signature, visibleCount }`).
 
 ---
 
@@ -42,6 +43,10 @@ Tệp này bổ sung quy tắc cục bộ cho ứng dụng Frontend **Next.js 16
 - Mọi modal/drawer mới **bắt buộc** đi qua `<Modal />` hoặc `useOverlayLayer({ id, kind, isOpen, onClose, tier })` (`tier = 0` cho lớp nền, `tier = 1` cho modal lồng).
 - **CẤM** tự gắn `window.addEventListener("keydown")` cho phím `Escape` hoặc tự gán `document.body.style.overflow` trong component UI.
 - Đảm bảo `role="dialog"`, `aria-modal="true"`, `aria-label`, giao diện tiếng Việt (`vi-VN`, đơn vị `VNĐ`), Tailwind CSS v4 (không tạo lại `tailwind.config.mjs`).
+- **Chống tràn ngang Mobile & Bảo toàn Sticky:**
+  - Mọi flex/grid child (đặc biệt `<section>` hoặc wrapper dùng `max-w-7xl mx-auto` chứa carousel ngang như `PromotionsHub`, `HorizontalCarouselShell`) **bắt buộc** có `w-full min-w-0` để không phình theo kích thước `max-content` (`1280px`) gây trình duyệt di động tự zoom-out.
+  - Dùng `max-width: 100%; overflow-x: clip;` trên `html, body` ở `globals.css` (tránh `overflow-x: hidden` làm hỏng `position: sticky` của `Navbar`/`CategoryBar`).
+  - Dropdown/popover trên màn hình hẹp (`SearchBar`, date/guest picker) phải giới hạn chiều rộng bằng `w-full max-w-[calc(100vw-2.5rem)] sm:w-...`.
 
 ---
 

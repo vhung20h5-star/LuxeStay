@@ -1,6 +1,7 @@
 import {
   EMAIL_REGEX,
   VN_PHONE_REGEX,
+  type BookedBundleActivity,
   type BookingDetails,
   type BookingQuote,
   type BookingSessionState,
@@ -15,8 +16,11 @@ import {
   type ResolvedPropertyAmenity,
   type SearchCriteria,
   type SelectedBookingAmenity,
+  type SelectedBundleActivityInput,
   type ServerReservationIntent,
+  type TravelActivity,
 } from "@luxestay/contracts";
+import { resolveSelectedBundleActivities } from "./activities.js";
 import { projectPropertyAmenities } from "./amenities.js";
 import {
   enumerateStayDates,
@@ -230,14 +234,16 @@ function calculateBookingPricing(
     isAuthenticated?: boolean;
     hasPriorSuccessfulBookings?: boolean;
     property?: Pick<Property, "propertyType" | "category">;
-  }
+  },
+  activitiesFee = 0
 ): BookingQuote["pricing"] {
   const { basePrice, nightsTotal, seasonalSurcharge, nightlyBreakdown } = stayPricing;
   const amenitiesFee = selectedAmenities.reduce(
     (sum, item) => sum + (item.pricingType === "paid" ? item.price : 0),
     0
   );
-  const subtotal = nightsTotal + CLEANING_FEE + amenitiesFee;
+  const safeActivitiesFee = Math.max(0, Math.round(Number.isFinite(activitiesFee) ? activitiesFee : 0));
+  const subtotal = nightsTotal + CLEANING_FEE + amenitiesFee + safeActivitiesFee;
 
   let discount = 0;
   let appliedPromoCode: string | undefined;
@@ -273,6 +279,7 @@ function calculateBookingPricing(
     cleaningFee: CLEANING_FEE,
     serviceFee: 0,
     amenitiesFee,
+    activitiesFee: safeActivitiesFee,
     discount,
     ...(appliedPromoCode ? { appliedPromoCode } : {}),
     total,
@@ -307,6 +314,7 @@ function seedSessionForProperty(
       rooms: seededRooms,
     },
     selectedAmenityIds: [],
+    selectedActivities: [],
     promoCode: normalizedPromo || undefined,
     confirmedBooking: null,
   };
@@ -325,6 +333,7 @@ export function createIdleBookingSession(): BookingSessionState {
       rooms: 1,
     },
     selectedAmenityIds: [],
+    selectedActivities: [],
     promoCode: undefined,
     confirmedBooking: null,
   };
@@ -480,6 +489,32 @@ export function removeSessionAmenity(
   };
 }
 
+export function toggleSessionActivity(
+  current: BookingSessionState,
+  item: SelectedBundleActivityInput
+): BookingSessionState {
+  const existing = current.selectedActivities ?? [];
+  const exists = existing.some((entry) => entry.activityId === item.activityId);
+  return {
+    ...current,
+    selectedActivities: exists
+      ? existing.filter((entry) => entry.activityId !== item.activityId)
+      : [...existing, item],
+  };
+}
+
+export function removeSessionActivity(
+  current: BookingSessionState,
+  activityId: string
+): BookingSessionState {
+  const existing = current.selectedActivities ?? [];
+  if (!existing.some((entry) => entry.activityId === activityId)) return current;
+  return {
+    ...current,
+    selectedActivities: existing.filter((entry) => entry.activityId !== activityId),
+  };
+}
+
 export function updateSessionCheckIn(
   current: BookingSessionState,
   checkInSeed: string
@@ -525,6 +560,9 @@ export interface DeriveBookingQuoteOptions {
   isAuthenticated?: boolean;
   hasPriorSuccessfulBookings?: boolean;
   dailyOverrides?: readonly PropertyAvailabilityOverride[];
+  activities?: readonly TravelActivity[];
+  bookedActivityCounts?: ReadonlyMap<string, number>;
+  activityItemIdPrefix?: string;
 }
 
 export function deriveBookingQuote(
@@ -555,6 +593,24 @@ export function deriveBookingQuote(
     resolvedAmenities,
     session.selectedAmenityIds
   );
+
+  let resolvedActivities: readonly BookedBundleActivity[] = [];
+  let activitiesFee = 0;
+  if (session.selectedActivities && session.selectedActivities.length > 0 && options?.activities) {
+    const bundleEval = resolveSelectedBundleActivities(
+      session.selectedActivities,
+      options.activities,
+      {
+        bookedCountByKey: options.bookedActivityCounts,
+        itemIdPrefix: options.activityItemIdPrefix,
+      }
+    );
+    if (bundleEval.ok) {
+      resolvedActivities = bundleEval.items;
+      activitiesFee = bundleEval.activitiesFee;
+    }
+  }
+
   const pricing = calculateBookingPricing(
     {
       basePrice: property.pricePerNight,
@@ -570,7 +626,8 @@ export function deriveBookingQuote(
       isAuthenticated: options?.isAuthenticated,
       hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
       property,
-    }
+    },
+    activitiesFee
   );
 
   return {
@@ -586,6 +643,7 @@ export function deriveBookingQuote(
     resolvedAmenities,
     selectedAmenityIds: selectedAmenities.map((item) => item.id),
     selectedAmenities,
+    selectedActivities: [...resolvedActivities],
     pricing,
   };
 }
@@ -651,6 +709,8 @@ export function processServerReservationIntent(
     dailyOverrides?: readonly PropertyAvailabilityOverride[];
     existingReservations?: readonly ReservationOccupancyLike[];
     enforceAvailability?: boolean;
+    activities?: readonly TravelActivity[];
+    bookedActivityCounts?: ReadonlyMap<string, number>;
   }
 ):
   | { ok: true; booking: BookingDetails }
@@ -717,9 +777,36 @@ export function processServerReservationIntent(
     selectedAmenityIds: Array.isArray(intent.selectedAmenityIds)
       ? intent.selectedAmenityIds.filter((id): id is string => typeof id === "string")
       : [],
+    selectedActivities: Array.isArray(intent.selectedActivities) ? intent.selectedActivities : [],
     promoCode: requestedPromoCode || undefined,
     confirmedBooking: null,
   };
+
+  const bookingId =
+    options?.bookingId ?? `LX-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  // Validate selected bundle activities strictly before pricing/saving
+  const requestedBundleActivities = Array.isArray(intent.selectedActivities)
+    ? intent.selectedActivities
+    : [];
+  if (requestedBundleActivities.length > 0) {
+    const bundleCheck = resolveSelectedBundleActivities(
+      requestedBundleActivities,
+      options?.activities,
+      {
+        bookedCountByKey: options?.bookedActivityCounts,
+        itemIdPrefix: `${bookingId.toLowerCase()}-act`,
+      }
+    );
+    if (!bundleCheck.ok) {
+      return {
+        ok: false,
+        error: bundleCheck.message,
+        status: bundleCheck.status,
+        ...(bundleCheck.code === "CONFLICT" ? { code: "CONFLICT" as const } : {}),
+      };
+    }
+  }
 
   if (options?.enforceAvailability) {
     const { checkIn } = computeStayDates(serverSession.nights, validCheckInSeed, fallbackBaseDate);
@@ -752,6 +839,9 @@ export function processServerReservationIntent(
       {
         dailyOverrides: options?.dailyOverrides,
         now: evalNow,
+        activities: options?.activities,
+        bookedActivityCounts: options?.bookedActivityCounts,
+        activityItemIdPrefix: `${bookingId.toLowerCase()}-act`,
       }
     );
     if (!baseQuote) {
@@ -764,7 +854,8 @@ export function processServerReservationIntent(
     const subtotal =
       baseQuote.pricing.nightsTotal +
       baseQuote.pricing.cleaningFee +
-      baseQuote.pricing.amenitiesFee;
+      baseQuote.pricing.amenitiesFee +
+      (baseQuote.pricing.activitiesFee ?? 0);
     const voucherEval = evaluatePromotionVoucher(
       requestedPromoCode,
       subtotal,
@@ -791,6 +882,9 @@ export function processServerReservationIntent(
     isAuthenticated: options?.isAuthenticated ?? Boolean(options?.userId),
     hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
     dailyOverrides: options?.dailyOverrides,
+    activities: options?.activities,
+    bookedActivityCounts: options?.bookedActivityCounts,
+    activityItemIdPrefix: `${bookingId.toLowerCase()}-act`,
   });
   if (!serverQuote) {
     return {
@@ -800,8 +894,6 @@ export function processServerReservationIntent(
     };
   }
 
-  const bookingId =
-    options?.bookingId ?? `LX-${Math.floor(100000 + Math.random() * 900000)}`;
   const createdAt = options?.createdAt ?? new Date().toISOString();
   const { fullName, phone, email, note, paymentMethod } = validation.value;
 
@@ -822,6 +914,9 @@ export function processServerReservationIntent(
     pricing: Object.freeze({ ...serverQuote.pricing }),
     selectedAmenities: Object.freeze(
       serverQuote.selectedAmenities.map((item) => Object.freeze({ ...item }))
+    ),
+    selectedActivities: Object.freeze(
+      (serverQuote.selectedActivities ?? []).map((item) => Object.freeze({ ...item }))
     ),
     guestInfo: Object.freeze({ fullName, phone, email, note }),
     paymentMethod,
@@ -1093,6 +1188,7 @@ export async function submitBookingSession(
     isAuthenticated?: boolean;
     hasPriorSuccessfulBookings?: boolean;
     dailyOverrides?: readonly PropertyAvailabilityOverride[];
+    activities?: readonly TravelActivity[];
   }
 ): Promise<
   | { ok: true; booking: BookingDetails; nextSession: BookingSessionState }
@@ -1118,6 +1214,7 @@ export async function submitBookingSession(
       isAuthenticated: options?.isAuthenticated,
       hasPriorSuccessfulBookings: options?.hasPriorSuccessfulBookings,
       dailyOverrides: options?.dailyOverrides,
+      activities: options?.activities,
     }
   );
   if (!quote) {
@@ -1136,12 +1233,14 @@ export async function submitBookingSession(
   }
 
   const { fullName, phone, email, note, paymentMethod, promoCode } = validation.value;
+  const selectedActivities = session.selectedActivities ?? [];
   const booking = await submitter.submit(
     {
       quote,
       guestInfo: { fullName, phone, email, note },
       paymentMethod,
       ...(promoCode ? { promoCode } : {}),
+      ...(selectedActivities.length > 0 ? { selectedActivities } : {}),
     },
     { signal: options?.signal }
   );

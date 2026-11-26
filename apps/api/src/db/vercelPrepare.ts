@@ -6,6 +6,7 @@ import {
   RETIRED_SEED_DESTINATION_IMAGES,
   RETIRED_SEED_PROPERTY_IMAGES,
   SEED_CATALOG_SNAPSHOT,
+  TRAVEL_ACTIVITIES,
 } from "@luxestay/domain/seed";
 import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -14,11 +15,13 @@ import {
   destinationsTable,
   promotionCampaignsTable,
   propertiesTable,
+  travelActivitiesTable,
 } from "./schema/index.js";
 import {
   seedDatabase,
   seedPromotionsAndCampaigns,
   insertMissingSeedProperties,
+  insertMissingSeedActivities,
 } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -232,6 +235,22 @@ export async function prepareDatabaseIfConfigured(
       );
     }
 
+    const { insertedCount: insertedActivities } = await backfillMissingSeedActivities(client.db);
+    if (insertedActivities > 0) {
+      console.log(
+        `[luxestay-api] Backfilled ${insertedActivities} missing seed travel activities without overwriting existing rows.`
+      );
+    }
+
+    const { enrichedCount: enrichedActivities } = await enrichSeedActivitiesGalleryAndDetails(
+      client.db
+    );
+    if (enrichedActivities > 0) {
+      console.log(
+        `[luxestay-api] Enriched ${enrichedActivities} seed travel activities with multi-photo gallery & Know Before You Go details.`
+      );
+    }
+
     const repaired = await repairRetiredSeedImages(client.db);
     if (
       repaired.updatedDestinations > 0 ||
@@ -248,6 +267,133 @@ export async function prepareDatabaseIfConfigured(
   } finally {
     await client.close();
   }
+}
+
+export async function backfillMissingSeedActivities(
+  db: LuxeStayDb
+): Promise<{ insertedCount: number }> {
+  const existingRows = await db
+    .select({ id: travelActivitiesTable.id })
+    .from(travelActivitiesTable);
+  const existingIds = new Set(existingRows.map((row) => row.id));
+  const missing = TRAVEL_ACTIVITIES.filter((activity) => !existingIds.has(activity.id));
+  if (missing.length === 0) {
+    return { insertedCount: 0 };
+  }
+  await db.transaction(async (tx) => {
+    await insertMissingSeedActivities(tx, missing);
+  });
+  return { insertedCount: missing.length };
+}
+
+/**
+ * Narrow, idempotent Phase 5C enrichment for existing seed activities on Neon/Postgres.
+ * Upgrades single-image Phase 5/5B seed rows to 3-image galleries ONLY when the stored
+ * array still matches the original single cover image, and fills empty Phase 5C
+ * "Know Before You Go" columns without overwriting bookings or manual edits.
+ */
+export async function enrichSeedActivitiesGalleryAndDetails(
+  db: LuxeStayDb
+): Promise<{ enrichedCount: number }> {
+  const seedById = new Map(TRAVEL_ACTIVITIES.map((activity) => [activity.id, activity]));
+  const existingRows = await db
+    .select({
+      id: travelActivitiesTable.id,
+      images: travelActivitiesTable.images,
+      imageCaptions: travelActivitiesTable.imageCaptions,
+      excluded: travelActivitiesTable.excluded,
+      itinerary: travelActivitiesTable.itinerary,
+      knowBeforeYouGo: travelActivitiesTable.knowBeforeYouGo,
+      howToUse: travelActivitiesTable.howToUse,
+      cancellationPolicy: travelActivitiesTable.cancellationPolicy,
+      suitableFor: travelActivitiesTable.suitableFor,
+      languages: travelActivitiesTable.languages,
+      slots: travelActivitiesTable.slots,
+    })
+    .from(travelActivitiesTable);
+
+  let enrichedCount = 0;
+
+  await db.transaction(async (tx) => {
+    for (const row of existingRows) {
+      const seed = seedById.get(row.id);
+      if (!seed) continue;
+
+      const patch: Partial<typeof travelActivitiesTable.$inferInsert> = {};
+
+      if (
+        Array.isArray(row.images) &&
+        row.images.length === 1 &&
+        row.images[0] === seed.images[0] &&
+        seed.images.length > 1
+      ) {
+        patch.images = [...seed.images];
+      }
+
+      if (
+        (!row.imageCaptions || row.imageCaptions.length === 0) &&
+        seed.imageCaptions &&
+        seed.imageCaptions.length > 0
+      ) {
+        patch.imageCaptions = [...seed.imageCaptions];
+      }
+
+      if ((!row.excluded || row.excluded.length === 0) && seed.excluded.length > 0) {
+        patch.excluded = [...seed.excluded];
+      }
+
+      if ((!row.itinerary || row.itinerary.length === 0) && seed.itinerary.length > 0) {
+        patch.itinerary = seed.itinerary.map((step) => ({ ...step }));
+      }
+
+      if (
+        (!row.knowBeforeYouGo || row.knowBeforeYouGo.length === 0) &&
+        seed.knowBeforeYouGo.length > 0
+      ) {
+        patch.knowBeforeYouGo = seed.knowBeforeYouGo.map((item) => ({ ...item }));
+      }
+
+      if (!row.howToUse && seed.howToUse) {
+        patch.howToUse = { ...seed.howToUse, steps: [...seed.howToUse.steps] };
+      }
+
+      if (!row.cancellationPolicy && seed.cancellationPolicy) {
+        patch.cancellationPolicy = {
+          ...seed.cancellationPolicy,
+          rules: [...seed.cancellationPolicy.rules],
+        };
+      }
+
+      if ((!row.suitableFor || row.suitableFor.length === 0) && seed.suitableFor.length > 0) {
+        patch.suitableFor = [...seed.suitableFor];
+      }
+
+      if ((!row.languages || row.languages.length === 0) && seed.languages.length > 0) {
+        patch.languages = [...seed.languages];
+      }
+
+      // Safely add standalone Business Lounge slot on act-33 when still on legacy 3-slot seed
+      if (
+        row.id === "act-33" &&
+        Array.isArray(row.slots) &&
+        row.slots.length === 3 &&
+        !row.slots.some((s) => s.id === "slot-ft-lounge-only") &&
+        seed.slots.some((s) => s.id === "slot-ft-lounge-only")
+      ) {
+        patch.slots = seed.slots.map((s) => ({ ...s }));
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await tx
+          .update(travelActivitiesTable)
+          .set(patch)
+          .where(eq(travelActivitiesTable.id, row.id));
+        enrichedCount += 1;
+      }
+    }
+  });
+
+  return { enrichedCount };
 }
 
 const currentFilePath = path.resolve(fileURLToPath(import.meta.url));

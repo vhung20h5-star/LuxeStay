@@ -106,48 +106,60 @@ export function Navbar() {
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 lg:gap-1.5">
+          <nav className="hidden md:flex items-center gap-0.5 xl:gap-1 min-w-0">
             <button
               onClick={() => scrollToSection("properties-section")}
-              className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
+              className="px-2 xl:px-3 py-2 text-[13px] xl:text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors whitespace-nowrap shrink-0"
             >
               {t("nav.explore")}
             </button>
             <button
               onClick={() => scrollToSection("destinations-section")}
-              className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors"
+              className="px-2 xl:px-3 py-2 text-[13px] xl:text-sm font-medium text-slate-600 hover:text-emerald-700 hover:bg-slate-50 rounded-xl transition-colors whitespace-nowrap shrink-0"
             >
               {t("nav.destinations")}
             </button>
             <Link
               href="/deals"
               data-testid="nav-deals-link"
-              className={`px-3 py-2 text-sm rounded-xl transition-colors flex items-center gap-1.5 font-semibold ${
+              className={`px-2 xl:px-3 py-2 text-[13px] xl:text-sm rounded-xl transition-colors flex items-center gap-1.5 font-semibold whitespace-nowrap shrink-0 ${
                 pathname.startsWith("/deals")
                   ? "text-amber-800 bg-amber-50"
                   : "text-amber-700 hover:text-amber-800 hover:bg-amber-50/80"
               }`}
             >
-              <span className="relative flex h-2 w-2">
+              <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
               {t("nav.deals")}
             </Link>
             <Link
+              href="/activities"
+              data-testid="nav-activities"
+              className={`px-2 xl:px-3 py-2 text-[13px] xl:text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                pathname.startsWith("/activities")
+                  ? "text-emerald-700 bg-emerald-50 font-semibold"
+                  : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5 xl:w-4 xl:h-4 text-emerald-600 shrink-0" />
+              {t("nav.activities")}
+            </Link>
+            <Link
               href="/bookings"
-              className={`px-3 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
+              className={`px-2 xl:px-3 py-2 text-[13px] xl:text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 pathname.startsWith("/bookings")
                   ? "text-emerald-700 bg-emerald-50 font-semibold"
                   : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
               }`}
             >
-              <Ticket className="w-4 h-4 text-emerald-600" />
+              <Ticket className="w-3.5 h-3.5 xl:w-4 xl:h-4 text-emerald-600 shrink-0" />
               {user ? t("nav.myBookings") : t("nav.lookupBooking")}
             </Link>
             <Link
               href="/host"
-              className={`px-3 py-2 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 ${
+              className={`px-2 xl:px-3 py-2 text-[13px] xl:text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 pathname.startsWith("/host")
                   ? "text-indigo-700 bg-indigo-50 font-semibold"
                   : isStaff
@@ -155,21 +167,21 @@ export function Navbar() {
                     : "text-slate-600 hover:text-emerald-700 hover:bg-slate-50"
               }`}
             >
-              <Building2 className="w-4 h-4 text-indigo-600" />
+              <Building2 className="w-3.5 h-3.5 xl:w-4 xl:h-4 text-indigo-600 shrink-0" />
               {t("nav.hostPortal")}
             </Link>
           </nav>
 
           {/* Right Action Icons & Controls */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Interactive Currency & Language Switcher */}
-            <div className="hidden lg:flex items-center gap-1 p-1 text-xs font-bold text-slate-600 bg-slate-100 rounded-full border border-slate-200/70">
+            <div className="hidden lg:flex items-center gap-1 p-1 text-xs font-bold text-slate-600 bg-slate-100 rounded-full border border-slate-200/70 whitespace-nowrap shrink-0">
               <button
                 type="button"
                 onClick={() => setCurrency(currency === "VND" ? "USD" : "VND")}
                 data-testid="currency-toggle"
                 aria-label="Chuyển đổi tiền tệ"
-                className="px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors"
+                className="px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors whitespace-nowrap"
               >
                 {currency === "VND" ? "VNĐ" : "USD"}
               </button>
@@ -179,9 +191,9 @@ export function Navbar() {
                 onClick={() => setLocale(locale === "vi" ? "en" : "vi")}
                 data-testid="locale-toggle"
                 aria-label="Chuyển đổi ngôn ngữ"
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full hover:bg-white hover:text-emerald-700 transition-colors whitespace-nowrap"
               >
-                <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>{locale === "vi" ? "VI" : "EN"}</span>
               </button>
             </div>
@@ -189,7 +201,7 @@ export function Navbar() {
             {/* Wishlist Button with Badge */}
             <button
               onClick={() => setFavoritesDrawerOpen(true)}
-              className="relative p-2.5 text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 rounded-full transition-all duration-200"
+              className="relative p-2 text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 rounded-full transition-all duration-200 shrink-0"
               aria-label={t("nav.favorites")}
             >
               <Heart
@@ -208,13 +220,13 @@ export function Navbar() {
 
             {/* User Sign in / Authenticated Profile */}
             {user ? (
-              <div className="hidden sm:flex items-center gap-2 pl-2 pr-2 py-1 rounded-full border border-emerald-200 bg-emerald-50/60">
+              <div className="hidden sm:flex items-center gap-2 pl-2 pr-2 py-1 rounded-full border border-emerald-200 bg-emerald-50/60 shrink-0">
                 <Link
                   href={isStaff ? "/host" : "/bookings"}
                   className="flex items-center gap-2 pr-1 text-left group"
                   title={`${user.fullName} (${user.email})`}
                 >
-                  <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[11px]">
+                  <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[11px] shrink-0">
                     {getInitials(user.fullName)}
                   </div>
                   <div className="leading-tight">
@@ -242,12 +254,12 @@ export function Navbar() {
             ) : (
               <button
                 onClick={() => setAuthModalOpen(true)}
-                className="hidden sm:flex items-center gap-2.5 pl-2 pr-3.5 py-1.5 rounded-full border border-slate-200 hover:border-emerald-500 bg-white shadow-sm hover:shadow transition-all group"
+                className="hidden sm:flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border border-slate-200 hover:border-emerald-500 bg-white shadow-sm hover:shadow transition-all group whitespace-nowrap shrink-0"
               >
-                <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0">
                   <User className="w-4 h-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-700 group-hover:text-emerald-700">
+                <span className="text-xs font-semibold text-slate-700 group-hover:text-emerald-700 whitespace-nowrap">
                   {t("nav.login")}
                 </span>
               </button>
@@ -344,6 +356,14 @@ export function Navbar() {
               <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
                 Hot
               </span>
+            </Link>
+            <Link
+              href="/activities"
+              onClick={() => setMobileMenuOpen(false)}
+              className="w-full text-left px-4 py-2.5 rounded-xl text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 font-medium text-sm flex items-center justify-between"
+            >
+              <span>{t("nav.activities")}</span>
+              <Compass className="w-4 h-4 text-emerald-600" />
             </Link>
             <Link
               href="/bookings"

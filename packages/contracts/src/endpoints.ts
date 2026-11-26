@@ -9,12 +9,22 @@ export const API_ENDPOINTS = Object.freeze({
   validateVoucher: "/api/v1/vouchers/validate",
   deals: "/api/v1/deals",
   dealBySlug: (slug: string) => `/api/v1/deals/${encodeURIComponent(slug.trim())}`,
+  activities: "/api/v1/activities",
+  activityBySlug: (slug: string) => `/api/v1/activities/${encodeURIComponent(slug.trim())}`,
+  activityBookings: "/api/v1/activities/bookings",
+  myActivityBookings: "/api/v1/activities/bookings/my",
+  activityBookingById: (bookingId: string) =>
+    `/api/v1/activities/bookings/${encodeURIComponent(bookingId.trim().toUpperCase())}`,
+  cancelActivityBooking: (bookingId: string) =>
+    `/api/v1/activities/bookings/${encodeURIComponent(bookingId.trim().toUpperCase())}/cancel`,
   reservations: "/api/v1/reservations",
   myReservations: "/api/v1/reservations/my",
   reservationById: (bookingId: string) =>
     `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}`,
   cancelReservation: (bookingId: string) =>
     `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}/cancel`,
+  cancelReservationActivityItem: (bookingId: string, itemId: string) =>
+    `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}/activities/${encodeURIComponent(itemId.trim())}/cancel`,
   completeReservation: (bookingId: string) =>
     `/api/v1/reservations/${encodeURIComponent(bookingId.trim().toUpperCase())}/complete`,
   reservationNotifications: (bookingId: string) =>

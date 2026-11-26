@@ -13,12 +13,14 @@ import {
   type ServerReservationIntent,
 } from "@luxestay/contracts";
 import {
+  evaluateReservationActivityItemCancellation,
   evaluateReservationCancellation,
   evaluateReservationCompletion,
   matchesReservationContact,
 } from "@luxestay/domain";
 import { z } from "zod";
 import type { DataMode } from "../config/env";
+import { createActivitiesPort, createMockActivitiesPort } from "./activitiesPort";
 import { HttpApiError, isAbortError } from "./errors";
 import {
   createHttpPropertyExperiencePort,
@@ -29,6 +31,7 @@ import {
   createMockPaymentGatewayPort,
 } from "./paymentPort";
 import type {
+  ActivitiesPort,
   AppPorts,
   FavoritesRepository,
   InMemoryReservationAdapter,
@@ -97,6 +100,9 @@ function freezeBookingDetails(details: BookingDetails): BookingDetails {
     selectedAmenities: Object.freeze(
       details.selectedAmenities.map((item) => Object.freeze({ ...item }))
     ),
+    selectedActivities: Object.freeze(
+      (details.selectedActivities ?? []).map((item) => Object.freeze({ ...item }))
+    ),
     guestInfo: Object.freeze({ ...details.guestInfo }),
   });
 }
@@ -114,6 +120,7 @@ function buildBookingDetails(
     guests: request.quote.guests,
     pricing: request.quote.pricing,
     selectedAmenities: request.quote.selectedAmenities,
+    selectedActivities: request.quote.selectedActivities ?? [],
     guestInfo: request.guestInfo,
     paymentMethod: request.paymentMethod,
     bookingId,
@@ -529,6 +536,34 @@ export function createBrowserReservationManagerAdapter(options?: {
       return evaluated.booking;
     },
 
+    async cancelActivityItem(bookingId, itemId, input, callOptions) {
+      if (callOptions?.signal?.aborted) throw createAbortError();
+      const normalizedId = bookingId.trim().toUpperCase();
+      const stored = readMockBookings(options?.storage);
+      const found = stored.get(normalizedId);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalizedId}.`,
+        });
+      }
+      const evaluated = evaluateReservationActivityItemCancellation(found, itemId, {
+        contact: input.contact,
+        reason: input.reason,
+      });
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.message,
+        });
+      }
+      stored.set(normalizedId, evaluated.booking);
+      writeMockBookings(stored, options?.storage);
+      return evaluated.booking;
+    },
+
     async complete(bookingId, input, callOptions) {
       if (callOptions?.signal?.aborted) throw createAbortError();
       const normalizedId = bookingId.trim().toUpperCase();
@@ -645,6 +680,31 @@ export function createInMemoryReservationManager(
           status: evaluated.status,
           code: evaluated.code,
           message: evaluated.error,
+        });
+      }
+      store.set(normalized, evaluated.booking);
+      return evaluated.booking;
+    },
+    async cancelActivityItem(bookingId, itemId, input, options) {
+      if (options?.signal?.aborted) throw createAbortError();
+      const normalized = bookingId.trim().toUpperCase();
+      const found = store.get(normalized);
+      if (!found) {
+        throw new HttpApiError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: `Không tìm thấy đơn đặt phòng với mã ${normalized}.`,
+        });
+      }
+      const evaluated = evaluateReservationActivityItemCancellation(found, itemId, {
+        contact: input.contact,
+        reason: input.reason,
+      });
+      if (!evaluated.ok) {
+        throw new HttpApiError({
+          status: evaluated.status,
+          code: evaluated.code,
+          message: evaluated.message,
         });
       }
       store.set(normalized, evaluated.booking);
@@ -769,6 +829,7 @@ export function createHttpReservationAdapter(
         nights: request.quote.nights,
         guests: { ...request.quote.guests },
         selectedAmenityIds: [...request.quote.selectedAmenityIds],
+        selectedActivities: request.selectedActivities ? [...request.selectedActivities] : [],
         guestInfo: { ...request.guestInfo },
         paymentMethod: request.paymentMethod,
         ...(effectivePromo ? { promoCode: effectivePromo } : {}),
@@ -886,6 +947,41 @@ export function createHttpReservationManagerAdapter(options?: {
       }
 
       return parseBookingApiResponse(response, "Không thể hủy đặt phòng từ máy chủ.");
+    },
+
+    async cancelActivityItem(bookingId, itemId, input, callOptions) {
+      const signal = callOptions?.signal;
+      if (signal?.aborted) throw createAbortError();
+      const fetchFn = resolveFetch();
+
+      const url = `${baseUrl}${API_ENDPOINTS.cancelReservationActivityItem(bookingId, itemId)}`;
+      const trimmedContact = input.contact?.trim() || undefined;
+      let response: Response;
+      try {
+        response = await fetchFn(url, {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            ...(trimmedContact ? { contact: trimmedContact } : {}),
+            reason: input.reason?.trim() || undefined,
+          }),
+          signal,
+        });
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        throw new HttpApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Không thể kết nối máy chủ để hủy dịch vụ đi kèm.",
+          details: err instanceof Error ? err.message : undefined,
+        });
+      }
+
+      return parseBookingApiResponse(response, "Không thể hủy dịch vụ đi kèm từ máy chủ.");
     },
 
     async complete(bookingId, input, callOptions) {
@@ -1061,6 +1157,11 @@ export function createWebAppPorts(options: {
             properties: options.properties,
             getBookings: () => [...readMockBookings(options.storage).values()],
           }),
+    activities: createActivitiesPort({
+      mode: options.mode,
+      apiBaseUrl: options.apiBaseUrl,
+      fetchImpl: options.fetchImpl,
+    }),
   };
 }
 
@@ -1077,6 +1178,7 @@ export function createInMemoryAppPorts(options?: {
   reservationManager: ReservationManagerPort;
   paymentGateway: PaymentGatewayPort;
   propertyExperience: PropertyExperiencePort;
+  activities: ActivitiesPort;
 } {
   const manager = createInMemoryReservationManager();
   const baseReservations = createInMemoryReservationAdapter({
@@ -1110,5 +1212,6 @@ export function createInMemoryAppPorts(options?: {
       properties: options?.properties,
       getBookings: () => reservations.getSubmittedBookings(),
     }),
+    activities: createMockActivitiesPort(),
   };
 }
